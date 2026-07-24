@@ -154,6 +154,22 @@ export function shiftIfNonWorking(date) {
 }
 
 /**
+ * Перенос назад, к предыдущему рабочему дню. Если день рабочий — возвращается
+ * он же. Используется для дат напоминаний .ics: сдвиг вперёд съедал бы запас,
+ * поэтому нерабочий день переносится на более раннюю дату (раздел 8 SPEC.md).
+ * Тип результата совпадает с типом аргумента (Date → Date, строка → строка).
+ * @param {Date|string} date
+ * @returns {Date|string}
+ */
+export function shiftBackIfNonWorking(date) {
+  let dt = normalize(date);
+  while (!isWorkingDay(dt)) {
+    dt = new Date(dt.getTime() - DAY_MS);
+  }
+  return typeof date === 'string' ? toKey(dt) : dt;
+}
+
+/**
  * Сведения о календаре года.
  * @param {number} year
  * @returns {{ preliminary: boolean }} preliminary=true — постановление о

@@ -19,6 +19,7 @@ export const APPEAL_GENERAL = {
   duration: { value: 1, unit: 'month' },
   anchor: { event: 'reasoned_decision_date', offset_start: 1 },
   weekend_shift: true,
+  ics: true,
   logic:
     'Месяц со дня принятия решения в окончательной форме. Течение — со дня, ' +
     'следующего за днём составления мотивированного решения; истекает в ' +
@@ -38,6 +39,7 @@ export const CASSATION_KSOYU = {
   anchor: { event: 'cassation_anchor', offset_start: 1 },
   condition: 'entry_into_force.resolved',
   weekend_shift: true,
+  ics: true,
   logic:
     'Три месяца. Точка отсчёта (cassation_anchor) — дата вступления решения в ' +
     'силу либо, при обжаловании, дата изготовления мотивированного ' +
