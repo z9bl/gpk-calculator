@@ -13,12 +13,17 @@ import { toISODate } from './calendar.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
-const APPEAL_GENERAL = {
+export const APPEAL_GENERAL = {
   id: 'appeal_general',
   title: 'Апелляционная жалоба',
   duration: { value: 1, unit: 'month' },
   anchor: { event: 'reasoned_decision_date', offset_start: 1 },
   weekend_shift: true,
+  logic:
+    'Месяц со дня принятия решения в окончательной форме. Течение — со дня, ' +
+    'следующего за днём составления мотивированного решения; истекает в ' +
+    'соответствующее число следующего месяца.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   norm: {
     primary: 'ч. 1 ст. 321 ГПК РФ',
     calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
@@ -26,13 +31,18 @@ const APPEAL_GENERAL = {
   },
 };
 
-const CASSATION_KSOYU = {
+export const CASSATION_KSOYU = {
   id: 'cassation_ksoyu',
   title: 'Кассационная жалоба в КСОЮ',
   duration: { value: 3, unit: 'month' },
   anchor: { event: 'cassation_anchor', offset_start: 1 },
   condition: 'entry_into_force.resolved',
   weekend_shift: true,
+  logic:
+    'Три месяца. Точка отсчёта (cassation_anchor) — дата вступления решения в ' +
+    'силу либо, при обжаловании, дата изготовления мотивированного ' +
+    'апелляционного определения.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   norm: {
     primary: 'ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ от 12.06.2024 № 135-ФЗ)',
     calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
