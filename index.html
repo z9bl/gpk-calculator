@@ -57,6 +57,16 @@
 
       .empty { color: var(--muted); font-size: 15px; padding: 8px 2px; }
 
+      .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+      #download-ics {
+        font: inherit; font-weight: 600; font-size: 14px;
+        color: #fff; background: var(--accent); border: none;
+        padding: 9px 16px; border-radius: 8px; cursor: pointer;
+      }
+      #download-ics:hover:not(:disabled) { background: #1a52a6; }
+      #download-ics:disabled { background: #c3ccd8; cursor: not-allowed; }
+      .toolbar-hint { color: var(--muted); font-size: 13px; }
+
       .card {
         background: var(--card);
         border: 1px solid var(--line);
@@ -151,6 +161,11 @@
         <p class="hint" id="reasoned-hint">Указана в самом решении (ч. 2 ст. 199 ГПК РФ)</p>
         <p class="field-error" id="reasoned-error"></p>
       </section>
+
+      <div class="toolbar">
+        <button id="download-ics" type="button" disabled>Скачать .ics</button>
+        <span class="toolbar-hint">Экспортируются рассчитанные сроки апелляции и кассации с напоминаниями.</span>
+      </div>
 
       <main id="results">
         <p class="empty">Введите дату мотивированного решения — появятся рассчитанные сроки.</p>
