@@ -2,6 +2,14 @@
 // логики: приложение только читает даты, вызывает buildView и рисует результат.
 
 import { buildView } from '../src/views.js';
+import { buildICS } from '../src/ics.js';
+import { APPEAL_GENERAL, CASSATION_KSOYU } from '../src/chain.js';
+
+// Метаданные экспортируемых сроков (ics/duration) — по id карточки.
+const ICS_META = {
+  [APPEAL_GENERAL.id]: APPEAL_GENERAL,
+  [CASSATION_KSOYU.id]: CASSATION_KSOYU,
+};
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
 
@@ -237,10 +245,53 @@ function renderIncompleteNode(node) {
   return box;
 }
 
+// --- Экспорт .ics -----------------------------------------------------------
+
+let currentIcsTerms = []; // рассчитанные сроки с ics:true для кнопки «Скачать»
+
+// Экспортируемые сроки из карточек: рассчитанные (есть дедлайн) и с ics:true.
+function icsTermsFromView(view) {
+  const out = [];
+  for (const card of view.cards) {
+    const meta = ICS_META[card.id];
+    if (!meta || meta.ics !== true || !card.deadline) continue;
+    out.push({
+      title: card.title,
+      deadline: card.deadline,
+      norm: card.norm,
+      ics: true,
+      duration: meta.duration,
+    });
+  }
+  return out;
+}
+
+function updateDownloadButton() {
+  const btn = document.getElementById('download-ics');
+  if (btn) btn.disabled = currentIcsTerms.length === 0;
+}
+
+function downloadICS() {
+  if (currentIcsTerms.length === 0) return;
+  const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gpk-sroki.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // --- Главный рендер ---------------------------------------------------------
 
 function render() {
   const view = buildView(state.inputs, { today });
+  currentIcsTerms = icsTermsFromView(view);
+  updateDownloadButton();
+
   const root = document.getElementById('results');
   root.textContent = '';
 
@@ -338,6 +389,9 @@ attachDateMask(reasoned, (input) => {
   state.inputs.reasoned_decision_date = iso;
   render();
 });
+
+const downloadBtn = document.getElementById('download-ics');
+if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
 
 renderStubs();
 render();
