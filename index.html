@@ -75,14 +75,11 @@
       }
       .badge.assume { background: var(--accent-soft); color: var(--accent); }
 
-      .more { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
-      .more-toggle {
+      details.more { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+      details.more > summary {
         cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 600;
-        background: none; border: none; padding: 0; font-family: inherit;
       }
-      .more-toggle::before { content: "▸ "; }
-      .more-toggle.open::before { content: "▾ "; }
-      .more-body[hidden] { display: none; }
+      details.more > summary::marker { color: var(--accent); }
       .more dl { margin: 10px 0 0; }
       .more dt { font-size: 12px; text-transform: uppercase; letter-spacing: .02em; color: var(--muted); margin-top: 8px; }
       .more dd { margin: 2px 0 0; font-size: 14px; }

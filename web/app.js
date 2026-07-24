@@ -83,20 +83,9 @@ function el(tag, cls, text) {
 // --- Рендер карточек --------------------------------------------------------
 
 function renderDetails(details) {
-  // Свой сворачиваемый блок вместо <details>/<summary>: полный контроль над
-  // раскрытием по клику, без зависимости от нативного поведения summary.
-  const wrap = el('div', 'more');
-  const btn = el('button', 'more-toggle', 'Подробнее');
-  btn.type = 'button';
-  btn.setAttribute('aria-expanded', 'false');
-  const body = el('div', 'more-body');
-  body.hidden = true; // свёрнут по умолчанию
-  btn.addEventListener('click', () => {
-    const open = body.hidden;
-    body.hidden = !open;
-    btn.classList.toggle('open', open);
-    btn.setAttribute('aria-expanded', String(open));
-  });
+  // Нативный <details>/<summary>: свёрнут по умолчанию, раскрывается по клику.
+  const wrap = el('details', 'more');
+  wrap.appendChild(el('summary', null, 'Подробнее'));
   const dl = el('dl');
   if (details.logic) {
     dl.appendChild(el('dt', null, 'Логика исчисления'));
@@ -116,9 +105,7 @@ function renderDetails(details) {
     dl.appendChild(el('dt', null, 'Отсечка 24:00 / почта'));
     dl.appendChild(el('dd', null, details.midnight_rule));
   }
-  body.appendChild(dl);
-  wrap.appendChild(btn);
-  wrap.appendChild(body);
+  wrap.appendChild(dl);
   return wrap;
 }
 
