@@ -1,0 +1,356 @@
+// Интерфейс (раздел 8, задача 4б SPEC.md). Поверх buildView, без изменения
+// логики: приложение только читает даты, вызывает buildView и рисует результат.
+
+import { buildView } from '../src/views.js';
+
+// --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
+
+const INPUT_LABELS = {
+  reasoned_decision_date: 'Дата изготовления мотивированного решения',
+  hearing_end_date: 'Дата окончания разбирательства дела',
+  appeal_filed_date: 'Дата подачи апелляционной жалобы',
+  appeal_ruling_date: 'Дата принятия апелляционного определения',
+  appeal_ruling_reasoned_date: 'Дата изготовления мотивированного апелляционного определения',
+};
+const INPUT_HINTS = {
+  appeal_filed_date: 'Если жалоба подавалась',
+  appeal_ruling_date: 'Дата оглашения апелляционного определения',
+  appeal_ruling_reasoned_date: 'Если не откладывалось — совпадает с датой принятия',
+};
+
+const CHAIN_ORDER = ['appeal_general', 'entry_into_force', 'cassation_ksoyu'];
+
+// --- Состояние --------------------------------------------------------------
+
+const state = { inputs: {} };
+const today = todayISO();
+
+// --- Даты: формат ДД.ММ.ГГГГ ↔ ISO ------------------------------------------
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function isoToRu(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+// 'ДД.ММ.ГГГГ' → 'YYYY-MM-DD' | null (с проверкой реальности даты).
+function ruToISO(str) {
+  const m = String(str).trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  const d = +m[1], mo = +m[2], y = +m[3];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
+    return null; // напр. 31.02.2025
+  }
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+function pluralDays(n) {
+  const t = n % 10, h = n % 100;
+  if (t === 1 && h !== 11) return 'день';
+  if (t >= 2 && t <= 4 && !(h >= 12 && h <= 14)) return 'дня';
+  return 'дней';
+}
+
+// Автоформатирование ввода: цифры → ДД.ММ.ГГГГ.
+function attachDateMask(input, onCommit) {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 8);
+    let out = digits;
+    if (digits.length > 4) out = `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+    else if (digits.length > 2) out = `${digits.slice(0, 2)}.${digits.slice(2)}`;
+    input.value = out;
+  });
+  input.addEventListener('change', () => onCommit(input));
+}
+
+// --- Утилиты DOM ------------------------------------------------------------
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+// --- Рендер карточек --------------------------------------------------------
+
+function renderDetails(details) {
+  // Свой сворачиваемый блок вместо <details>/<summary>: полный контроль над
+  // раскрытием по клику, без зависимости от нативного поведения summary.
+  const wrap = el('div', 'more');
+  const btn = el('button', 'more-toggle', 'Подробнее');
+  btn.type = 'button';
+  btn.setAttribute('aria-expanded', 'false');
+  const body = el('div', 'more-body');
+  body.hidden = true; // свёрнут по умолчанию
+  btn.addEventListener('click', () => {
+    const open = body.hidden;
+    body.hidden = !open;
+    btn.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  const dl = el('dl');
+  if (details.logic) {
+    dl.appendChild(el('dt', null, 'Логика исчисления'));
+    dl.appendChild(el('dd', null, details.logic));
+  }
+  if (details.calculation && details.calculation.length) {
+    dl.appendChild(el('dt', null, 'Нормы расчёта'));
+    const dd = el('dd');
+    details.calculation.forEach((c, i) => {
+      if (i) dd.appendChild(document.createTextNode(', '));
+      const code = el('code', null, c);
+      dd.appendChild(code);
+    });
+    dl.appendChild(dd);
+  }
+  if (details.midnight_rule) {
+    dl.appendChild(el('dt', null, 'Отсечка 24:00 / почта'));
+    dl.appendChild(el('dd', null, details.midnight_rule));
+  }
+  body.appendChild(dl);
+  wrap.appendChild(btn);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function renderTermCard(card, opts = {}) {
+  const c = el('div', 'card');
+  c.appendChild(el('div', 'kicker', 'Срок'));
+  const h = el('h2', null, card.title);
+  if (opts.conditionBadge) {
+    const b = el('span', 'badge assume', 'при отсутствии обжалования');
+    h.appendChild(b);
+  }
+  c.appendChild(h);
+
+  if (card.status === 'missed') {
+    c.appendChild(el('div', 'deadline missed', isoToRu(card.deadline)));
+    c.appendChild(el('div', 'norm', card.norm));
+    const days = card.overdue.days;
+    c.appendChild(
+      el('div', 'miss', `Срок пропущен на ${days} ${pluralDays(days)}. Восстановление — ${card.overdue.norm}.`),
+    );
+  } else {
+    c.appendChild(el('div', 'deadline', isoToRu(card.deadline)));
+    c.appendChild(el('div', 'norm', card.norm));
+  }
+
+  if (opts.conditionNote) {
+    c.appendChild(el('div', 'note', opts.conditionNote));
+  }
+
+  if (card.warnings) {
+    for (const w of card.warnings) c.appendChild(el('div', 'warn', w.text));
+  }
+
+  if (card.alternative) c.appendChild(renderAlternative(card));
+
+  if (card.details) c.appendChild(renderDetails(card.details));
+  return c;
+}
+
+function renderAlternative(card) {
+  const a = card.alternative;
+  const box = el('div', 'alt');
+  box.appendChild(el('div', null, 'Спорный срок: норма и разъяснение Пленума расходятся.'));
+
+  const row1 = el('div', 'row');
+  row1.appendChild(el('span', null, `По закону (${card.norm.split('(')[0].trim()})`));
+  const v1 = el('span', card.deadline === a.recommended_deadline ? 'recommended' : null, isoToRu(card.deadline));
+  row1.appendChild(v1);
+  box.appendChild(row1);
+
+  const row2 = el('div', 'row');
+  row2.appendChild(el('span', null, `По ${a.norm}`));
+  const v2 = el('span', a.deadline === a.recommended_deadline ? 'recommended' : null, isoToRu(a.deadline));
+  row2.appendChild(v2);
+  box.appendChild(row2);
+
+  box.appendChild(el('div', 'why', `${a.reason} ${a.recommendation}`));
+  return box;
+}
+
+function renderEventCard(card, opts = {}) {
+  const c = el('div', 'card');
+  c.appendChild(el('div', 'kicker', 'Событие'));
+  c.appendChild(el('h2', null, card.title));
+
+  if (card.status === 'pending') {
+    c.appendChild(el('div', 'deadline', `не ранее ${isoToRu(card.not_earlier_than)}`));
+  } else {
+    c.appendChild(el('div', 'deadline', isoToRu(card.date)));
+  }
+  c.appendChild(el('div', 'norm', card.norm));
+
+  if (opts.assumptionInvite) c.appendChild(opts.assumptionInvite);
+  if (card.note) c.appendChild(el('div', 'warn', card.note));
+  if (card.details) c.appendChild(renderDetails(card.details));
+  return c;
+}
+
+// Поле-приглашение уточнить (одно из недостающих input).
+function renderInviteField(id) {
+  const wrap = el('div', 'field');
+  const lab = el('label', null, INPUT_LABELS[id]);
+  lab.setAttribute('for', `in-${id}`);
+  wrap.appendChild(lab);
+  const input = el('input');
+  input.type = 'text';
+  input.id = `in-${id}`;
+  input.setAttribute('inputmode', 'numeric');
+  input.placeholder = 'ДД.ММ.ГГГГ';
+  input.autocomplete = 'off';
+  if (state.inputs[id]) input.value = isoToRu(state.inputs[id]);
+  wrap.appendChild(input);
+  if (INPUT_HINTS[id]) wrap.appendChild(el('p', 'hint', INPUT_HINTS[id]));
+  const err = el('p', 'field-error');
+  wrap.appendChild(err);
+
+  attachDateMask(input, (el2) => {
+    const raw = el2.value.trim();
+    if (raw === '') {
+      delete state.inputs[id];
+      err.textContent = '';
+      input.classList.remove('invalid');
+      render();
+      return;
+    }
+    const iso = ruToISO(raw);
+    if (!iso) {
+      err.textContent = 'Неверная дата. Формат ДД.ММ.ГГГГ.';
+      input.classList.add('invalid');
+      return;
+    }
+    err.textContent = '';
+    input.classList.remove('invalid');
+    state.inputs[id] = iso;
+    render();
+  });
+  return { wrap, input };
+}
+
+// Панель неполного узла: приглашение уточнить, а не пустая форма.
+function renderIncompleteNode(node) {
+  const box = el('div', 'invite');
+  box.appendChild(el('h2', null, node.title));
+  box.appendChild(el('p', 'reason', node.reason));
+  for (const m of node.missing_inputs) box.appendChild(renderInviteField(m.id).wrap);
+  if (!node.missing_inputs.length) {
+    box.appendChild(el('p', 'hint', 'Данных для расчёта пока недостаточно.'));
+  }
+  return box;
+}
+
+// --- Главный рендер ---------------------------------------------------------
+
+function render() {
+  const view = buildView(state.inputs, { today });
+  const root = document.getElementById('results');
+  root.textContent = '';
+
+  if (!state.inputs.reasoned_decision_date) {
+    root.appendChild(
+      el('p', 'empty', 'Введите дату мотивированного решения — появятся рассчитанные сроки.'),
+    );
+    return;
+  }
+
+  const cardById = (id) => view.cards.find((n) => n.id === id);
+  const incById = (id) => view.incomplete.find((n) => n.id === id);
+
+  // Ветвь not_appealed: событие разрешено, но жалоба не вводилась —
+  // расчёт держится на предположении об отсутствии обжалования.
+  const entry = cardById('entry_into_force');
+  const notAppealedAssumption =
+    !state.inputs.appeal_filed_date && entry && entry.status === 'resolved';
+
+  for (const id of CHAIN_ORDER) {
+    const card = cardById(id);
+    if (card) {
+      if (id === 'entry_into_force' && card.kind === 'event') {
+        const opts = {};
+        if (notAppealedAssumption) {
+          const invite = el('div', 'note');
+          invite.appendChild(
+            el(
+              'div',
+              null,
+              'Расчёт исходит из предположения, что апелляционная жалоба не подавалась.',
+            ),
+          );
+          const prompt = el('div', 'prompt');
+          prompt.appendChild(el('label', null, 'Жалоба подавалась? Укажите дату подачи:'));
+          prompt.appendChild(renderInviteField('appeal_filed_date').wrap);
+          invite.appendChild(prompt);
+          opts.assumptionInvite = invite;
+        }
+        root.appendChild(renderEventCard(card, opts));
+      } else if (card.kind === 'event') {
+        root.appendChild(renderEventCard(card));
+      } else {
+        const opts = {};
+        if (id === 'cassation_ksoyu' && notAppealedAssumption) {
+          opts.conditionBadge = true;
+          opts.conditionNote =
+            'Действует при том же условии — что решение не обжаловалось в апелляции.';
+        }
+        root.appendChild(renderTermCard(card, opts));
+      }
+      continue;
+    }
+    const inc = incById(id);
+    if (inc) root.appendChild(renderIncompleteNode(inc));
+  }
+}
+
+// --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------
+
+function renderStubs() {
+  const view = buildView({}, { today });
+  const root = document.getElementById('stubs');
+  root.appendChild(el('h2', null, 'Неподдерживаемые ветки'));
+  for (const s of view.stubs) {
+    const box = el('div', 'stub');
+    box.appendChild(el('h3', null, s.title));
+    box.appendChild(el('p', null, s.explanation));
+    box.appendChild(el('p', 'norm', s.norm));
+    root.appendChild(box);
+  }
+}
+
+// --- Инициализация ----------------------------------------------------------
+
+const reasoned = document.getElementById('reasoned');
+const reasonedError = document.getElementById('reasoned-error');
+attachDateMask(reasoned, (input) => {
+  const raw = input.value.trim();
+  if (raw === '') {
+    delete state.inputs.reasoned_decision_date;
+    reasonedError.textContent = '';
+    input.classList.remove('invalid');
+    render();
+    return;
+  }
+  const iso = ruToISO(raw);
+  if (!iso) {
+    reasonedError.textContent = 'Неверная дата. Формат ДД.ММ.ГГГГ.';
+    input.classList.add('invalid');
+    return;
+  }
+  reasonedError.textContent = '';
+  input.classList.remove('invalid');
+  state.inputs.reasoned_decision_date = iso;
+  render();
+});
+
+renderStubs();
+render();
