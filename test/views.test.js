@@ -106,6 +106,38 @@ test('appealed без дат определения: только апелляц
     byId(v.incomplete, 'cassation_ksoyu').missing_inputs.map((m) => m.id),
     ['appeal_ruling_reasoned_date'],
   );
+  // Оба недостающих поля должны быть доступны для ввода — каждое на своём узле,
+  // без пустых missing_inputs (иначе поле не отрисуется в UI).
+  for (const n of v.incomplete) {
+    assert.ok(n.missing_inputs.length > 0, `${n.id}: должно быть недостающее поле`);
+    for (const m of n.missing_inputs) assert.ok(m.label, `${m.id}: нужен label`);
+  }
+  const invited = v.incomplete.flatMap((n) => n.missing_inputs.map((m) => m.id));
+  assert.deepEqual(invited.sort(), ['appeal_ruling_date', 'appeal_ruling_reasoned_date']);
+});
+
+test('appealed: введена только дата принятия определения → событие рассчитано, кассация ждёт мотивированного', () => {
+  // Регрессия бага: раньше entry_into_force был incomplete с пустым
+  // missing_inputs («данных недостаточно») и поле appeal_ruling_reasoned_date
+  // висело только на кассации. Теперь дата принятия разрешает событие.
+  const v = buildView(
+    { ...BASE, appeal_filed_date: '2025-04-05', appeal_ruling_date: '2025-06-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force']);
+  assert.deepEqual(ids(v.incomplete), ['cassation_ksoyu']);
+
+  const entry = byId(v.cards, 'entry_into_force');
+  assert.equal(entry.status, 'resolved');
+  assert.equal(entry.date, '2025-06-02'); // дата принятия апелляционного определения
+
+  // Кассация ждёт именно дату изготовления мотивированного определения,
+  // и это непустое поле (а не «данных недостаточно»).
+  const cass = byId(v.incomplete, 'cassation_ksoyu');
+  assert.deepEqual(
+    cass.missing_inputs.map((m) => m.id),
+    ['appeal_ruling_reasoned_date'],
+  );
 });
 
 test('просрочка: подача позже дедлайна → статус missed, дни, ст. 112', () => {

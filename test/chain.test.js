@@ -47,6 +47,25 @@ test('2. appealed: cassation_anchor = appeal_ruling_reasoned_date; без под
   assert.notEqual(notAppealed.cassation.deadline, appealed.cassation.deadline);
 });
 
+test('appealed: дата принятия есть, мотивированного нет → событие разрешено, кассация не считается', () => {
+  const r = computeChain(
+    { ...BASE, appeal_filed_date: '2025-04-05', appeal_ruling_date: '2025-06-02' },
+    { today: '2025-07-01' },
+  );
+  assert.equal(r.entry_into_force.branch, 'appealed');
+  assert.equal(r.entry_into_force.resolved, true);
+  assert.equal(r.entry_into_force.date, '2025-06-02'); // = дата принятия определения
+  assert.equal(r.cassation, null); // нет точки отсчёта (мотивированное определение)
+});
+
+test('appealed: жалоба подана, дат определения нет → событие не разрешено, без throw', () => {
+  const r = computeChain({ ...BASE, appeal_filed_date: '2025-04-05' }, { today: '2025-07-01' });
+  assert.equal(r.entry_into_force.branch, 'appealed');
+  assert.equal(r.entry_into_force.resolved, false);
+  assert.equal(r.entry_into_force.date, null);
+  assert.equal(r.cassation, null);
+});
+
 test('3. pending: срок ещё течёт → кассация не считается, «вступит в силу не ранее …»', () => {
   const r = computeChain(BASE, { today: '2025-04-01' }); // до дедлайна апелляции
   assert.equal(r.entry_into_force.branch, 'pending');
