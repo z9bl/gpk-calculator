@@ -149,10 +149,26 @@ function renderTermCard(card, opts = {}) {
     for (const w of card.warnings) c.appendChild(el('div', 'warn', w.text));
   }
 
+  if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
+
   if (card.alternative) c.appendChild(renderAlternative(card));
 
   if (card.details) c.appendChild(renderDetails(card.details));
   return c;
+}
+
+function renderBoundaryWarning(bw) {
+  const box = el('div', 'warn');
+  box.appendChild(
+    el(
+      'div',
+      null,
+      `По прежней редакции срок истёк ${isoToRu(bw.prev_redaction_deadline)}; ` +
+        `по действующей (с ${isoToRu(bw.cutoff)}) истекает ${isoToRu(bw.current_deadline)}.`,
+    ),
+  );
+  box.appendChild(el('div', null, bw.reason));
+  return box;
 }
 
 function renderAlternative(card) {

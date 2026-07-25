@@ -206,6 +206,37 @@ function cassationDeadline(anchorSpec, anchorDate) {
   );
 }
 
+// Пограничное окно редакций. Если действует более поздняя редакция (по дате
+// подачи), но по прежней срок истёк ещё до отсечки (её вступления в силу), а по
+// действующей — уже после, отсечка попадает между датами. Переходных положений
+// у ФЗ № 135-ФЗ нет — вопрос о применимой редакции спорный. Расчёт остаётся по
+// действующей редакции, но показываются обе даты (раздел 10 SPEC.md).
+function boundaryWarning(versions, version, inputs, entry, currentDeadline) {
+  const idx = versions.indexOf(version);
+  if (idx <= 0) return null; // действует самая ранняя редакция — окна нет
+  const prev = versions[idx - 1];
+  const cutoff = version.from; // граница = дата вступления редакции в силу
+  if (cutoff == null) return null;
+
+  const prevAnchor = resolveCassationAnchor(prev, inputs, entry);
+  if (prevAnchor == null) return null;
+  const prevDeadline = cassationDeadline(prev.anchor, prevAnchor).deadline;
+
+  // Отсечка между датами: прежняя истекла до неё, действующая — на/после.
+  if (prevDeadline < cutoff && currentDeadline >= cutoff) {
+    return {
+      cutoff,
+      prev_version_id: prev.id,
+      prev_redaction_deadline: prevDeadline,
+      current_deadline: currentDeadline,
+      reason:
+        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
+        'редакции спорный.',
+    };
+  }
+  return null;
+}
+
 // referenceDate — текущая дата (ISO) для выбора редакции, если не введена дата
 // подачи кассационной жалобы.
 function computeCassation(inputs, entry, referenceDate) {
@@ -261,6 +292,17 @@ function computeCassation(inputs, entry, referenceDate) {
       };
     }
   }
+
+  // Пограничное окно редакций (раздел 10 SPEC.md) — расчёт не меняем, показываем
+  // обе даты.
+  const bw = boundaryWarning(
+    CASSATION_KSOYU.norm_versions,
+    version,
+    inputs,
+    entry,
+    primary.deadline,
+  );
+  if (bw) result.boundary_warning = bw;
 
   return result;
 }
