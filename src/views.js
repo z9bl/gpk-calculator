@@ -8,7 +8,14 @@
 // которых достаточно введённых данных; остальные попадают в `incomplete` с
 // причиной и названиями недостающих input, а не пустыми полями.
 
-import { computeChain, APPEAL_GENERAL, CASSATION_KSOYU, cassationVersionFor } from './chain.js';
+import {
+  computeChain,
+  APPEAL_GENERAL,
+  CASSATION_KSOYU,
+  CASSATION_VS,
+  cassationVersionFor,
+  vsCassationVersionFor,
+} from './chain.js';
 import { computeDeadline } from './engine.js';
 import { toISODate } from './calendar.js';
 
@@ -20,6 +27,9 @@ const INPUT_LABELS = {
   appeal_ruling_date: 'Дата принятия апелляционного определения',
   appeal_ruling_reasoned_date: 'Дата изготовления мотивированного апелляционного определения',
   cassation_filed_date: 'Дата подачи кассационной жалобы',
+  ksoyu_ruling_date: 'Дата вынесения определения КСОЮ',
+  ksoyu_ruling_reasoned_date: 'Дата изготовления мотивированного определения КСОЮ',
+  vs_cassation_filed_date: 'Дата подачи кассационной жалобы в ВС РФ',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки.
@@ -157,9 +167,10 @@ function eventCard(entry) {
   return card;
 }
 
+// Карточка кассационного срока (КСОЮ и ВС — одинаковая структура).
 function cassationCard(cassation) {
   const card = {
-    id: 'cassation_ksoyu',
+    id: cassation.id,
     kind: 'term',
     title: cassation.title,
     status: 'computed',
@@ -170,7 +181,7 @@ function cassationCard(cassation) {
       collapsed: true,
       logic: cassation.logic, // логика той же редакции
       calculation: cassation.norm.calculation,
-      midnight_rule: CASSATION_KSOYU.midnight_rule,
+      midnight_rule: cassation.midnight_rule,
     },
   };
   if (cassation.alternative) card.alternative = cassation.alternative;
@@ -274,6 +285,34 @@ function buildDownstream(inputs, today) {
       ),
     );
   }
+
+  // Кассация в ВС РФ (ст. 390.3) — узел появляется только после ввода даты
+  // определения КСОЮ (condition: ksoyu_ruling_date).
+  if (toISO(inputs.ksoyu_ruling_date) != null) {
+    if (chain.cassation_vs) {
+      cards.push(cassationCard(chain.cassation_vs));
+    } else {
+      // Не считается — действует новая редакция, нужна дата мотивированного
+      // определения КСОЮ (прежняя редакция считается от даты вынесения, которая
+      // уже введена, поэтому сюда попадает только новая).
+      const effVs = toISO(inputs.vs_cassation_filed_date) ?? today;
+      const vsVersion = vsCassationVersionFor(effVs);
+      const missing =
+        vsVersion.anchor.event === 'ksoyu_ruling_reasoned'
+          ? ['ksoyu_ruling_reasoned_date']
+          : ['ksoyu_ruling_date'];
+      incomplete.push(
+        incompleteNode(
+          'cassation_vs',
+          'term',
+          CASSATION_VS.title,
+          'Кассационный срок в ВС (редакция с 01.09.2024) считается от даты изготовления мотивированного определения КСОЮ.',
+          missingInputs(missing, inputs),
+        ),
+      );
+    }
+  }
+
   return { cards, incomplete };
 }
 
