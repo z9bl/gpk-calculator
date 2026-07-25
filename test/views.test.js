@@ -114,6 +114,24 @@ test('прежняя редакция: карточка кассации счи�
   assert.equal(cass.alternative, undefined);
 });
 
+test('пограничное окно: карточка кассации несёт boundary_warning с обеими датами', () => {
+  const v = buildView(
+    {
+      reasoned_decision_date: '2024-03-01',
+      appeal_filed_date: '2024-03-20',
+      appeal_ruling_date: '2024-05-15',
+      appeal_ruling_reasoned_date: '2024-06-20',
+      cassation_filed_date: '2024-09-15',
+    },
+    { today: '2024-10-01' },
+  );
+  const cass = byId(v.cards, 'cassation_ksoyu');
+  assert.ok(cass.boundary_warning);
+  assert.equal(cass.boundary_warning.prev_redaction_deadline, '2024-08-15');
+  assert.equal(cass.boundary_warning.current_deadline, '2024-09-20');
+  assert.equal(cass.deadline, '2024-09-20'); // расчёт — по действующей редакции
+});
+
 test('новая редакция: норма — абз. 2 ч. 1 ст. 376.1', () => {
   const v = buildView(
     {

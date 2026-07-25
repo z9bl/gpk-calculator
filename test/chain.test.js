@@ -219,3 +219,69 @@ test('без даты подачи кассации редакция выбир�
   assert.equal(computeChain(inputs, { today: '2024-08-15' }).cassation.version_id, 'before_135fz');
   assert.equal(computeChain(inputs, { today: '2025-01-15' }).cassation.version_id, 'from_135fz');
 });
+
+// --- Пограничное окно редакций (отсечка между датами) -----------------------
+
+test('окно: прежний срок истёк до 01.09.2024, подача после → предупреждение с обеими датами', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-03-01',
+      appeal_filed_date: '2024-03-20',
+      appeal_ruling_date: '2024-05-15', // прежняя: 15.05 + 3 мес = 15.08.2024 (до отсечки)
+      appeal_ruling_reasoned_date: '2024-06-20', // новая: 20.06 + 3 мес = 20.09.2024 (после)
+      cassation_filed_date: '2024-09-15', // подача после отсечки → действует новая
+    },
+    { today: '2024-10-01' },
+  );
+  assert.equal(r.cassation.version_id, 'from_135fz');
+  assert.equal(r.cassation.deadline, '2024-09-20'); // расчёт по действующей редакции
+  assert.ok(r.cassation.boundary_warning);
+  assert.equal(r.cassation.boundary_warning.prev_redaction_deadline, '2024-08-15');
+  assert.equal(r.cassation.boundary_warning.current_deadline, '2024-09-20');
+  assert.equal(r.cassation.boundary_warning.cutoff, '2024-09-01');
+});
+
+test('нет окна: обе даты после 01.09.2024 → без предупреждения', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-05-01',
+      appeal_filed_date: '2024-05-20',
+      appeal_ruling_date: '2024-07-01', // прежняя: 01.10.2024
+      appeal_ruling_reasoned_date: '2024-07-10', // новая: 10.10.2024
+      cassation_filed_date: '2024-11-01',
+    },
+    { today: '2024-12-01' },
+  );
+  assert.equal(r.cassation.version_id, 'from_135fz');
+  assert.equal(r.cassation.boundary_warning, undefined);
+});
+
+test('нет окна: обе даты до 01.09.2024 → без предупреждения', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-02-01',
+      appeal_filed_date: '2024-02-20',
+      appeal_ruling_date: '2024-04-01', // прежняя: 01.07.2024
+      appeal_ruling_reasoned_date: '2024-05-01', // новая: 01.08.2024
+      cassation_filed_date: '2024-09-15', // действует новая, но обе даты до отсечки
+    },
+    { today: '2024-10-01' },
+  );
+  assert.equal(r.cassation.version_id, 'from_135fz');
+  assert.equal(r.cassation.boundary_warning, undefined);
+});
+
+test('нет окна: действует прежняя редакция (подача до отсечки)', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-03-01',
+      appeal_filed_date: '2024-03-20',
+      appeal_ruling_date: '2024-05-15',
+      appeal_ruling_reasoned_date: '2024-06-20',
+      cassation_filed_date: '2024-08-20', // прежняя редакция действует
+    },
+    { today: '2024-10-01' },
+  );
+  assert.equal(r.cassation.version_id, 'before_135fz');
+  assert.equal(r.cassation.boundary_warning, undefined);
+});

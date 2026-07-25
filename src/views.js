@@ -174,6 +174,7 @@ function cassationCard(cassation) {
     },
   };
   if (cassation.alternative) card.alternative = cassation.alternative;
+  if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
   return card;
 }
 
