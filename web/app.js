@@ -19,11 +19,13 @@ const INPUT_LABELS = {
   appeal_filed_date: 'Дата подачи апелляционной жалобы',
   appeal_ruling_date: 'Дата принятия апелляционного определения',
   appeal_ruling_reasoned_date: 'Дата изготовления мотивированного апелляционного определения',
+  cassation_filed_date: 'Дата подачи кассационной жалобы',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
   appeal_ruling_date: 'Дата оглашения апелляционного определения',
   appeal_ruling_reasoned_date: 'Если не откладывалось — совпадает с датой принятия',
+  cassation_filed_date: 'Определяет редакцию нормы (отсечка 01.09.2024); по умолчанию — текущая дата',
 };
 
 const CHAIN_ORDER = ['appeal_general', 'entry_into_force', 'cassation_ksoyu'];
@@ -341,13 +343,30 @@ function render() {
           opts.conditionNote =
             'Действует при том же условии — что решение не обжаловалось в апелляции.';
         }
-        root.appendChild(renderTermCard(card, opts));
+        const termEl = renderTermCard(card, opts);
+        if (id === 'cassation_ksoyu') termEl.appendChild(renderRedactionField());
+        root.appendChild(termEl);
       }
       continue;
     }
     const inc = incById(id);
-    if (inc) root.appendChild(renderIncompleteNode(inc));
+    if (inc) {
+      const incEl = renderIncompleteNode(inc);
+      if (id === 'cassation_ksoyu') incEl.appendChild(renderRedactionField());
+      root.appendChild(incEl);
+    }
   }
+}
+
+// Необязательное поле даты подачи кассации — выбирает редакцию нормы
+// (ч. 3 ст. 1 ГПК). Без него редакция берётся по текущей дате.
+function renderRedactionField() {
+  const box = el('div', 'note');
+  box.appendChild(
+    el('div', null, 'Редакция нормы — по дате подачи кассационной жалобы (иначе по текущей дате).'),
+  );
+  box.appendChild(renderInviteField('cassation_filed_date').wrap);
+  return box;
 }
 
 // --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------

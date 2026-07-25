@@ -125,3 +125,97 @@ test('5b. alternative_calculation: reasoned > ruling → обе даты, prefer
 test('пропуск текущей даты для ветви not_appealed/pending — явная ошибка', () => {
   assert.throws(() => computeChain(BASE), /текущая дата/);
 });
+
+// --- Темпоральная модель нормы (ч. 3 ст. 1 ГПК) -----------------------------
+
+test('прежняя редакция: реальное дело — подача 07.07.2023, определение 12.04.2023 → 12.07.2023', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2023-02-01',
+      appeal_filed_date: '2023-03-01',
+      appeal_ruling_date: '2023-04-12', // апелляционное определение принято
+      cassation_filed_date: '2023-07-07', // подача до 01.09.2024 → прежняя редакция
+    },
+    { today: '2023-07-20' },
+  );
+  assert.equal(r.cassation.version_id, 'before_135fz');
+  // Три месяца со дня вступления в силу (= даты принятия определения).
+  assert.equal(r.cassation.anchor, '2023-04-12');
+  assert.equal(r.cassation.deadline, '2023-07-12'); // жалоба 07.07 подана в срок
+  assert.equal(r.cassation.alternative, undefined); // до 01.09.2024 расхождения нет
+});
+
+test('прежняя редакция считается без даты мотивированного определения', () => {
+  // Точка отсчёта прежней редакции — вступление в силу, reasoned не нужен.
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2023-02-01',
+      appeal_filed_date: '2023-03-01',
+      appeal_ruling_date: '2023-04-12',
+      cassation_filed_date: '2023-07-07',
+    },
+    { today: '2023-07-20' },
+  );
+  assert.ok(r.cassation);
+  assert.equal(r.cassation.deadline, '2023-07-12');
+});
+
+test('новая редакция: подача после 01.09.2024 → отсчёт от мотивированного определения', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-05-01',
+      appeal_filed_date: '2024-05-15',
+      appeal_ruling_date: '2024-06-02',
+      appeal_ruling_reasoned_date: '2024-06-10',
+      cassation_filed_date: '2024-10-01',
+    },
+    { today: '2024-10-05' },
+  );
+  assert.equal(r.cassation.version_id, 'from_135fz');
+  assert.equal(r.cassation.anchor, '2024-06-10'); // мотивированное определение
+  assert.equal(r.cassation.deadline, '2024-09-10');
+  assert.ok(r.cassation.alternative); // конфликт с ПП ВС № 17 существует
+  assert.equal(r.cassation.alternative.deadline, '2024-09-02');
+});
+
+test('alternative_calculation не появляется для подач до 01.09.2024 даже при разных датах определения', () => {
+  const r = computeChain(
+    {
+      reasoned_decision_date: '2024-04-01',
+      appeal_filed_date: '2024-04-10',
+      appeal_ruling_date: '2024-06-02',
+      appeal_ruling_reasoned_date: '2024-06-10', // отличается от принятия
+      cassation_filed_date: '2024-08-31', // последний день прежней редакции
+    },
+    { today: '2024-09-05' },
+  );
+  assert.equal(r.cassation.version_id, 'before_135fz');
+  assert.equal(r.cassation.alternative, undefined);
+  assert.equal(r.cassation.anchor, '2024-06-02'); // от вступления в силу, не от мотивированного
+});
+
+test('граница редакций: 31.08.2024 → прежняя, 01.09.2024 → новая', () => {
+  const base = {
+    reasoned_decision_date: '2024-01-01',
+    appeal_filed_date: '2024-02-01',
+    appeal_ruling_date: '2024-06-02',
+    appeal_ruling_reasoned_date: '2024-06-10',
+  };
+  const before = computeChain({ ...base, cassation_filed_date: '2024-08-31' }, { today: '2024-12-01' });
+  const after = computeChain({ ...base, cassation_filed_date: '2024-09-01' }, { today: '2024-12-01' });
+  assert.equal(before.cassation.version_id, 'before_135fz');
+  assert.equal(before.cassation.anchor, '2024-06-02'); // вступление в силу
+  assert.equal(after.cassation.version_id, 'from_135fz');
+  assert.equal(after.cassation.anchor, '2024-06-10'); // мотивированное определение
+});
+
+test('без даты подачи кассации редакция выбирается по текущей дате', () => {
+  const inputs = {
+    reasoned_decision_date: '2024-01-01',
+    appeal_filed_date: '2024-02-01',
+    appeal_ruling_date: '2024-06-02',
+    appeal_ruling_reasoned_date: '2024-06-10',
+  };
+  assert.equal(computeChain(inputs, { today: '2024-08-15' }).cassation.version_id, 'before_135fz');
+  assert.equal(computeChain(inputs, { today: '2025-01-15' }).cassation.version_id, 'from_135fz');
+});
