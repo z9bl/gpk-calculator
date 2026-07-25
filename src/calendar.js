@@ -77,7 +77,11 @@ function buildYear(year) {
 
   // Шаги 3–4 и 6: переносы Правительства на конкретный год.
   const yearData = calendarData[String(year)];
-  const preliminary = !yearData; // года без постановления (п. 5.4 SPEC.md)
+  // Три уровня достоверности (п. 5.4 SPEC.md): постановление принято →
+  // окончательно; draft: true → переносы из проекта постановления; данных нет
+  // → предварительно по ст. 111–112 ТК без переносов.
+  const preliminary = !yearData;
+  const draft = !!(yearData && yearData.draft);
   const donors = new Set();
   if (yearData && Array.isArray(yearData.transfers)) {
     for (const { from, to } of yearData.transfers) {
@@ -106,7 +110,7 @@ function buildYear(year) {
     nonWorking.add(toKey(next));
   }
 
-  return { nonWorking, preliminary };
+  return { nonWorking, preliminary, draft };
 }
 
 function getYear(year) {
@@ -170,14 +174,63 @@ export function shiftBackIfNonWorking(date) {
 }
 
 /**
- * Сведения о календаре года.
+ * Уровень достоверности календаря года (три уровня, п. 5.4 SPEC.md).
  * @param {number} year
- * @returns {{ preliminary: boolean }} preliminary=true — постановление о
- *   переносах на этот год не издано (расчёт по шагам 1, 2, 5), см. п. 5.4.
+ * @returns {{ level: 'final'|'draft'|'preliminary', preliminary: boolean, draft: boolean }}
+ *   final — постановление принято; draft — расчёт по проекту постановления
+ *   (флаг draft в данных); preliminary — данных нет (ст. 111–112 ТК без переносов).
  */
 export function getYearInfo(year) {
-  const { preliminary } = getYear(year);
-  return { preliminary };
+  const { preliminary, draft } = getYear(year);
+  const level = preliminary ? 'preliminary' : draft ? 'draft' : 'final';
+  return { level, preliminary, draft };
+}
+
+// Зона риска переносов (п. 5.4 SPEC.md). Для окончательного календаря — нет
+// зоны (расчёт точный). Для предварительного — окрестности январских каникул и
+// майских праздников. Для draft-года зона шире: проект добавляет переносы в
+// начало ноября (02.01 → 05.11) и конец декабря (03.01 → 31.12).
+function isInRiskZone(month, day, draft) {
+  const januaryVicinity = (month === 1 && day <= 15) || (month === 12 && day >= 25);
+  const mayVicinity = (month === 5 && day <= 15) || (month === 4 && day >= 25);
+  if (januaryVicinity || mayVicinity) return true;
+  if (draft) {
+    const novemberVicinity = month === 11 && day <= 10;
+    const decemberVicinity = month === 12 && day >= 20;
+    if (novemberVicinity || decemberVicinity) return true;
+  }
+  return false;
+}
+
+/**
+ * Примечание о достоверности расчёта для итоговой даты (зональное правило 5.4).
+ * Возвращает null, если год окончательный или дата вне зоны возможных переносов.
+ * @param {Date|string} date
+ * @returns {{ level:'draft'|'preliminary', year:number, text:string } | null}
+ */
+export function calendarNote(date) {
+  const dt = normalize(date);
+  const year = dt.getUTCFullYear();
+  const { preliminary, draft } = getYear(year);
+  if (!preliminary && !draft) return null; // окончательный календарь
+  if (!isInRiskZone(dt.getUTCMonth() + 1, dt.getUTCDate(), draft)) return null;
+  if (draft) {
+    return {
+      level: 'draft',
+      year,
+      text:
+        `Предварительно: расчёт по проекту постановления Правительства о ` +
+        `переносах выходных на ${year} год. Постановление не принято — даты ` +
+        `переносов, а с ними и этот срок, могут измениться.`,
+    };
+  }
+  return {
+    level: 'preliminary',
+    year,
+    text:
+      `Предварительно: постановление о переносах выходных на ${year} год не ` +
+      `издано. Расчёт по ст. 111–112 ТК без переносов — итоговая дата может измениться.`,
+  };
 }
 
 export { toKey as toISODate };

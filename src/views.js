@@ -44,7 +44,7 @@ const ENFORCEMENT_STUBS = [
   },
 ];
 import { computeDeadline } from './engine.js';
-import { toISODate } from './calendar.js';
+import { toISODate, calendarNote } from './calendar.js';
 
 // Названия input (п. 4.1 SPEC.md) для списка «что ещё можно уточнить».
 const INPUT_LABELS = {
@@ -127,7 +127,7 @@ function incompleteNode(id, kind, title, reason, missing) {
 
 function termCard(term, calc) {
   const version = term.norm_versions[0]; // одноверсионный срок (апелляция)
-  return {
+  const card = {
     id: term.id,
     kind: 'term',
     title: term.title,
@@ -141,6 +141,14 @@ function termCard(term, calc) {
       midnight_rule: term.midnight_rule,
     },
   };
+  attachCalendarWarning(card);
+  return card;
+}
+
+// Примечание о достоверности календаря (draft/preliminary год + зона переносов).
+function attachCalendarWarning(card) {
+  const note = calendarNote(card.deadline);
+  if (note) card.calendar_warning = note;
 }
 
 function buildAppealCard(inputs) {
@@ -213,6 +221,28 @@ function cassationCard(cassation) {
   };
   if (cassation.alternative) card.alternative = cassation.alternative;
   if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
+  attachCalendarWarning(card);
+  return card;
+}
+
+// Карточка срока предъявления ИЛ. Рядом — заглушки по смежным случаям (в card.stubs).
+function enforcementCard(enf) {
+  const card = {
+    id: enf.id,
+    kind: 'term',
+    title: enf.title,
+    status: 'computed',
+    deadline: enf.deadline,
+    norm: enf.norm.primary,
+    details: {
+      collapsed: true,
+      logic: enf.logic,
+      calculation: enf.norm.calculation,
+      midnight_rule: enf.midnight_rule,
+    },
+    stubs: ENFORCEMENT_STUBS,
+  };
+  attachCalendarWarning(card);
   return card;
 }
 
