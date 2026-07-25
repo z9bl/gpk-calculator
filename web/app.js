@@ -168,6 +168,8 @@ function renderTermCard(card, opts = {}) {
     for (const w of card.warnings) c.appendChild(el('div', 'warn', w.text));
   }
 
+  if (card.calendar_warning) c.appendChild(el('div', 'warn', card.calendar_warning.text));
+
   if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
 
   if (card.alternative) c.appendChild(renderAlternative(card));

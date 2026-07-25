@@ -1,4 +1,5 @@
-// Тест календарного модуля: 84/84 контрольных месяца (п. 5.3 SPEC.md).
+// Тест календарного модуля: 96/96 контрольных месяца (п. 5.3 SPEC.md) —
+// 2020–2026 (постановления приняты) + 2027 (draft, по проекту постановления).
 // Любое расхождение с checksums в calendar_data.json — ошибка алгоритма
 // или данных, релиз блокируется.
 
@@ -6,13 +7,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { isWorkingDay, shiftIfNonWorking, toISODate } from '../src/calendar.js';
+import {
+  isWorkingDay,
+  shiftIfNonWorking,
+  toISODate,
+  getYearInfo,
+  calendarNote,
+} from '../src/calendar.js';
 
 const calendarData = JSON.parse(
   readFileSync(new URL('../calendar_data.json', import.meta.url), 'utf8'),
 );
 
-test('84/84 контрольных месяца совпадают с checksums', () => {
+test('96/96 контрольных месяца совпадают с checksums', () => {
   let monthsChecked = 0;
 
   for (const year of Object.keys(calendarData)) {
@@ -40,7 +47,7 @@ test('84/84 контрольных месяца совпадают с checksums'
     }
   }
 
-  assert.equal(monthsChecked, 84, 'должно быть проверено ровно 84 месяца');
+  assert.equal(monthsChecked, 96, 'должно быть проверено ровно 96 месяцев');
 });
 
 test('isWorkingDay принимает и Date, и строку', () => {
@@ -63,4 +70,34 @@ test('shiftIfNonWorking переносит на следующий рабочи�
   const shifted = shiftIfNonWorking(new Date(Date.UTC(2021, 5, 12)));
   assert.ok(shifted instanceof Date);
   assert.equal(toISODate(shifted), '2021-06-15');
+});
+
+test('три уровня достоверности календаря (п. 5.4)', () => {
+  assert.equal(getYearInfo(2025).level, 'final'); // постановление принято
+  assert.equal(getYearInfo(2027).level, 'draft'); // проект постановления
+  assert.equal(getYearInfo(2028).level, 'preliminary'); // данных нет
+});
+
+test('calendarNote: окончательный год — примечания нет', () => {
+  assert.equal(calendarNote('2025-01-05'), null);
+  assert.equal(calendarNote('2025-05-04'), null);
+});
+
+test('calendarNote draft (2027): зона включает янв./май + начало ноября и конец декабря', () => {
+  assert.equal(calendarNote('2027-01-10').level, 'draft'); // январские каникулы
+  assert.equal(calendarNote('2027-05-05').level, 'draft'); // майские
+  assert.equal(calendarNote('2027-11-05').level, 'draft'); // перенос 02.01 → 05.11
+  assert.equal(calendarNote('2027-12-22').level, 'draft'); // расширенная зона конца декабря
+  assert.equal(calendarNote('2027-12-31').level, 'draft'); // перенос 03.01 → 31.12
+  assert.match(calendarNote('2027-01-10').text, /проект/);
+  assert.equal(calendarNote('2027-07-15'), null); // вне зоны
+});
+
+test('calendarNote preliminary (2028+): зона уже — без начала ноября и середины декабря', () => {
+  assert.equal(calendarNote('2028-01-10').level, 'preliminary');
+  assert.equal(calendarNote('2028-05-05').level, 'preliminary');
+  assert.match(calendarNote('2028-01-10').text, /не издано/);
+  // draft-специфичные окрестности (начало ноября, 20–24 декабря) — вне зоны:
+  assert.equal(calendarNote('2028-11-05'), null);
+  assert.equal(calendarNote('2028-12-22'), null);
 });
