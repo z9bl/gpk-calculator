@@ -174,49 +174,22 @@ function cassationCard(cassation) {
   return card;
 }
 
+const ENTRY_TITLE = 'Вступление решения в законную силу';
+
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
 function buildDownstream(inputs, today) {
   const cards = [];
   const incomplete = [];
   const appealed = inputs.appeal_filed_date != null;
 
-  if (appealed) {
-    const haveRuling = inputs.appeal_ruling_date != null;
-    const haveReasoned = inputs.appeal_ruling_reasoned_date != null;
-    if (haveRuling && haveReasoned) {
-      const chain = computeChain(inputs, { today });
-      cards.push(eventCard(chain.entry_into_force));
-      cards.push(cassationCard(chain.cassation));
-    } else {
-      incomplete.push(
-        incompleteNode(
-          'entry_into_force',
-          'event',
-          'Вступление решения в законную силу',
-          'Обжаловано — для даты вступления в силу нужна дата апелляционного определения.',
-          missingInputs(['appeal_ruling_date'], inputs),
-        ),
-      );
-      incomplete.push(
-        incompleteNode(
-          'cassation_ksoyu',
-          'term',
-          CASSATION_KSOYU.title,
-          'Кассационный срок считается от даты мотивированного апелляционного определения.',
-          missingInputs(['appeal_ruling_reasoned_date'], inputs),
-        ),
-      );
-    }
-    return { cards, incomplete };
-  }
-
-  // Не обжаловано: для разрешения события нужна текущая дата.
-  if (today == null) {
+  // Не обжаловано без текущей даты — событие не определить (ни not_appealed,
+  // ни pending), обе ветки цепочки нельзя показать.
+  if (!appealed && today == null) {
     incomplete.push(
       incompleteNode(
         'entry_into_force',
         'event',
-        'Вступление решения в законную силу',
+        ENTRY_TITLE,
         'Не указана текущая дата — нельзя определить, истёк ли срок обжалования.',
         [],
       ),
@@ -234,11 +207,41 @@ function buildDownstream(inputs, today) {
   }
 
   const chain = computeChain(inputs, { today });
-  cards.push(eventCard(chain.entry_into_force));
+  const entry = chain.entry_into_force;
+
+  // Событие. Ветви not_appealed/pending — всегда карточка (pending информативна:
+  // «вступит в силу не ранее …»). Ветвь appealed — карточка, когда известна дата
+  // принятия апелляционного определения; иначе приглашение её ввести.
+  if (entry.branch === 'appealed' && entry.date == null) {
+    incomplete.push(
+      incompleteNode(
+        'entry_into_force',
+        'event',
+        ENTRY_TITLE,
+        'Обжаловано — для даты вступления в силу нужна дата принятия апелляционного определения.',
+        missingInputs(['appeal_ruling_date'], inputs),
+      ),
+    );
+  } else {
+    cards.push(eventCard(entry));
+  }
+
+  // Кассация.
   if (chain.cassation) {
     cards.push(cassationCard(chain.cassation));
+  } else if (appealed) {
+    // Для расчёта нужна дата изготовления мотивированного определения.
+    incomplete.push(
+      incompleteNode(
+        'cassation_ksoyu',
+        'term',
+        CASSATION_KSOYU.title,
+        'Кассационный срок считается от даты изготовления мотивированного апелляционного определения.',
+        missingInputs(['appeal_ruling_reasoned_date'], inputs),
+      ),
+    );
   } else {
-    // pending: событие не разрешено (condition entry_into_force.resolved).
+    // pending: срок обжалования ещё не истёк — можно указать дату подачи жалобы.
     incomplete.push(
       incompleteNode(
         'cassation_ksoyu',

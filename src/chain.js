@@ -80,18 +80,17 @@ function resolveEntryIntoForce(inputs, appealDeadline, today) {
   const appealFiled = toISO(inputs.appeal_filed_date);
 
   // Ветвь appealed: when = appeal_filed_date != null. От текущей даты не зависит.
+  // Дата события — дата принятия апелляционного определения (appeal_ruling_date);
+  // событие считается разрешённым, как только она известна. Точка отсчёта
+  // кассации (cassation_anchor) — дата изготовления мотивированного определения,
+  // она может отсутствовать: тогда кассация не считается, но событие разрешено.
   if (appealFiled != null) {
+    const ruling = toISO(inputs.appeal_ruling_date);
     const reasoned = toISO(inputs.appeal_ruling_reasoned_date);
-    if (reasoned == null) {
-      throw new Error(
-        'Для обжалованного решения нужна дата изготовления мотивированного ' +
-          'апелляционного определения (appeal_ruling_reasoned_date)',
-      );
-    }
     return {
       branch: 'appealed',
-      resolved: true,
-      date: toISO(inputs.appeal_ruling_date),
+      resolved: ruling != null,
+      date: ruling,
       // sets: { cassation_anchor: appeal_ruling_reasoned_date }
       cassation_anchor: reasoned,
       logic:
@@ -143,6 +142,9 @@ function computeCassation(inputs, entry) {
   if (!entry.resolved) return null;
 
   const anchor = entry.cassation_anchor;
+  // Нет точки отсчёта (для appealed — не введена дата мотивированного
+  // определения): событие разрешено, но кассационный срок ещё не считается.
+  if (anchor == null) return null;
   const primary = computeDeadline(CASSATION_KSOYU, anchor);
 
   const result = {
