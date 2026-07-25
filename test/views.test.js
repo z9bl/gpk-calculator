@@ -132,6 +132,49 @@ test('пограничное окно: карточка кассации нес�
   assert.equal(cass.deadline, '2024-09-20'); // расчёт — по действующей редакции
 });
 
+test('узел кассации в ВС появляется только после даты определения КСОЮ', () => {
+  const withoutKsoyu = buildView(
+    { ...BASE, appeal_filed_date: '2025-04-05', appeal_ruling_date: '2025-06-02', appeal_ruling_reasoned_date: '2025-06-02' },
+    { today: '2025-07-01' },
+  );
+  const allIds = [...withoutKsoyu.cards, ...withoutKsoyu.incomplete].map((n) => n.id);
+  assert.ok(!allIds.includes('cassation_vs'), 'без даты определения КСОЮ узла ВС нет');
+
+  // Прежняя редакция (подача в ВС до 01.09.2024) → узел считается сразу от даты вынесения.
+  const withKsoyu = buildView(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-02',
+      ksoyu_ruling_date: '2024-04-12',
+      vs_cassation_filed_date: '2024-07-01',
+    },
+    { today: '2025-07-01' },
+  );
+  const vs = byId(withKsoyu.cards, 'cassation_vs');
+  assert.ok(vs, 'с датой определения КСОЮ появляется карточка ВС');
+  assert.equal(vs.version_id, 'before_135fz');
+  assert.match(vs.norm, /390\.3/);
+  assert.equal(vs.deadline, '2024-07-12');
+});
+
+test('узел ВС, новая редакция без мотивированного определения КСОЮ → incomplete', () => {
+  const v = buildView(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-02',
+      ksoyu_ruling_date: '2025-05-01', // подача по умолчанию сегодня (2025) → новая редакция
+    },
+    { today: '2025-07-01' },
+  );
+  const vsInc = byId(v.incomplete, 'cassation_vs');
+  assert.ok(vsInc);
+  assert.deepEqual(vsInc.missing_inputs.map((m) => m.id), ['ksoyu_ruling_reasoned_date']);
+});
+
 test('новая редакция: норма — абз. 2 ч. 1 ст. 376.1', () => {
   const v = buildView(
     {

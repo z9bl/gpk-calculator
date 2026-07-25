@@ -285,3 +285,109 @@ test('нет окна: действует прежняя редакция (по�
   assert.equal(r.cassation.version_id, 'before_135fz');
   assert.equal(r.cassation.boundary_warning, undefined);
 });
+
+// --- Кассация в Судебную коллегию ВС РФ (ст. 390.3) --------------------------
+
+// Минимальный набор для узла ВС: цепочка до кассации не важна, нужна лишь дата
+// определения КСОЮ. reasoned_decision_date обязателен для computeChain.
+const VS_BASE = { reasoned_decision_date: '2023-01-01' };
+
+test('узел ВС отсутствует без даты определения КСОЮ (condition)', () => {
+  const r = computeChain(VS_BASE, { today: '2025-01-01' });
+  assert.equal(r.cassation_vs, null);
+});
+
+test('ВС, прежняя редакция: отсчёт от даты вынесения определения КСОЮ', () => {
+  const r = computeChain(
+    { ...VS_BASE, ksoyu_ruling_date: '2023-04-12', vs_cassation_filed_date: '2023-07-01' },
+    { today: '2023-07-20' },
+  );
+  assert.equal(r.cassation_vs.version_id, 'before_135fz');
+  assert.equal(r.cassation_vs.anchor, '2023-04-12');
+  assert.equal(r.cassation_vs.deadline, '2023-07-12');
+  assert.equal(r.cassation_vs.alternative, undefined); // до 01.09.2024 расхождения нет
+});
+
+test('ВС, новая редакция: отсчёт от мотивированного определения КСОЮ + alternative', () => {
+  const r = computeChain(
+    {
+      ...VS_BASE,
+      ksoyu_ruling_date: '2024-06-02',
+      ksoyu_ruling_reasoned_date: '2024-06-10',
+      vs_cassation_filed_date: '2024-10-01',
+    },
+    { today: '2024-10-05' },
+  );
+  assert.equal(r.cassation_vs.version_id, 'from_135fz');
+  assert.equal(r.cassation_vs.anchor, '2024-06-10');
+  assert.equal(r.cassation_vs.deadline, '2024-09-10');
+  assert.ok(r.cassation_vs.alternative);
+  assert.equal(r.cassation_vs.alternative.deadline, '2024-09-02'); // от даты вынесения
+});
+
+test('ВС: alternative не появляется при совпадении дат вынесения и мотивированного', () => {
+  const r = computeChain(
+    {
+      ...VS_BASE,
+      ksoyu_ruling_date: '2024-06-02',
+      ksoyu_ruling_reasoned_date: '2024-06-02',
+      vs_cassation_filed_date: '2024-10-01',
+    },
+    { today: '2024-10-05' },
+  );
+  assert.equal(r.cassation_vs.alternative, undefined);
+});
+
+test('ВС: alternative не появляется до 01.09.2024 даже при разных датах', () => {
+  const r = computeChain(
+    {
+      ...VS_BASE,
+      ksoyu_ruling_date: '2024-06-02',
+      ksoyu_ruling_reasoned_date: '2024-06-10',
+      vs_cassation_filed_date: '2024-08-31',
+    },
+    { today: '2024-09-05' },
+  );
+  assert.equal(r.cassation_vs.version_id, 'before_135fz');
+  assert.equal(r.cassation_vs.alternative, undefined);
+  assert.equal(r.cassation_vs.anchor, '2024-06-02'); // от вынесения, не от мотивированного
+});
+
+test('ВС, граница редакций: 31.08.2024 → прежняя, 01.09.2024 → новая', () => {
+  const inputs = {
+    ...VS_BASE,
+    ksoyu_ruling_date: '2024-06-02',
+    ksoyu_ruling_reasoned_date: '2024-06-10',
+  };
+  const before = computeChain({ ...inputs, vs_cassation_filed_date: '2024-08-31' }, { today: '2024-12-01' });
+  const after = computeChain({ ...inputs, vs_cassation_filed_date: '2024-09-01' }, { today: '2024-12-01' });
+  assert.equal(before.cassation_vs.version_id, 'before_135fz');
+  assert.equal(before.cassation_vs.anchor, '2024-06-02');
+  assert.equal(after.cassation_vs.version_id, 'from_135fz');
+  assert.equal(after.cassation_vs.anchor, '2024-06-10');
+});
+
+test('ВС, новая редакция без мотивированного определения → узел не считается', () => {
+  const r = computeChain(
+    { ...VS_BASE, ksoyu_ruling_date: '2024-06-02', vs_cassation_filed_date: '2024-10-01' },
+    { today: '2024-10-05' },
+  );
+  assert.equal(r.cassation_vs, null);
+});
+
+test('ВС, пограничное окно: прежний срок истёк до 01.09.2024, подача после', () => {
+  const r = computeChain(
+    {
+      ...VS_BASE,
+      ksoyu_ruling_date: '2024-05-15', // прежняя: 15.08.2024 (до отсечки)
+      ksoyu_ruling_reasoned_date: '2024-06-20', // новая: 20.09.2024 (после)
+      vs_cassation_filed_date: '2024-09-15',
+    },
+    { today: '2024-10-01' },
+  );
+  assert.equal(r.cassation_vs.version_id, 'from_135fz');
+  assert.equal(r.cassation_vs.deadline, '2024-09-20');
+  assert.ok(r.cassation_vs.boundary_warning);
+  assert.equal(r.cassation_vs.boundary_warning.prev_redaction_deadline, '2024-08-15');
+  assert.equal(r.cassation_vs.boundary_warning.current_deadline, '2024-09-20');
+});

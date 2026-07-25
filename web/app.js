@@ -20,15 +20,21 @@ const INPUT_LABELS = {
   appeal_ruling_date: 'Дата принятия апелляционного определения',
   appeal_ruling_reasoned_date: 'Дата изготовления мотивированного апелляционного определения',
   cassation_filed_date: 'Дата подачи кассационной жалобы',
+  ksoyu_ruling_date: 'Дата вынесения определения КСОЮ',
+  ksoyu_ruling_reasoned_date: 'Дата изготовления мотивированного определения КСОЮ',
+  vs_cassation_filed_date: 'Дата подачи кассационной жалобы в ВС РФ',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
   appeal_ruling_date: 'Дата оглашения апелляционного определения',
   appeal_ruling_reasoned_date: 'Если не откладывалось — совпадает с датой принятия',
   cassation_filed_date: 'Определяет редакцию нормы (отсечка 01.09.2024); по умолчанию — текущая дата',
+  ksoyu_ruling_date: 'После её ввода появляется срок кассации в ВС РФ',
+  ksoyu_ruling_reasoned_date: 'Отложение до 10 дней (ч. 7 ст. 390.1); если не откладывалось — совпадает с датой вынесения',
+  vs_cassation_filed_date: 'Определяет редакцию нормы (отсечка 01.09.2024); по умолчанию — текущая дата',
 };
 
-const CHAIN_ORDER = ['appeal_general', 'entry_into_force', 'cassation_ksoyu'];
+const CHAIN_ORDER = ['appeal_general', 'entry_into_force', 'cassation_ksoyu', 'cassation_vs'];
 
 // --- Состояние --------------------------------------------------------------
 
@@ -360,7 +366,11 @@ function render() {
             'Действует при том же условии — что решение не обжаловалось в апелляции.';
         }
         const termEl = renderTermCard(card, opts);
-        if (id === 'cassation_ksoyu') termEl.appendChild(renderRedactionField());
+        const redField = REDACTION_FIELD[id];
+        if (redField) termEl.appendChild(renderRedactionField(redField));
+        // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
+        // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
+        if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
         root.appendChild(termEl);
       }
       continue;
@@ -368,20 +378,38 @@ function render() {
     const inc = incById(id);
     if (inc) {
       const incEl = renderIncompleteNode(inc);
-      if (id === 'cassation_ksoyu') incEl.appendChild(renderRedactionField());
+      const redField = REDACTION_FIELD[id];
+      if (redField) incEl.appendChild(renderRedactionField(redField));
       root.appendChild(incEl);
     }
   }
 }
 
-// Необязательное поле даты подачи кассации — выбирает редакцию нормы
-// (ч. 3 ст. 1 ГПК). Без него редакция берётся по текущей дате.
-function renderRedactionField() {
+// Какой input выбирает редакцию нормы на каждом кассационном узле.
+const REDACTION_FIELD = {
+  cassation_ksoyu: 'cassation_filed_date',
+  cassation_vs: 'vs_cassation_filed_date',
+};
+
+// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
+// Без него редакция берётся по текущей дате.
+function renderRedactionField(inputId) {
   const box = el('div', 'note');
   box.appendChild(
-    el('div', null, 'Редакция нормы — по дате подачи кассационной жалобы (иначе по текущей дате).'),
+    el('div', null, 'Редакция нормы — по дате подачи жалобы (иначе по текущей дате).'),
   );
-  box.appendChild(renderInviteField('cassation_filed_date').wrap);
+  box.appendChild(renderInviteField(inputId).wrap);
+  return box;
+}
+
+// Ввод даты определения КСОЮ открывает узел кассации в ВС РФ (ст. 390.3).
+// Дату мотивированного определения запрашивает уже сам узел ВС (новая редакция).
+function renderKsoyuRulingInvite() {
+  const box = el('div', 'note');
+  box.appendChild(
+    el('div', null, 'Определение КСОЮ уже вынесено? Укажите дату — появится срок кассации в ВС РФ.'),
+  );
+  box.appendChild(renderInviteField('ksoyu_ruling_date').wrap);
   return box;
 }
 
