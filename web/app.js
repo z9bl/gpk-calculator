@@ -3,12 +3,19 @@
 
 import { buildView } from '../src/views.js';
 import { buildICS } from '../src/ics.js';
-import { APPEAL_GENERAL, CASSATION_KSOYU } from '../src/chain.js';
+import {
+  APPEAL_GENERAL,
+  CASSATION_KSOYU,
+  CASSATION_VS,
+  ENFORCEMENT_PRESENTATION,
+} from '../src/chain.js';
 
 // Метаданные экспортируемых сроков (ics/duration) — по id карточки.
 const ICS_META = {
   [APPEAL_GENERAL.id]: APPEAL_GENERAL,
   [CASSATION_KSOYU.id]: CASSATION_KSOYU,
+  [CASSATION_VS.id]: CASSATION_VS,
+  [ENFORCEMENT_PRESENTATION.id]: ENFORCEMENT_PRESENTATION,
 };
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -34,7 +41,13 @@ const INPUT_HINTS = {
   vs_cassation_filed_date: 'Определяет редакцию нормы (отсечка 01.09.2024); по умолчанию — текущая дата',
 };
 
-const CHAIN_ORDER = ['appeal_general', 'entry_into_force', 'cassation_ksoyu', 'cassation_vs'];
+const CHAIN_ORDER = [
+  'appeal_general',
+  'entry_into_force',
+  'cassation_ksoyu',
+  'cassation_vs',
+  'enforcement_presentation',
+];
 
 // --- Состояние --------------------------------------------------------------
 
@@ -371,6 +384,8 @@ function render() {
         // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
         // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
         if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
+        // Заглушки рядом с узлом (напр. предъявление ИЛ).
+        if (card.stubs) termEl.appendChild(renderRelatedStubs(card.stubs));
         root.appendChild(termEl);
       }
       continue;
@@ -413,19 +428,29 @@ function renderKsoyuRulingInvite() {
   return box;
 }
 
+function stubCard(s) {
+  const box = el('div', 'stub');
+  box.appendChild(el('h3', null, s.title));
+  box.appendChild(el('p', null, s.explanation));
+  box.appendChild(el('p', 'norm', s.norm));
+  return box;
+}
+
+// Заглушки рядом с узлом — отдельными карточками (напр. смежные случаи ИЛ).
+function renderRelatedStubs(stubs) {
+  const box = el('div', 'related-stubs');
+  box.appendChild(el('h3', 'related-stubs-title', 'Смежные случаи'));
+  for (const s of stubs) box.appendChild(stubCard(s));
+  return box;
+}
+
 // --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------
 
 function renderStubs() {
   const view = buildView({}, { today });
   const root = document.getElementById('stubs');
   root.appendChild(el('h2', null, 'Неподдерживаемые ветки'));
-  for (const s of view.stubs) {
-    const box = el('div', 'stub');
-    box.appendChild(el('h3', null, s.title));
-    box.appendChild(el('p', null, s.explanation));
-    box.appendChild(el('p', 'norm', s.norm));
-    root.appendChild(box);
-  }
+  for (const s of view.stubs) root.appendChild(stubCard(s));
 }
 
 // --- Инициализация ----------------------------------------------------------

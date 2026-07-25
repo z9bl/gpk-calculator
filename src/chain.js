@@ -167,6 +167,56 @@ export function vsCassationVersionFor(dateISO) {
   return dateISO == null ? versions[versions.length - 1] : pickVersion(versions, dateISO);
 }
 
+// Предъявление исполнительного листа к исполнению (ст. 21 ФЗ № 229-ФЗ).
+// Единица — год (ч. 1 ст. 108 ГПК). Редакций не заводим — норма в этой части не
+// менялась (одна версия). Точка отсчёта — дата вступления решения в силу.
+export const ENFORCEMENT_PRESENTATION = {
+  id: 'enforcement_presentation',
+  title: 'Предъявление исполнительного листа к исполнению',
+  duration: { value: 3, unit: 'year' },
+  anchor: { event: 'entry_into_force', offset_start: 1 },
+  condition: 'entry_into_force.resolved',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три года со дня вступления судебного акта в законную силу. Срок прерывается ' +
+    'предъявлением исполнительного листа к исполнению и частичным исполнением; ' +
+    'после перерыва течение возобновляется, истёкшее время в новый срок не ' +
+    'засчитывается (ст. 22 ФЗ № 229-ФЗ, ст. 432 ГПК).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'entry_into_force', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Срок предъявления ИЛ — condition: узел появляется только когда вступление в
+// силу разрешено (resolved); в ветви pending его нет.
+function computeEnforcement(entry) {
+  if (!entry.resolved || entry.date == null) return null;
+  const calc = computeDeadline(ENFORCEMENT_PRESENTATION, entry.date);
+  return {
+    id: ENFORCEMENT_PRESENTATION.id,
+    title: ENFORCEMENT_PRESENTATION.title,
+    anchor: calc.anchor,
+    offset_start: calc.offset_start,
+    raw_deadline: calc.raw_deadline,
+    deadline: calc.deadline,
+    shifted: calc.shifted,
+    logic: ENFORCEMENT_PRESENTATION.logic,
+    midnight_rule: ENFORCEMENT_PRESENTATION.midnight_rule,
+    norm: ENFORCEMENT_PRESENTATION.norm_versions[0].norm,
+  };
+}
+
 const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
@@ -435,11 +485,13 @@ export function computeChain(inputs, options = {}) {
   const entry = resolveEntryIntoForce(inputs, appeal.deadline, options.today);
   const cassation = computeCassation(inputs, entry, toISO(options.today));
   const cassationVs = computeVsCassation(inputs, toISO(options.today));
+  const enforcement = computeEnforcement(entry);
 
   return {
     appeal,
     entry_into_force: { norm: ENTRY_INTO_FORCE_NORM, ...entry },
     cassation,
     cassation_vs: cassationVs,
+    enforcement,
   };
 }

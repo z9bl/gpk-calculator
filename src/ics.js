@@ -7,7 +7,12 @@
 // (через календарный модуль). Напоминание раньше даты расчёта не создаётся.
 
 import { shiftBackIfNonWorking, toISODate } from './calendar.js';
-import { APPEAL_GENERAL, CASSATION_KSOYU, CASSATION_VS } from './chain.js';
+import {
+  APPEAL_GENERAL,
+  CASSATION_KSOYU,
+  CASSATION_VS,
+  ENFORCEMENT_PRESENTATION,
+} from './chain.js';
 
 const DAY_MS = 86_400_000;
 const PRODID = '-//gpk-calculator//Процессуальные сроки ГПК//RU';
@@ -174,6 +179,15 @@ export function icsTermsFromChain(chain) {
       norm: chain.cassation_vs.norm.primary,
       ics: CASSATION_VS.ics,
       duration: CASSATION_VS.duration,
+    });
+  }
+  if (chain && chain.enforcement && chain.enforcement.deadline) {
+    terms.push({
+      title: chain.enforcement.title,
+      deadline: chain.enforcement.deadline,
+      norm: chain.enforcement.norm.primary,
+      ics: ENFORCEMENT_PRESENTATION.ics,
+      duration: ENFORCEMENT_PRESENTATION.duration,
     });
   }
   return terms;
