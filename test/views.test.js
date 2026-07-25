@@ -94,6 +94,55 @@ test('appealed с расхождением дат: появляется alternat
   assert.equal(cass.alternative.recommended_deadline, '2025-09-02');
 });
 
+test('прежняя редакция: карточка кассации считается по дате принятия, без reasoned', () => {
+  // Подача до 01.09.2024 → редакция от вступления в силу; мотивированное
+  // определение не требуется, карточка рассчитывается, alternative нет.
+  const v = buildView(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      cassation_filed_date: '2024-08-31',
+    },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force', 'cassation_ksoyu']);
+  assert.deepEqual(ids(v.incomplete), []);
+  const cass = byId(v.cards, 'cassation_ksoyu');
+  assert.equal(cass.version_id, 'before_135fz');
+  assert.match(cass.norm, /до ФЗ № 135-ФЗ/);
+  assert.equal(cass.alternative, undefined);
+});
+
+test('новая редакция: норма — абз. 2 ч. 1 ст. 376.1', () => {
+  const v = buildView(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-02',
+    },
+    { today: '2025-07-01' },
+  );
+  const cass = byId(v.cards, 'cassation_ksoyu');
+  assert.equal(cass.version_id, 'from_135fz');
+  assert.match(cass.norm, /абз\. 2 ч\. 1 ст\. 376\.1/);
+});
+
+test('прежняя редакция без даты принятия: кассация incomplete без своего поля (поле — на событии)', () => {
+  const v = buildView(
+    { ...BASE, appeal_filed_date: '2025-04-05', cassation_filed_date: '2024-08-31' },
+    { today: '2025-07-01' },
+  );
+  // событие ждёт дату принятия; кассация в прежней редакции зависит от неё же.
+  assert.deepEqual(ids(v.incomplete), ['entry_into_force', 'cassation_ksoyu']);
+  assert.deepEqual(
+    byId(v.incomplete, 'entry_into_force').missing_inputs.map((m) => m.id),
+    ['appeal_ruling_date'],
+  );
+  assert.deepEqual(byId(v.incomplete, 'cassation_ksoyu').missing_inputs, []);
+});
+
 test('appealed без дат определения: только апелляция; событие и кассация в incomplete', () => {
   const v = buildView({ ...BASE, appeal_filed_date: '2025-04-05' }, { today: '2025-07-01' });
   assert.deepEqual(ids(v.cards), ['appeal_general']);

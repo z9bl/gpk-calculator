@@ -25,39 +25,84 @@ export const APPEAL_GENERAL = {
     'следующего за днём составления мотивированного решения; истекает в ' +
     'соответствующее число следующего месяца.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
-  norm: {
-    primary: 'ч. 1 ст. 321 ГПК РФ',
-    calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
-    clarification: 'п. 16 ПП ВС РФ от 22.06.2021 № 16',
-  },
+  // Одна редакция за весь период (см. темпоральную модель, раздел 10 SPEC.md).
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'reasoned_decision_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 321 ГПК РФ',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+        clarification: 'п. 16 ПП ВС РФ от 22.06.2021 № 16',
+      },
+    },
+  ],
 };
 
 export const CASSATION_KSOYU = {
   id: 'cassation_ksoyu',
   title: 'Кассационная жалоба в КСОЮ',
   duration: { value: 3, unit: 'month' },
-  anchor: { event: 'cassation_anchor', offset_start: 1 },
   condition: 'entry_into_force.resolved',
   weekend_shift: true,
   ics: true,
-  logic:
-    'Три месяца. Точка отсчёта (cassation_anchor) — дата вступления решения в ' +
-    'силу либо, при обжаловании, дата изготовления мотивированного ' +
-    'апелляционного определения.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
-  norm: {
-    primary: 'ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ от 12.06.2024 № 135-ФЗ)',
-    calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
-  },
-  alternative_calculation: {
-    // applies_when: branch == 'appealed' && appeal_ruling_reasoned_date > appeal_ruling_date
-    anchor_event: 'appeal_ruling_date',
-    norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17',
-    reason: 'Разъяснение Пленума исходит из редакции нормы до ФЗ № 135-ФЗ от 12.06.2024.',
-    prefer: 'earliest',
-    recommendation: 'Рекомендуем ориентироваться на более раннюю дату.',
-  },
+  // Темпоральная модель нормы (ч. 3 ст. 1 ГПК — раздел 10 SPEC.md): применяется
+  // редакция, действующая на момент подачи кассационной жалобы (иначе — на
+  // текущую дату). Отсечка — 01.09.2024, вступление в силу ФЗ № 135-ФЗ.
+  norm_versions: [
+    {
+      id: 'before_135fz',
+      from: null,
+      to: '2024-08-31', // включительно
+      anchor: { event: 'entry_into_force', offset_start: 1 },
+      logic: 'Три месяца со дня вступления судебного постановления в законную силу.',
+      norm: {
+        primary: 'ч. 1 ст. 376.1 ГПК РФ (в редакции до ФЗ № 135-ФЗ от 12.06.2024)',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+    {
+      id: 'from_135fz',
+      from: '2024-09-01',
+      to: null,
+      anchor: { event: 'appeal_ruling_reasoned', offset_start: 1 },
+      logic: 'Три месяца со дня изготовления мотивированного апелляционного определения.',
+      norm: {
+        primary: 'абз. 2 ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+      // Конфликт с п. 12 ПП ВС № 17 существует только для этой редакции: до
+      // 01.09.2024 разъяснение Пленума совпадало с законом (раздел 6 SPEC.md).
+      alternative_calculation: {
+        anchor: { event: 'appeal_ruling_date', offset_start: 1 },
+        norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17',
+        reason: 'Разъяснение Пленума исходит из редакции нормы до ФЗ № 135-ФЗ от 12.06.2024.',
+        prefer: 'earliest',
+        recommendation: 'Рекомендуем ориентироваться на более раннюю дату.',
+      },
+    },
+  ],
 };
+
+// Редакция нормы по дате (ч. 3 ст. 1 ГПК): границы включительны, null = без границы.
+function pickVersion(versions, dateISO) {
+  return versions.find(
+    (v) => (v.from == null || dateISO >= v.from) && (v.to == null || dateISO <= v.to),
+  );
+}
+
+/**
+ * Редакция ч. 1 ст. 376.1 ГПК, действующая на дату (для UI и подсказок).
+ * @param {string|null} dateISO — дата подачи кассации или текущая дата.
+ * @returns {object} версия из norm_versions; при null — последняя (действующая).
+ */
+export function cassationVersionFor(dateISO) {
+  const versions = CASSATION_KSOYU.norm_versions;
+  return dateISO == null ? versions[versions.length - 1] : pickVersion(versions, dateISO);
+}
 
 const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
@@ -137,15 +182,48 @@ function resolveEntryIntoForce(inputs, appealDeadline, today) {
 
 // --- Срок кассации (п. 4.2, п. 6) -------------------------------------------
 
-function computeCassation(inputs, entry) {
+// Точка отсчёта кассационного срока для выбранной редакции.
+function resolveCassationAnchor(version, inputs, entry) {
+  if (version.anchor.event === 'appeal_ruling_reasoned') {
+    // Новая редакция — от мотивированного апелляционного определения. Если дело
+    // не обжаловалось, такого определения нет — считаем от вступления в силу.
+    if (entry.branch === 'appealed') return toISO(inputs.appeal_ruling_reasoned_date);
+    return entry.date;
+  }
+  // 'entry_into_force' — со дня вступления судебного постановления в силу.
+  return entry.date;
+}
+
+// Расчёт по конкретной редакции (offset_start + месяцы + перенос выходного).
+function cassationDeadline(anchorSpec, anchorDate) {
+  return computeDeadline(
+    {
+      duration: CASSATION_KSOYU.duration,
+      anchor: { offset_start: anchorSpec.offset_start },
+      weekend_shift: CASSATION_KSOYU.weekend_shift,
+    },
+    anchorDate,
+  );
+}
+
+// referenceDate — текущая дата (ISO) для выбора редакции, если не введена дата
+// подачи кассационной жалобы.
+function computeCassation(inputs, entry, referenceDate) {
   // condition: entry_into_force.resolved — пока событие не разрешено, не считаем.
   if (!entry.resolved) return null;
 
-  const anchor = entry.cassation_anchor;
-  // Нет точки отсчёта (для appealed — не введена дата мотивированного
-  // определения): событие разрешено, но кассационный срок ещё не считается.
+  // Выбор редакции — по дате подачи кассационной жалобы, иначе по текущей дате.
+  const effectiveDate = toISO(inputs.cassation_filed_date) ?? referenceDate;
+  if (effectiveDate == null) return null;
+  const version = pickVersion(CASSATION_KSOYU.norm_versions, effectiveDate);
+  if (version == null) return null;
+
+  const anchor = resolveCassationAnchor(version, inputs, entry);
+  // Нет точки отсчёта (напр. новая редакция при обжаловании без даты
+  // мотивированного определения): событие разрешено, но срок ещё не считается.
   if (anchor == null) return null;
-  const primary = computeDeadline(CASSATION_KSOYU, anchor);
+
+  const primary = cassationDeadline(version.anchor, anchor);
 
   const result = {
     title: CASSATION_KSOYU.title,
@@ -154,19 +232,20 @@ function computeCassation(inputs, entry) {
     raw_deadline: primary.raw_deadline,
     deadline: primary.deadline,
     shifted: primary.shifted,
-    norm: CASSATION_KSOYU.norm,
+    version_id: version.id,
+    effective_date: effectiveDate,
+    logic: version.logic,
+    norm: version.norm,
   };
 
-  // alternative_calculation: только appealed И мотивированное определение
-  // изготовлено позже принятия (п. 6 SPEC.md — конфликт норм).
-  if (entry.branch === 'appealed') {
+  // alternative_calculation — только у редакции, где она задана (from_135fz), при
+  // обжаловании и расхождении дат определения (п. 6 SPEC.md — конфликт норм).
+  const altSpec = version.alternative_calculation;
+  if (altSpec && entry.branch === 'appealed') {
     const ruling = toISO(inputs.appeal_ruling_date);
     const reasoned = toISO(inputs.appeal_ruling_reasoned_date);
     if (ruling != null && reasoned != null && reasoned > ruling) {
-      const alt = computeDeadline(
-        { ...CASSATION_KSOYU, anchor: { event: 'appeal_ruling_date', offset_start: 1 } },
-        ruling,
-      );
+      const alt = cassationDeadline(altSpec.anchor, ruling);
       const recommended =
         alt.deadline < primary.deadline ? alt.deadline : primary.deadline; // prefer: earliest
       result.alternative = {
@@ -174,11 +253,11 @@ function computeCassation(inputs, entry) {
         raw_deadline: alt.raw_deadline,
         deadline: alt.deadline,
         shifted: alt.shifted,
-        norm: CASSATION_KSOYU.alternative_calculation.norm,
-        reason: CASSATION_KSOYU.alternative_calculation.reason,
-        prefer: CASSATION_KSOYU.alternative_calculation.prefer,
+        norm: altSpec.norm,
+        reason: altSpec.reason,
+        prefer: altSpec.prefer,
         recommended_deadline: recommended,
-        recommendation: CASSATION_KSOYU.alternative_calculation.recommendation,
+        recommendation: altSpec.recommendation,
       };
     }
   }
@@ -191,9 +270,11 @@ function computeCassation(inputs, entry) {
 /**
  * Расчёт цепочки: апелляция → вступление в силу → кассация.
  * @param {object} inputs — данные из п. 4.1 (reasoned_decision_date обязательна;
- *   appeal_filed_date, appeal_ruling_date, appeal_ruling_reasoned_date — опционально).
+ *   appeal_filed_date, appeal_ruling_date, appeal_ruling_reasoned_date,
+ *   cassation_filed_date — опционально).
  * @param {{today?: Date|string}} [options] — текущая дата для ветвей
- *   not_appealed/pending. Передаётся явно, из системных часов не берётся.
+ *   not_appealed/pending и для выбора редакции кассационной нормы, если не
+ *   введена дата подачи кассации. Передаётся явно, из системных часов не берётся.
  * @returns {{appeal:object, entry_into_force:object, cassation:object|null}}
  */
 export function computeChain(inputs, options = {}) {
@@ -209,11 +290,11 @@ export function computeChain(inputs, options = {}) {
     raw_deadline: appealRaw.raw_deadline,
     deadline: appealRaw.deadline,
     shifted: appealRaw.shifted,
-    norm: APPEAL_GENERAL.norm,
+    norm: APPEAL_GENERAL.norm_versions[0].norm,
   };
 
   const entry = resolveEntryIntoForce(inputs, appeal.deadline, options.today);
-  const cassation = computeCassation(inputs, entry);
+  const cassation = computeCassation(inputs, entry, toISO(options.today));
 
   return {
     appeal,

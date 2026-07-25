@@ -8,7 +8,7 @@
 // которых достаточно введённых данных; остальные попадают в `incomplete` с
 // причиной и названиями недостающих input, а не пустыми полями.
 
-import { computeChain, APPEAL_GENERAL, CASSATION_KSOYU } from './chain.js';
+import { computeChain, APPEAL_GENERAL, CASSATION_KSOYU, cassationVersionFor } from './chain.js';
 import { computeDeadline } from './engine.js';
 import { toISODate } from './calendar.js';
 
@@ -19,6 +19,7 @@ const INPUT_LABELS = {
   appeal_filed_date: 'Дата подачи апелляционной жалобы',
   appeal_ruling_date: 'Дата принятия апелляционного определения',
   appeal_ruling_reasoned_date: 'Дата изготовления мотивированного апелляционного определения',
+  cassation_filed_date: 'Дата подачи кассационной жалобы',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки.
@@ -88,17 +89,18 @@ function incompleteNode(id, kind, title, reason, missing) {
 // --- Карточки узлов ---------------------------------------------------------
 
 function termCard(term, calc) {
+  const version = term.norm_versions[0]; // одноверсионный срок (апелляция)
   return {
     id: term.id,
     kind: 'term',
     title: term.title,
     status: 'computed',
     deadline: calc.deadline,
-    norm: term.norm.primary,
+    norm: version.norm.primary,
     details: {
       collapsed: true, // блок «подробнее» свёрнут по умолчанию
       logic: term.logic,
-      calculation: term.norm.calculation,
+      calculation: version.norm.calculation,
       midnight_rule: term.midnight_rule,
     },
   };
@@ -162,10 +164,11 @@ function cassationCard(cassation) {
     title: cassation.title,
     status: 'computed',
     deadline: cassation.deadline,
-    norm: cassation.norm.primary,
+    norm: cassation.norm.primary, // текст действующей редакции
+    version_id: cassation.version_id,
     details: {
       collapsed: true,
-      logic: CASSATION_KSOYU.logic,
+      logic: cassation.logic, // логика той же редакции
       calculation: cassation.norm.calculation,
       midnight_rule: CASSATION_KSOYU.midnight_rule,
     },
@@ -230,16 +233,34 @@ function buildDownstream(inputs, today) {
   if (chain.cassation) {
     cards.push(cassationCard(chain.cassation));
   } else if (appealed) {
-    // Для расчёта нужна дата изготовления мотивированного определения.
-    incomplete.push(
-      incompleteNode(
-        'cassation_ksoyu',
-        'term',
-        CASSATION_KSOYU.title,
-        'Кассационный срок считается от даты изготовления мотивированного апелляционного определения.',
-        missingInputs(['appeal_ruling_reasoned_date'], inputs),
-      ),
-    );
+    // Какого поля не хватает — зависит от редакции нормы на дату подачи кассации
+    // (иначе на текущую): новая (с 01.09.2024) считает от мотивированного
+    // определения, прежняя — со дня вступления в силу (= даты принятия).
+    const effectiveDate = toISO(inputs.cassation_filed_date) ?? today;
+    const version = cassationVersionFor(effectiveDate);
+    if (version.anchor.event === 'appeal_ruling_reasoned') {
+      incomplete.push(
+        incompleteNode(
+          'cassation_ksoyu',
+          'term',
+          CASSATION_KSOYU.title,
+          'Кассационный срок (редакция с 01.09.2024) считается от даты изготовления мотивированного апелляционного определения.',
+          missingInputs(['appeal_ruling_reasoned_date'], inputs),
+        ),
+      );
+    } else {
+      // Прежняя редакция: нужна дата вступления в силу — её поле на карточке
+      // события (дата принятия апелляционного определения).
+      incomplete.push(
+        incompleteNode(
+          'cassation_ksoyu',
+          'term',
+          CASSATION_KSOYU.title,
+          'Кассационный срок (редакция до 01.09.2024) считается со дня вступления решения в силу — укажите дату принятия апелляционного определения.',
+          [],
+        ),
+      );
+    }
   } else {
     // pending: срок обжалования ещё не истёк — можно указать дату подачи жалобы.
     incomplete.push(
