@@ -117,10 +117,16 @@ test('интеграция: computeChain → icsTermsFromChain → buildICS (о�
     { today: '2025-07-01' },
   );
   const terms = icsTermsFromChain(chain);
-  assert.deepEqual(terms.map((t) => t.title), ['Апелляционная жалоба', 'Кассационная жалоба в КСОЮ']);
+  // Обжаловано и вступление в силу разрешено → к апелляции и кассации
+  // добавляется срок предъявления ИЛ (событие разрешено).
+  assert.deepEqual(terms.map((t) => t.title), [
+    'Апелляционная жалоба',
+    'Кассационная жалоба в КСОЮ',
+    'Предъявление исполнительного листа к исполнению',
+  ]);
   const ics = buildICS(terms, { referenceDate: '2025-01-01', now: NOW });
   const events = (ics.match(/BEGIN:VEVENT/g) || []).length;
-  assert.equal(events, 2);
+  assert.equal(events, 3);
   // кассация (3 мес) даёт до 4 напоминаний
   assert.ok((ics.match(/BEGIN:VALARM/g) || []).length >= 4);
 });
@@ -129,4 +135,19 @@ test('pending: кассация не рассчитана — в экспорт 
   const chain = computeChain({ reasoned_decision_date: '2025-03-11' }, { today: '2025-04-01' });
   const terms = icsTermsFromChain(chain);
   assert.deepEqual(terms.map((t) => t.title), ['Апелляционная жалоба']);
+});
+
+test('5. срок предъявления ИЛ уходит в .ics', () => {
+  const chain = computeChain({ reasoned_decision_date: '2025-03-11' }, { today: '2025-05-01' });
+  const terms = icsTermsFromChain(chain);
+  const il = terms.find((t) => t.title.includes('исполнительного листа'));
+  assert.ok(il, 'срок ИЛ в списке экспортируемых');
+  assert.equal(il.deadline, chain.enforcement.deadline);
+
+  const ics = buildICS(terms, { referenceDate: '2025-05-01', now: NOW });
+  // SUMMARY длинная (кириллица) и сворачивается — проверяем префикс до сгиба.
+  assert.ok(ics.includes('SUMMARY:Предъявление'));
+  // событие на весь день в дату дедлайна
+  const compact = chain.enforcement.deadline.replace(/-/g, '');
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${compact}`));
 });

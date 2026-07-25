@@ -16,6 +16,33 @@ import {
   cassationVersionFor,
   vsCassationVersionFor,
 } from './chain.js';
+
+// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
+const ENFORCEMENT_STUBS = [
+  {
+    id: 'court_order',
+    title: 'Судебный приказ',
+    explanation:
+      'Три года со дня выдачи судебного приказа, а не со дня вступления в силу.',
+    norm: 'ч. 3 ст. 21 ФЗ № 229-ФЗ',
+  },
+  {
+    id: 'periodic_payments',
+    title: 'Периодические платежи',
+    explanation:
+      'Исполнительный лист можно предъявить в течение всего срока, на который ' +
+      'присуждены платежи, плюс три года после его окончания.',
+    norm: 'ч. 4 ст. 21 ФЗ № 229-ФЗ',
+  },
+  {
+    id: 'interruption',
+    title: 'Перерыв срока',
+    explanation:
+      'Расчёт с учётом перерыва не поддерживается — требуется дата предъявления ' +
+      'исполнительного листа или частичного исполнения.',
+    norm: 'ст. 22 ФЗ № 229-ФЗ',
+  },
+];
 import { computeDeadline } from './engine.js';
 import { toISODate } from './calendar.js';
 
@@ -189,6 +216,25 @@ function cassationCard(cassation) {
   return card;
 }
 
+// Карточка срока предъявления ИЛ. Рядом — заглушки по смежным случаям (в card.stubs).
+function enforcementCard(enf) {
+  return {
+    id: enf.id,
+    kind: 'term',
+    title: enf.title,
+    status: 'computed',
+    deadline: enf.deadline,
+    norm: enf.norm.primary,
+    details: {
+      collapsed: true,
+      logic: enf.logic,
+      calculation: enf.norm.calculation,
+      midnight_rule: enf.midnight_rule,
+    },
+    stubs: ENFORCEMENT_STUBS,
+  };
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -311,6 +357,12 @@ function buildDownstream(inputs, today) {
         ),
       );
     }
+  }
+
+  // Предъявление исполнительного листа — только когда вступление в силу
+  // разрешено (condition); в ветви pending узла нет.
+  if (chain.enforcement) {
+    cards.push(enforcementCard(chain.enforcement));
   }
 
   return { cards, incomplete };

@@ -75,3 +75,32 @@ test('единица в днях в MVP не считается (принцип 
     /вторая версия/,
   );
 });
+
+// --- Единица year (ч. 1 ст. 108: соответствующие месяц и число последнего года) ---
+
+function yearTerm(value, weekendShift = true) {
+  return {
+    duration: { value, unit: 'year' },
+    anchor: { offset_start: 1 },
+    weekend_shift: weekendShift,
+  };
+}
+
+test('unit year: 15.03.2024 + 3 года = 15.03.2027', () => {
+  const r = computeDeadline(yearTerm(3), '2024-03-15');
+  assert.equal(r.raw_deadline, '2027-03-15');
+  assert.equal(r.deadline, '2027-03-15'); // 15.03.2027 — рабочий день
+});
+
+test('unit year: 29.02.2024 + 3 года → 28.02.2027 (нет такого числа)', () => {
+  const r = computeDeadline(yearTerm(3), '2024-02-29');
+  assert.equal(r.raw_deadline, '2027-02-28'); // клампинг к последнему дню февраля
+});
+
+test('unit year: последний день на нерабочий → перенос вперёд (ч. 2 ст. 108)', () => {
+  // 12.06.2021 + 3 года = 12.06.2024 (День России, нерабочий) → 13.06.2024.
+  const r = computeDeadline(yearTerm(3), '2021-06-12');
+  assert.equal(r.raw_deadline, '2024-06-12');
+  assert.equal(r.deadline, '2024-06-13');
+  assert.equal(r.shifted, true);
+});

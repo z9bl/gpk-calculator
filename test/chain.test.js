@@ -391,3 +391,21 @@ test('ВС, пограничное окно: прежний срок истёк 
   assert.equal(r.cassation_vs.boundary_warning.prev_redaction_deadline, '2024-08-15');
   assert.equal(r.cassation_vs.boundary_warning.current_deadline, '2024-09-20');
 });
+
+// --- Предъявление исполнительного листа (ст. 21 ФЗ № 229-ФЗ, unit: year) -----
+
+test('ИЛ: срок 3 года от даты вступления в силу (not_appealed)', () => {
+  // reasoned 11.03.2025 → апелляция 11.04.2025 → вступление в силу 12.04.2025.
+  const r = computeChain(BASE, { today: '2025-05-01' }); // not_appealed
+  assert.equal(r.entry_into_force.date, '2025-04-12');
+  assert.ok(r.enforcement);
+  assert.equal(r.enforcement.anchor, '2025-04-12');
+  assert.equal(r.enforcement.deadline, '2028-04-12'); // 12.04.2025 + 3 года
+  assert.match(r.enforcement.norm.primary, /229-ФЗ/);
+});
+
+test('ИЛ отсутствует, пока вступление в силу не разрешено (pending)', () => {
+  const r = computeChain(BASE, { today: '2025-04-01' }); // pending
+  assert.equal(r.entry_into_force.resolved, false);
+  assert.equal(r.enforcement, null);
+});

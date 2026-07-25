@@ -49,7 +49,12 @@ test('pending: видны апелляция и событие; кассация
 
 test('not_appealed: видны все три узла, incomplete пуст', () => {
   const v = buildView(BASE, { today: '2025-05-01' }); // после дедлайна
-  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force', 'cassation_ksoyu']);
+  assert.deepEqual(ids(v.cards), [
+    'appeal_general',
+    'entry_into_force',
+    'cassation_ksoyu',
+    'enforcement_presentation',
+  ]);
   assert.deepEqual(ids(v.incomplete), []);
 
   const entry = byId(v.cards, 'entry_into_force');
@@ -71,7 +76,12 @@ test('appealed (полные данные): три узла, без alternative'
     },
     { today: '2025-07-01' },
   );
-  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force', 'cassation_ksoyu']);
+  assert.deepEqual(ids(v.cards), [
+    'appeal_general',
+    'entry_into_force',
+    'cassation_ksoyu',
+    'enforcement_presentation',
+  ]);
   assert.deepEqual(ids(v.incomplete), []);
   const cass = byId(v.cards, 'cassation_ksoyu');
   assert.equal(cass.deadline, '2025-09-02');
@@ -106,7 +116,12 @@ test('прежняя редакция: карточка кассации счи�
     },
     { today: '2025-07-01' },
   );
-  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force', 'cassation_ksoyu']);
+  assert.deepEqual(ids(v.cards), [
+    'appeal_general',
+    'entry_into_force',
+    'cassation_ksoyu',
+    'enforcement_presentation',
+  ]);
   assert.deepEqual(ids(v.incomplete), []);
   const cass = byId(v.cards, 'cassation_ksoyu');
   assert.equal(cass.version_id, 'before_135fz');
@@ -130,6 +145,22 @@ test('пограничное окно: карточка кассации нес�
   assert.equal(cass.boundary_warning.prev_redaction_deadline, '2024-08-15');
   assert.equal(cass.boundary_warning.current_deadline, '2024-09-20');
   assert.equal(cass.deadline, '2024-09-20'); // расчёт — по действующей редакции
+});
+
+test('ИЛ: узел появляется при resolved, несёт заглушки; в pending — отсутствует', () => {
+  const resolved = buildView(BASE, { today: '2025-05-01' }); // not_appealed → resolved
+  const il = byId(resolved.cards, 'enforcement_presentation');
+  assert.ok(il, 'узел ИЛ есть, когда вступление в силу разрешено');
+  assert.match(il.norm, /229-ФЗ/);
+  assert.equal(il.stubs.length, 3); // судебный приказ, периодические платежи, перерыв
+  assert.deepEqual(
+    il.stubs.map((s) => s.id),
+    ['court_order', 'periodic_payments', 'interruption'],
+  );
+
+  const pending = buildView(BASE, { today: '2025-04-01' }); // pending
+  const allIds = [...pending.cards, ...pending.incomplete].map((n) => n.id);
+  assert.ok(!allIds.includes('enforcement_presentation'), 'в pending узла ИЛ нет');
 });
 
 test('узел кассации в ВС появляется только после даты определения КСОЮ', () => {
@@ -234,7 +265,8 @@ test('appealed: введена только дата принятия опред
     { ...BASE, appeal_filed_date: '2025-04-05', appeal_ruling_date: '2025-06-02' },
     { today: '2025-07-01' },
   );
-  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force']);
+  // Событие разрешено (есть дата принятия) → появляется и узел ИЛ.
+  assert.deepEqual(ids(v.cards), ['appeal_general', 'entry_into_force', 'enforcement_presentation']);
   assert.deepEqual(ids(v.incomplete), ['cassation_ksoyu']);
 
   const entry = byId(v.cards, 'entry_into_force');

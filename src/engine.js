@@ -71,11 +71,15 @@ export function computeDeadline(term, anchorDate) {
   const offsetStart = term.anchor?.offset_start ?? 1;
   const anchor = toDate(anchorDate);
 
-  if (duration.unit === 'month') {
+  if (duration.unit === 'month' || duration.unit === 'year') {
+    // Месяцы (ч. 1 ст. 108) и годы: год = 12 месяцев, срок истекает в
+    // соответствующие месяц и число последнего года; нет числа (29.02 в
+    // невисокосный) — последний день месяца.
+    const months = duration.unit === 'year' ? duration.value * 12 : duration.value;
     // Начало течения = событие + offset_start; «соответствующее число» — на день
     // раньше начала течения, т.е. событие + (offset_start − 1).
     const base = addDays(anchor, offsetStart - 1);
-    const raw = addMonths(base, duration.value);
+    const raw = addMonths(base, months);
     const doShift = term.weekend_shift !== false;
     const shifted = doShift ? toDate(shiftIfNonWorking(raw)) : raw;
     return {
