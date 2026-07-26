@@ -467,7 +467,13 @@ test('заочное, иные лица: карточка апелляции с 
 
 test('мировой судья: карточки ветви, выбор явки меняет срок', () => {
   const present = buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
-  assert.deepEqual(ids(present.cards), ['mirovoy_reasoned_request', 'mirovoy_appeal']);
+  // Срок апелляции истёк (today 01.03.2026 > 22.01.2026), поэтому появляется и
+  // кассационный узел — от даты вступления решения в силу.
+  assert.deepEqual(ids(present.cards), [
+    'mirovoy_reasoned_request',
+    'mirovoy_appeal',
+    'mirovoy_cassation',
+  ]);
   const req = byId(present.cards, 'mirovoy_reasoned_request');
   assert.equal(req.unit, 'working_day');
   assert.equal(req.deadline, '2025-12-25');
@@ -504,4 +510,34 @@ test('надзор: карточка появляется по дате опре
   assert.equal(sup.deadline, '2025-12-01');
   assert.match(sup.norm, /391\.2/);
   assert.deepEqual(sup.duration, { value: 3, unit: 'month' });
+});
+
+test('кассация по делам мировых судей: маршрут и пометка о переходном положении', () => {
+  const base = {
+    mirovoy_resolution_date: '2026-01-15',
+    mirovoy_appeal_ruling_reasoned_date: '2026-03-01',
+  };
+  // Подача с 10.05.2026 → президиум областного суда (глава 40.1).
+  const presidium = buildView(
+    { ...base, cassation_filed_date: '2026-05-10' },
+    { today: '2026-07-01' },
+  );
+  const pc = byId(presidium.cards, 'mirovoy_cassation');
+  assert.ok(pc);
+  assert.equal(pc.version_id, 'presidium_from_79fz');
+  assert.match(pc.title, /президиум областного суда/);
+  assert.match(pc.norm, /375\.2/);
+  assert.equal(pc.note, undefined); // переходной пометки нет
+
+  // Подача до 10.05.2026 → прежний маршрут в КСОЮ, с пометкой.
+  const ksoyu = buildView(
+    { ...base, cassation_filed_date: '2026-05-09' },
+    { today: '2026-07-01' },
+  );
+  const kc = byId(ksoyu.cards, 'mirovoy_cassation');
+  assert.equal(kc.version_id, 'ksoyu_before_79fz');
+  assert.match(kc.title, /КСОЮ/);
+  assert.match(kc.norm, /376\.1/);
+  assert.match(kc.note, /прежний маршрут/);
+  assert.match(kc.note, /ч\. 2 ст\. 3 ФЗ № 79-ФЗ/);
 });

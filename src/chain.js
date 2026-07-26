@@ -890,7 +890,7 @@ const MIROVOY_APPEAL_MODES = {
  * @param {object} inputs
  * @returns {object|null} null, если не введена дата объявления резолютивной части.
  */
-export function computeMirovoy(inputs) {
+export function computeMirovoy(inputs, referenceDate = null) {
   const resolution = toISO(inputs?.mirovoy_resolution_date);
   if (resolution == null) return null;
 
@@ -926,7 +926,124 @@ export function computeMirovoy(inputs) {
     reasoned_request: request,
     reasoned_making: making,
     appeal,
+    cassation: computeMirovoyCassation(inputs, appeal, toISO(referenceDate)),
   };
+}
+
+// --- Кассация по делам мировых судей (глава 40.1 ГПК) -----------------------
+//
+// Глава 40.1 введена ФЗ № 79-ФЗ от 09.04.2026 и вступила в силу 10.05.2026
+// (опубликован на pravo.gov.ru 09.04.2026, тридцать дней по ч. 1 ст. 3 закона).
+// Объекты по ч. 1 ст. 375.1: судебные приказы, решения и определения мировых
+// судей, апелляционные и иные определения районных судов как суда
+// апелляционной инстанции.
+//
+// Маршрут зависит от ДАТЫ ПОДАЧИ жалобы (переходное положение ч. 2 ст. 3
+// ФЗ № 79-ФЗ): поданные с 10.05.2026 — в президиум областного суда по главе
+// 40.1; поданные в КСОЮ до 10.05.2026 — по прежним правилам (ст. 376.1).
+// При планировании (дата подачи не введена) — по текущей дате.
+export const MIROVOY_CASSATION_CUTOFF = '2026-05-10';
+
+const MIROVOY_CASSATION_CALC = ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'];
+
+export const MIROVOY_CASSATION = {
+  id: 'mirovoy_cassation',
+  title: 'Кассационная жалоба (дела мировых судей)',
+  duration: { value: 3, unit: 'month' },
+  anchor: { offset_start: 1 },
+  condition: 'mirovoy_resolution_date',
+  weekend_shift: true,
+  ics: true,
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'ksoyu_before_79fz',
+      from: null,
+      to: '2026-05-09', // включительно
+      court: 'Кассационный суд общей юрисдикции',
+      title: 'Кассационная жалоба в КСОЮ (дела мировых судей)',
+      norm: {
+        primary: 'ч. 1 ст. 376.1 ГПК РФ',
+        calculation: MIROVOY_CASSATION_CALC,
+        clarification: 'ч. 2 ст. 3 ФЗ № 79-ФЗ от 09.04.2026 (переходное положение)',
+      },
+      transitional_note:
+        'Жалоба подаётся до 10.05.2026, поэтому действует прежний маршрут: ' +
+        'кассация в кассационный суд общей юрисдикции по ст. 376.1 ГПК РФ. ' +
+        'По ч. 2 ст. 3 ФЗ № 79-ФЗ жалобы на акты мировых судей и на акты ' +
+        'районных судов как суда апелляционной инстанции, поданные в КСОЮ до ' +
+        'этой даты, рассматриваются по прежним правилам.',
+    },
+    {
+      id: 'presidium_from_79fz',
+      from: '2026-05-10',
+      to: null,
+      court: 'Президиум областного (и равного ему) суда',
+      title: 'Кассационная жалоба в президиум областного суда',
+      norm: {
+        primary: 'ч. 1 ст. 375.2 ГПК РФ (глава 40.1, ФЗ № 79-ФЗ от 09.04.2026)',
+        calculation: MIROVOY_CASSATION_CALC,
+        clarification: 'ч. 1 ст. 375.1 ГПК РФ (объекты обжалования)',
+      },
+    },
+  ],
+};
+
+// Точки отсчёта по ч. 1 ст. 375.2 — та же структура, что у ст. 376.1:
+// со дня вступления обжалуемого постановления в силу, а если оно обжаловалось
+// в апелляции — со дня изготовления мотивированного апелляционного определения.
+const MIROVOY_CASSATION_ANCHORS = {
+  appeal_reasoned: {
+    logic:
+      'Три месяца со дня изготовления мотивированного апелляционного определения ' +
+      'районного суда: постановление мирового судьи обжаловалось в апелляции.',
+  },
+  entry_into_force: {
+    logic:
+      'Три месяца со дня вступления обжалуемого постановления в законную силу: ' +
+      'в апелляции оно не обжаловалось, срок апелляционного обжалования истёк.',
+  },
+};
+
+// referenceDate — текущая дата (ISO); нужна и для выбора маршрута, и чтобы
+// понять, истёк ли срок апелляционного обжалования при отсутствии апелляции.
+function computeMirovoyCassation(inputs, mirovoyAppeal, referenceDate) {
+  const appealReasoned = toISO(inputs.mirovoy_appeal_ruling_reasoned_date);
+
+  // Точка отсчёта. Апелляция была → мотивированное определение районного суда.
+  // Апелляции не было → вступление в силу (дедлайн апелляции + 1 день), но об
+  // этом можно говорить только когда срок апелляционного обжалования истёк.
+  let anchor = null;
+  let anchorKind = null;
+  if (appealReasoned != null) {
+    anchor = appealReasoned;
+    anchorKind = 'appeal_reasoned';
+  } else if (referenceDate != null && referenceDate > mirovoyAppeal.deadline) {
+    anchor = toISO(addDays(mirovoyAppeal.deadline, 1));
+    anchorKind = 'entry_into_force';
+  } else {
+    // Данных об апелляции районного суда нет: срок обжалования ещё не истёк и
+    // мотивированное определение не введено — узел не показываем.
+    return null;
+  }
+
+  // Маршрут по дате подачи кассационной жалобы, иначе по текущей дате.
+  const effectiveDate = toISO(inputs.cassation_filed_date) ?? referenceDate;
+  if (effectiveDate == null) return null;
+  const version = pickVersion(MIROVOY_CASSATION.norm_versions, effectiveDate);
+  if (version == null) return null;
+
+  const result = computeSimpleTerm(MIROVOY_CASSATION, anchor, {
+    title: version.title,
+    norm: version.norm,
+    logic: MIROVOY_CASSATION_ANCHORS[anchorKind].logic,
+    anchor_kind: anchorKind,
+    version_id: version.id,
+    court: version.court,
+    effective_date: effectiveDate,
+  });
+  if (version.transitional_note) result.transitional_note = version.transitional_note;
+  return result;
 }
 
 // --- Валидация даты мотивированного решения (ч. 2 ст. 199 ГПК) --------------
@@ -1248,6 +1365,6 @@ export function computeChain(inputs, options = {}) {
     // Заочное решение — своя ветка; вступление в силу не рассчитывается.
     default_judgment: computeDefaultJudgment(inputs),
     // Мировой судья без мотивированного решения — своя ветка.
-    mirovoy: computeMirovoy(inputs),
+    mirovoy: computeMirovoy(inputs, toISO(options.today)),
   };
 }

@@ -78,6 +78,8 @@ const INPUT_LABELS = {
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
   mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
+  mirovoy_appeal_ruling_reasoned_date:
+    'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
 };
 
@@ -406,6 +408,16 @@ function mirovoyCards(m) {
   };
   attachCalendarWarning(appeal);
   cards.push(appeal);
+
+  // Кассация по делам мировых судей: маршрут зависит от даты подачи
+  // (глава 40.1 с 10.05.2026 либо прежний КСОЮ по переходному положению).
+  if (m.cassation) {
+    const cass = monthTermCard(m.cassation);
+    cass.version_id = m.cassation.version_id;
+    cass.court = m.cassation.court;
+    if (m.cassation.transitional_note) cass.note = m.cassation.transitional_note;
+    cards.push(cass);
+  }
   return cards;
 }
 
@@ -560,7 +572,7 @@ function buildDownstream(inputs, today) {
     cards.push(enforcementCard(chain.enforcement));
   }
 
-  const independent = independentNodes(chain);
+  const independent = independentNodes(chain, today);
   cards.push(...independent.cards);
   incomplete.push(...independent.incomplete);
 
@@ -570,12 +582,12 @@ function buildDownstream(inputs, today) {
 // Карточки узлов, независимых от цепочки общего порядка: сроки в рабочих днях и
 // ветка упрощённого производства. Принимает либо результат цепочки, либо сами
 // inputs — во втором случае считает их сама.
-function independentNodes(source) {
+function independentNodes(source, today = null) {
   const fromChain = source && 'protocol_remarks' in source;
   const terms = fromChain ? source : computeIndependentTerms(source);
   const simplified = fromChain ? source.simplified : computeSimplified(source);
   const defaultJudgment = fromChain ? source.default_judgment : computeDefaultJudgment(source);
-  const mirovoy = fromChain ? source.mirovoy : computeMirovoy(source);
+  const mirovoy = fromChain ? source.mirovoy : computeMirovoy(source, today);
 
   const cards = [];
   const incomplete = [];
@@ -619,7 +631,7 @@ export function buildView(inputs, options = {}) {
   if (inputs?.reasoned_decision_date == null) {
     // Цепочку обжалования без даты решения не построить, но независимые сроки в
     // рабочих днях от неё не зависят — показываем их и здесь.
-    const independent = independentNodes(inputs ?? {});
+    const independent = independentNodes(inputs ?? {}, today);
     return {
       cards: independent.cards,
       incomplete: [
