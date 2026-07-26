@@ -3,7 +3,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeChain, computeIndependentTerms, computeSimplified } from '../src/chain.js';
+import {
+  computeChain,
+  computeIndependentTerms,
+  computeSimplified,
+  computeDefaultJudgment,
+} from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
 // апелляция 1 месяц → 11.04.2025 (пятница, рабочий).
@@ -549,14 +554,25 @@ test('упрощённое, ч. 6: составлено мотивированн
   assert.equal(s.entry_into_force.date, '2026-02-06'); // дедлайн 05.02 + 1
 });
 
-test('упрощённое, ч. 7: подана жалоба → со дня определения апелляции, дата не вычисляется', () => {
+test('упрощённое, ч. 7: без даты определения апелляции — не разрешено, но поле предложено', () => {
   const s = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' });
   assert.equal(s.entry_into_force.branch, 'appealed');
   assert.match(s.entry_into_force.part, /ч\. 7 ст\. 232\.4/);
   assert.equal(s.entry_into_force.resolved, false);
   assert.equal(s.entry_into_force.date, null);
   assert.match(s.entry_into_force.message, /определения судом апелляционной инстанции/);
-  assert.match(s.entry_into_force.note, /не заложена/);
+  assert.deepEqual(s.entry_into_force.missing_inputs, ['simplified_appeal_ruling_date']);
+});
+
+test('упрощённое, ч. 7: с датой определения апелляции — событие разрешено', () => {
+  const s = computeSimplified({
+    ...SIMPL,
+    simplified_appeal_filed_date: '2026-01-20',
+    simplified_appeal_ruling_date: '2026-03-05',
+  });
+  assert.equal(s.entry_into_force.branch, 'appealed');
+  assert.equal(s.entry_into_force.resolved, true);
+  assert.equal(s.entry_into_force.date, '2026-03-05');
 });
 
 test('упрощённое: событие — своё, по ст. 232.4, а не общее по ч. 1 ст. 209', () => {
@@ -564,4 +580,82 @@ test('упрощённое: событие — своё, по ст. 232.4, а н
   assert.match(r.simplified.entry_into_force.norm, /232\.4/);
   assert.match(r.entry_into_force.norm, /ст\. 209/); // общая цепочка не затронута
   assert.notEqual(r.simplified.entry_into_force.date, r.entry_into_force.date);
+});
+
+// --- Заочное решение (ст. 237 ГПК) ------------------------------------------
+// Вручение копии 22.12.2025 → семидневный срок пересекает январские каникулы.
+
+const DJ = { default_judgment_service_date: '2025-12-22' };
+
+test('заочное: узла нет без даты вручения копии', () => {
+  assert.equal(computeDefaultJudgment({}), null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).default_judgment, null);
+});
+
+test('заочное: 7 рабочих дней на заявление об отмене через январские каникулы', () => {
+  const d = computeDefaultJudgment(DJ);
+  assert.equal(d.cancellation_request.first_working_day, '2025-12-23');
+  // 23,24,25,26,29,30.12 (6) → каникулы → 12.01.2026 (7)
+  assert.equal(d.cancellation_request.deadline, '2026-01-12');
+  assert.ok(d.cancellation_request.deadline > '2026-01-11', 'срок уезжает за каникулы');
+  assert.match(d.cancellation_request.norm.primary, /ч\. 1 ст\. 237/);
+  assert.match(d.cancellation_request.logic, /возобновляется/); // оговорка об отмене
+});
+
+test('заочное, ответчик: месяц со дня определения об отказе (абз. 1 ч. 2 ст. 237)', () => {
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_refusal_date: '2026-02-10' });
+  assert.equal(d.subject, 'defendant');
+  assert.equal(d.appeal.anchor, '2026-02-10');
+  assert.equal(d.appeal.anchor_kind, 'refusal');
+  assert.equal(d.appeal.deadline, '2026-03-10');
+  assert.match(d.appeal.norm.primary, /абз\. 1 ч\. 2 ст\. 237/);
+});
+
+test('заочное, ответчик без определения об отказе: апелляция не считается', () => {
+  const d = computeDefaultJudgment(DJ);
+  assert.equal(d.appeal, null);
+  assert.deepEqual(d.appeal_blocked.missing, ['default_judgment_refusal_date']);
+});
+
+test('заочное, иные лица без заявления ответчика: месяц по истечении срока подачи', () => {
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_subject: 'other_persons' });
+  assert.equal(d.subject, 'other_persons');
+  assert.equal(d.appeal.anchor_kind, 'request_deadline');
+  // якорь — последний день семидневного срока (12.01.2026), месяц → 12.02.2026
+  assert.equal(d.appeal.anchor, d.cancellation_request.deadline);
+  assert.equal(d.appeal.deadline, '2026-02-12');
+  assert.match(d.appeal.norm.primary, /абз\. 2 ч\. 2 ст\. 237/);
+});
+
+test('заочное, иные лица с заявлением ответчика: месяц со дня определения об отказе', () => {
+  const d = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_subject: 'other_persons',
+    default_judgment_cancellation_request_date: '2025-12-30',
+    default_judgment_refusal_date: '2026-02-10',
+  });
+  assert.equal(d.appeal.anchor_kind, 'refusal');
+  assert.equal(d.appeal.anchor, '2026-02-10');
+  assert.equal(d.appeal.deadline, '2026-03-10');
+  assert.match(d.appeal.norm.primary, /абз\. 2 ч\. 2 ст\. 237/);
+  // Ветвь субъекта действительно меняет результат: без заявления было бы 12.02.
+  const noRequest = computeDefaultJudgment({ ...DJ, default_judgment_subject: 'other_persons' });
+  assert.notEqual(d.appeal.deadline, noRequest.appeal.deadline);
+});
+
+test('заочное: месячный срок с переносом последнего дня (ч. 2 ст. 108)', () => {
+  // Отказ 10.04.2026 → 10.05.2026 нерабочий → перенос на 12.05.2026.
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_refusal_date: '2026-04-10' });
+  assert.equal(d.appeal.raw_deadline, '2026-05-10');
+  assert.equal(d.appeal.deadline, '2026-05-12');
+  assert.equal(d.appeal.shifted, true);
+});
+
+test('заочное: вступление в силу не рассчитывается (ст. 244 не загружена)', () => {
+  const d = computeDefaultJudgment(DJ);
+  assert.equal(d.entry_into_force.computed, false);
+  assert.match(d.entry_into_force.norm, /ст\. 244/);
+  assert.match(d.entry_into_force.reason, /нет/);
+  // по аналогии с ч. 1 ст. 209 не достраиваем
+  assert.equal(d.entry_into_force.date, undefined);
 });
