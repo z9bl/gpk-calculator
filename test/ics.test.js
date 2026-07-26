@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 
 import { buildICS, icsTermsFromChain } from '../src/ics.js';
 import { computeChain } from '../src/chain.js';
+import { addMonths } from '../src/engine.js';
+import { toISODate } from '../src/calendar.js';
 
 const NOW = '2025-01-01T00:00:00Z'; // фиксируем DTSTAMP для детерминизма
 
@@ -150,4 +152,54 @@ test('5. срок предъявления ИЛ уходит в .ics', () => {
   // событие на весь день в дату дедлайна
   const compact = chain.enforcement.deadline.replace(/-/g, '');
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${compact}`));
+});
+
+// --- Напоминания для сроков в годах (3 года: 3 мес / 1 мес / 7 дней) --------
+
+// Срок предъявления ИЛ (3 года) с дедлайном 10.07.2028. Заранее проверено:
+// 3 мес назад → 10.04.2028 (пн, рабочий); 1 мес назад → 10.06.2028 (сб,
+// нерабочий → сдвиг на 09.06.2028, пт); 7 дней назад → 03.07.2028 (пн, рабочий).
+const IL_TERM = {
+  title: 'Предъявление исполнительного листа к исполнению',
+  deadline: '2028-07-10',
+  norm: 'ч. 1 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+  ics: true,
+  duration: { value: 3, unit: 'year' },
+};
+
+test('1. срок в годах: все три напоминания создаются на верных датах', () => {
+  const ics = buildICS([IL_TERM], { referenceDate: '2025-01-01', now: NOW });
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280410T090000Z')); // 3 мес
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280609T090000Z')); // 1 мес, сдвинут с 10.06 (сб)
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280703T090000Z')); // 7 дней
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 3);
+});
+
+test('2. смещение в месяцах клампится: 31.05.2027 - 3 мес = 28.02.2027 (в феврале нет 31 числа)', () => {
+  // Клампинг, независимо от переноса выходного (та же логика, что addMonths).
+  assert.equal(toISODate(addMonths('2027-05-31', -3)), '2027-02-28');
+
+  // 28.02.2027 — воскресенье, поэтому итоговый триггер сдвинут назад на
+  // рабочий день (26.02.2027, пятница; 27.02 — суббота).
+  const term = { ...IL_TERM, deadline: '2027-05-31' };
+  const ics = buildICS([term], { referenceDate: '2025-01-01', now: NOW });
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20270226T090000Z'));
+  assert.ok(!ics.includes('20270228T090000Z'), 'нерабочая дата 28.02 не должна остаться');
+});
+
+test('3. напоминание, выпавшее на нерабочий день, сдвинуто назад', () => {
+  // 1-месячное напоминание для дедлайна 10.07.2028: 10.06.2028 — суббота.
+  const ics = buildICS([IL_TERM], { referenceDate: '2025-01-01', now: NOW });
+  assert.ok(!ics.includes('20280610T090000Z'), 'исходная нерабочая дата не должна остаться');
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280609T090000Z'));
+});
+
+test('4. расчёт от старого решения: часть напоминаний в прошлом — создаются только будущие', () => {
+  // referenceDate после 3-месячного (10.04) и сдвинутого 1-месячного (09.06)
+  // напоминаний, но до 7-дневного (03.07) — создаётся только последнее.
+  const ics = buildICS([IL_TERM], { referenceDate: '2028-06-15', now: NOW });
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 1);
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280703T090000Z'));
+  assert.ok(!ics.includes('20280410T090000Z'));
+  assert.ok(!ics.includes('20280609T090000Z'));
 });
