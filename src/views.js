@@ -15,6 +15,7 @@ import {
   CASSATION_VS,
   cassationVersionFor,
   vsCassationVersionFor,
+  computeIndependentTerms,
 } from './chain.js';
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
@@ -57,6 +58,9 @@ const INPUT_LABELS = {
   ksoyu_ruling_date: 'Дата вынесения определения КСОЮ',
   ksoyu_ruling_reasoned_date: 'Дата изготовления мотивированного определения КСОЮ',
   vs_cassation_filed_date: 'Дата подачи кассационной жалобы в ВС РФ',
+  protocol_signed_date: 'Дата подписания протокола судебного заседания',
+  protocol_remarks_filed_date: 'Дата подачи замечаний на протокол',
+  interim_ruling_date: 'Дата вынесения определения судом первой инстанции',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки.
@@ -74,7 +78,8 @@ const STUBS = [
     title: 'Упрощённое производство',
     explanation:
       'Апелляция — 15 дней, срок в днях: нерабочие дни не включаются ' +
-      '(абз. 2 ч. 3 ст. 107 ГПК РФ). Механика отличается от месячных сроков принципиально.',
+      '(абз. 2 ч. 3 ст. 107 ГПК РФ). Механика рабочих дней реализована, но эта ' +
+      'ветка требует своей точки отсчёта и пока не рассчитывается.',
     norm: 'ч. 8 ст. 232.4 ГПК РФ',
   },
   {
@@ -84,13 +89,6 @@ const STUBS = [
       'Срок зависит от подачи заявления о составлении мотивированного решения ' +
       '(3 или 15 дней в зависимости от присутствия в заседании).',
     norm: 'ч. 4, 5 ст. 199 ГПК РФ, п. 17 ПП ВС РФ № 16',
-  },
-  {
-    id: 'private_complaint',
-    title: 'Частная жалоба на определение',
-    explanation:
-      '15 дней со дня вынесения определения; срок в днях — нерабочие не включаются.',
-    norm: 'ст. 332 ГПК РФ',
   },
 ];
 
@@ -246,6 +244,31 @@ function enforcementCard(enf) {
   return card;
 }
 
+// Карточка срока в рабочих днях (абз. 2 ч. 3 ст. 107). Показывает первый день
+// течения — иначе непонятно, почему дата такая далёкая после каникул.
+function workingDayCard(term, extra = {}) {
+  const card = {
+    id: term.id,
+    kind: 'term',
+    title: term.title,
+    status: 'computed',
+    deadline: term.deadline,
+    norm: term.norm.primary,
+    unit: 'working_day',
+    first_working_day: term.first_working_day,
+    details: {
+      collapsed: true,
+      logic: term.logic,
+      calculation: term.norm.calculation,
+      midnight_rule: term.midnight_rule,
+    },
+    ...extra,
+  };
+  if (term.anchor_note) card.note = term.anchor_note;
+  attachCalendarWarning(card);
+  return card;
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -376,7 +399,25 @@ function buildDownstream(inputs, today) {
     cards.push(enforcementCard(chain.enforcement));
   }
 
+  cards.push(...independentCards(chain));
+
   return { cards, incomplete };
+}
+
+// Карточки независимых сроков в рабочих днях. Принимает либо результат цепочки,
+// либо сами inputs — во втором случае считает их сама.
+function independentCards(source) {
+  const terms =
+    source && 'protocol_remarks' in source ? source : computeIndependentTerms(source);
+  const cards = [];
+  if (terms.protocol_remarks) {
+    cards.push(workingDayCard(terms.protocol_remarks));
+    if (terms.protocol_remarks_review) {
+      cards.push(workingDayCard(terms.protocol_remarks_review, { informational: true }));
+    }
+  }
+  if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
+  return cards;
 }
 
 // --- Публичная сборка -------------------------------------------------------
@@ -399,14 +440,16 @@ export function buildView(inputs, options = {}) {
   }));
 
   if (inputs?.reasoned_decision_date == null) {
+    // Цепочку обжалования без даты решения не построить, но независимые сроки в
+    // рабочих днях от неё не зависят — показываем их и здесь.
     return {
-      cards: [],
+      cards: independentCards(inputs ?? {}),
       incomplete: [
         incompleteNode(
           'appeal_general',
           'term',
           APPEAL_GENERAL.title,
-          'Не указана дата мотивированного решения — расчёт невозможен.',
+          'Не указана дата мотивированного решения — расчёт цепочки обжалования невозможен.',
           missingInputs(['reasoned_decision_date'], inputs ?? {}),
         ),
       ],

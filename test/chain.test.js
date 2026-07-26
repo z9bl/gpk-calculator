@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeChain } from '../src/chain.js';
+import { computeChain, computeIndependentTerms } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
 // апелляция 1 месяц → 11.04.2025 (пятница, рабочий).
@@ -408,4 +408,58 @@ test('ИЛ отсутствует, пока вступление в силу н�
   const r = computeChain(BASE, { today: '2025-04-01' }); // pending
   assert.equal(r.entry_into_force.resolved, false);
   assert.equal(r.enforcement, null);
+});
+
+// --- Узлы на механике рабочих дней (абз. 2 ч. 3 ст. 107) --------------------
+
+test('замечания на протокол: 5 рабочих дней от подписания (ч. 1 ст. 231)', () => {
+  const r = computeChain({ ...BASE, protocol_signed_date: '2025-12-28' }, { today: '2026-02-01' });
+  assert.ok(r.protocol_remarks);
+  assert.equal(r.protocol_remarks.anchor, '2025-12-28');
+  assert.equal(r.protocol_remarks.first_working_day, '2025-12-29');
+  assert.equal(r.protocol_remarks.deadline, '2026-01-14');
+  assert.equal(r.protocol_remarks.shifted, false);
+  assert.match(r.protocol_remarks.norm.primary, /ст\. 231/);
+});
+
+test('рассмотрение замечаний: 5 рабочих дней от подачи (ч. 2 ст. 232)', () => {
+  // Дата подачи указана → срок считается от неё.
+  const filed = computeChain(
+    { ...BASE, protocol_signed_date: '2025-12-28', protocol_remarks_filed_date: '2026-01-13' },
+    { today: '2026-02-01' },
+  );
+  assert.equal(filed.protocol_remarks_review.anchor, '2026-01-13');
+  assert.equal(filed.protocol_remarks_review.anchor_is_assumed, false);
+  assert.match(filed.protocol_remarks_review.norm.primary, /ст\. 232/);
+
+  // Дата подачи не указана → от последнего дня срока подачи, с пометкой.
+  const assumed = computeChain(
+    { ...BASE, protocol_signed_date: '2025-12-28' },
+    { today: '2026-02-01' },
+  );
+  assert.equal(assumed.protocol_remarks_review.anchor, assumed.protocol_remarks.deadline);
+  assert.equal(assumed.protocol_remarks_review.anchor_is_assumed, true);
+  assert.match(assumed.protocol_remarks_review.anchor_note, /не указана/);
+});
+
+test('частная жалоба: 15 рабочих дней от вынесения определения (ст. 332)', () => {
+  const r = computeChain({ ...BASE, interim_ruling_date: '2025-12-26' }, { today: '2026-02-01' });
+  assert.ok(r.private_complaint);
+  assert.equal(r.private_complaint.deadline, '2026-01-28');
+  assert.equal(r.private_complaint.shifted, false);
+  assert.match(r.private_complaint.norm.primary, /ст\. 332/);
+});
+
+test('узлы в рабочих днях отсутствуют без своих input (condition)', () => {
+  const r = computeChain(BASE, { today: '2026-02-01' });
+  assert.equal(r.protocol_remarks, null);
+  assert.equal(r.protocol_remarks_review, null);
+  assert.equal(r.private_complaint, null);
+});
+
+test('независимые сроки считаются без даты мотивированного решения', () => {
+  // computeIndependentTerms не требует цепочки — узлы доступны сами по себе.
+  const t = computeIndependentTerms({ interim_ruling_date: '2025-12-26' });
+  assert.equal(t.private_complaint.deadline, '2026-01-28');
+  assert.equal(t.protocol_remarks, null);
 });

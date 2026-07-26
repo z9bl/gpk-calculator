@@ -217,6 +217,148 @@ function computeEnforcement(entry) {
   };
 }
 
+// --- Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) -------------------------
+//
+// weekend_shift у этих сроков НЕ выставляется: последний день рабочий по
+// построению, повторный перенос по ч. 2 ст. 108 сдвинул бы дату лишний раз.
+
+export const PROTOCOL_REMARKS = {
+  id: 'protocol_remarks',
+  title: 'Замечания на протокол судебного заседания',
+  duration: { value: 5, unit: 'working_day' },
+  anchor: { event: 'protocol_signed_date', offset_start: 1 },
+  condition: 'protocol_signed_date',
+  ics: true,
+  logic:
+    'Пять дней со дня подписания протокола. Срок исчисляется днями — нерабочие ' +
+    'дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ); течение начинается со дня, ' +
+    'следующего за подписанием, а если он нерабочий — с первого рабочего дня.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'protocol_signed_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 231 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+      },
+    },
+  ],
+};
+
+export const PROTOCOL_REMARKS_REVIEW = {
+  id: 'protocol_remarks_review',
+  title: 'Рассмотрение замечаний судьёй',
+  duration: { value: 5, unit: 'working_day' },
+  anchor: { event: 'protocol_remarks_filed_date', offset_start: 1 },
+  condition: 'protocol_signed_date',
+  informational: true, // срок суда, не сторона его соблюдает
+  ics: false,
+  logic:
+    'Пять дней со дня подачи замечаний. Срок исчисляется днями — нерабочие дни ' +
+    'не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ).',
+  midnight_rule: null,
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'protocol_remarks_filed_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 2 ст. 232 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+      },
+    },
+  ],
+};
+
+export const PRIVATE_COMPLAINT = {
+  id: 'private_complaint',
+  title: 'Частная жалоба на определение суда первой инстанции',
+  duration: { value: 15, unit: 'working_day' },
+  anchor: { event: 'interim_ruling_date', offset_start: 1 },
+  condition: 'interim_ruling_date',
+  ics: true,
+  logic:
+    'Пятнадцать дней со дня вынесения определения судом первой инстанции. Срок ' +
+    'исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ст. 107 ГПК ' +
+    'РФ); течение начинается со дня, следующего за вынесением, а если он ' +
+    'нерабочий — с первого рабочего дня.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'interim_ruling_date', offset_start: 1 },
+      norm: {
+        primary: 'ст. 332 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
+function computeSimpleTerm(term, anchorDate) {
+  const anchor = toISO(anchorDate);
+  if (anchor == null) return null;
+  const calc = computeDeadline(term, anchor);
+  const result = {
+    id: term.id,
+    title: term.title,
+    anchor: calc.anchor,
+    offset_start: calc.offset_start,
+    raw_deadline: calc.raw_deadline,
+    deadline: calc.deadline,
+    shifted: calc.shifted,
+    logic: term.logic,
+    midnight_rule: term.midnight_rule,
+    norm: term.norm_versions[0].norm,
+  };
+  if (calc.first_working_day) result.first_working_day = calc.first_working_day;
+  return result;
+}
+
+/**
+ * Независимые сроки в рабочих днях: не зависят от цепочки обжалования, каждый
+ * считается по своему input (замечания на протокол, частная жалоба). Поэтому
+ * доступны и без даты мотивированного решения.
+ * @param {object} inputs
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null}}
+ */
+export function computeIndependentTerms(inputs) {
+  const { remarks, review } = computeProtocolRemarks(inputs ?? {});
+  return {
+    protocol_remarks: remarks,
+    protocol_remarks_review: review,
+    private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
+  };
+}
+
+// Замечания на протокол (ч. 1 ст. 231) + рассмотрение судьёй (ч. 2 ст. 232).
+// Рассмотрение считается от фактической даты подачи замечаний, если она введена;
+// иначе — от последнего дня срока подачи (худший случай), это помечается.
+function computeProtocolRemarks(inputs) {
+  const remarks = computeSimpleTerm(PROTOCOL_REMARKS, inputs.protocol_signed_date);
+  if (remarks == null) return { remarks: null, review: null };
+
+  const filed = toISO(inputs.protocol_remarks_filed_date);
+  const reviewAnchor = filed ?? remarks.deadline;
+  const review = computeSimpleTerm(PROTOCOL_REMARKS_REVIEW, reviewAnchor);
+  if (review != null) {
+    review.anchor_is_assumed = filed == null;
+    if (filed == null) {
+      review.anchor_note =
+        'Дата подачи замечаний не указана — срок рассмотрения показан от ' +
+        'последнего дня срока подачи.';
+    }
+  }
+  return { remarks, review };
+}
+
 const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
@@ -493,5 +635,7 @@ export function computeChain(inputs, options = {}) {
     cassation,
     cassation_vs: cassationVs,
     enforcement,
+    // Сроки в рабочих днях — независимые узлы, каждый по своему input.
+    ...computeIndependentTerms(inputs),
   };
 }

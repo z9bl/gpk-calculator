@@ -16,6 +16,8 @@ import {
   CASSATION_KSOYU,
   CASSATION_VS,
   ENFORCEMENT_PRESENTATION,
+  PROTOCOL_REMARKS,
+  PRIVATE_COMPLAINT,
 } from './chain.js';
 
 const DAY_MS = 86_400_000;
@@ -218,6 +220,28 @@ export function icsTermsFromChain(chain) {
       norm: chain.enforcement.norm.primary,
       ics: ENFORCEMENT_PRESENTATION.ics,
       duration: ENFORCEMENT_PRESENTATION.duration,
+    });
+  }
+  // Сроки в рабочих днях. Правила напоминаний (раздел 8) заданы только для
+  // месячных и годовых сроков — у этих событий напоминаний нет, только сам
+  // дедлайн в календаре. Срок рассмотрения замечаний судьёй — ics: false
+  // (срок суда, справочный), поэтому в экспорт не попадает.
+  if (chain && chain.protocol_remarks && chain.protocol_remarks.deadline) {
+    terms.push({
+      title: chain.protocol_remarks.title,
+      deadline: chain.protocol_remarks.deadline,
+      norm: chain.protocol_remarks.norm.primary,
+      ics: PROTOCOL_REMARKS.ics,
+      duration: PROTOCOL_REMARKS.duration,
+    });
+  }
+  if (chain && chain.private_complaint && chain.private_complaint.deadline) {
+    terms.push({
+      title: chain.private_complaint.title,
+      deadline: chain.private_complaint.deadline,
+      norm: chain.private_complaint.norm.primary,
+      ics: PRIVATE_COMPLAINT.ics,
+      duration: PRIVATE_COMPLAINT.duration,
     });
   }
   return terms;

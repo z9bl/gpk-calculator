@@ -8,6 +8,8 @@ import {
   CASSATION_KSOYU,
   CASSATION_VS,
   ENFORCEMENT_PRESENTATION,
+  PROTOCOL_REMARKS,
+  PRIVATE_COMPLAINT,
 } from '../src/chain.js';
 
 // Метаданные экспортируемых сроков (ics/duration) — по id карточки.
@@ -16,6 +18,8 @@ const ICS_META = {
   [CASSATION_KSOYU.id]: CASSATION_KSOYU,
   [CASSATION_VS.id]: CASSATION_VS,
   [ENFORCEMENT_PRESENTATION.id]: ENFORCEMENT_PRESENTATION,
+  [PROTOCOL_REMARKS.id]: PROTOCOL_REMARKS,
+  [PRIVATE_COMPLAINT.id]: PRIVATE_COMPLAINT,
 };
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -30,6 +34,9 @@ const INPUT_LABELS = {
   ksoyu_ruling_date: 'Дата вынесения определения КСОЮ',
   ksoyu_ruling_reasoned_date: 'Дата изготовления мотивированного определения КСОЮ',
   vs_cassation_filed_date: 'Дата подачи кассационной жалобы в ВС РФ',
+  protocol_signed_date: 'Дата подписания протокола судебного заседания',
+  protocol_remarks_filed_date: 'Дата подачи замечаний на протокол',
+  interim_ruling_date: 'Дата вынесения определения судом первой инстанции',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -39,6 +46,9 @@ const INPUT_HINTS = {
   ksoyu_ruling_date: 'После её ввода появляется срок кассации в ВС РФ',
   ksoyu_ruling_reasoned_date: 'Отложение до 10 дней (ч. 7 ст. 390.1); если не откладывалось — совпадает с датой вынесения',
   vs_cassation_filed_date: 'Определяет редакцию нормы (отсечка 01.09.2024); по умолчанию — текущая дата',
+  protocol_signed_date: 'Срок 5 рабочих дней (ч. 1 ст. 231 ГПК)',
+  protocol_remarks_filed_date: 'Если не указана — срок рассмотрения считается от последнего дня подачи',
+  interim_ruling_date: 'Срок 15 рабочих дней (ст. 332 ГПК)',
 };
 
 const CHAIN_ORDER = [
@@ -47,6 +57,9 @@ const CHAIN_ORDER = [
   'cassation_ksoyu',
   'cassation_vs',
   'enforcement_presentation',
+  'protocol_remarks',
+  'protocol_remarks_review',
+  'private_complaint',
 ];
 
 // --- Состояние --------------------------------------------------------------
@@ -146,6 +159,12 @@ function renderTermCard(card, opts = {}) {
     const b = el('span', 'badge assume', 'при отсутствии обжалования');
     h.appendChild(b);
   }
+  if (card.unit === 'working_day') {
+    h.appendChild(el('span', 'badge wd', 'рабочие дни'));
+  }
+  if (card.informational) {
+    h.appendChild(el('span', 'badge info', 'справочно'));
+  }
   c.appendChild(h);
 
   if (card.status === 'missed') {
@@ -159,6 +178,15 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(el('div', 'deadline', isoToRu(card.deadline)));
     c.appendChild(el('div', 'norm', card.norm));
   }
+
+  // Для сроков в рабочих днях показываем первый день течения — иначе непонятно,
+  // почему дата уехала так далеко (например, за январские каникулы).
+  if (card.first_working_day) {
+    c.appendChild(
+      el('div', 'hint', `Отсчёт рабочих дней с ${isoToRu(card.first_working_day)}`),
+    );
+  }
+  if (card.note) c.appendChild(el('div', 'note', card.note));
 
   if (opts.conditionNote) {
     c.appendChild(el('div', 'note', opts.conditionNote));
@@ -331,6 +359,8 @@ function render() {
   currentIcsTerms = icsTermsFromView(view);
   updateDownloadButton();
 
+  renderOtherTerms();
+
   const root = document.getElementById('results');
   root.textContent = '';
 
@@ -338,6 +368,11 @@ function render() {
     root.appendChild(
       el('p', 'empty', 'Введите дату мотивированного решения — появятся рассчитанные сроки.'),
     );
+    // Независимые сроки в рабочих днях от даты решения не зависят — показываем.
+    for (const id of CHAIN_ORDER) {
+      const card = view.cards.find((n) => n.id === id);
+      if (card) root.appendChild(renderTermCard(card));
+    }
     return;
   }
 
@@ -383,6 +418,16 @@ function render() {
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
         if (redField) termEl.appendChild(renderRedactionField(redField));
+        // На карточке замечаний — необязательная дата их подачи: от неё
+        // считается срок рассмотрения судьёй (ч. 2 ст. 232).
+        if (id === 'protocol_remarks') {
+          const box = el('div', 'note');
+          box.appendChild(
+            el('div', null, 'Замечания уже поданы? Укажите дату — уточнится срок их рассмотрения.'),
+          );
+          box.appendChild(renderInviteField('protocol_remarks_filed_date').wrap);
+          termEl.appendChild(box);
+        }
         // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
         // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
         if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
@@ -444,6 +489,30 @@ function renderRelatedStubs(stubs) {
   box.appendChild(el('h3', 'related-stubs-title', 'Смежные случаи'));
   for (const s of stubs) box.appendChild(stubCard(s));
   return box;
+}
+
+// --- Другие сроки: независимые узлы на своих input ---------------------------
+//
+// Замечания на протокол и частная жалоба не зависят от цепочки обжалования —
+// у каждого свой триггер-input. Поля всегда видимы; узлы появляются в
+// результатах после ввода даты.
+const OTHER_TERM_FIELDS = ['protocol_signed_date', 'interim_ruling_date'];
+
+function renderOtherTerms() {
+  const root = document.getElementById('other-terms');
+  root.textContent = '';
+  root.appendChild(el('h2', null, 'Другие сроки'));
+  root.appendChild(
+    el(
+      'p',
+      null,
+      'Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) — считаются независимо от ' +
+        'цепочки обжалования. Заполните нужную дату.',
+    ),
+  );
+  const box = el('div', 'invite');
+  for (const id of OTHER_TERM_FIELDS) box.appendChild(renderInviteField(id).wrap);
+  root.appendChild(box);
 }
 
 // --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------

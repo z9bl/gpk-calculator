@@ -1,9 +1,13 @@
 // Движок сроков (раздел 8, задача 2 SPEC.md).
 //
-// Реализует единицу `month` по ч. 1 ст. 108 ГПК РФ (срок истекает в
-// соответствующее число последнего месяца; нет такого числа — последний день
-// месяца) с учётом начала течения по ч. 3 ст. 107 (offset_start) и переноса
-// последнего дня на рабочий по ч. 2 ст. 108 (weekend_shift → shiftIfNonWorking).
+// Единицы:
+//   month / year — ч. 1 ст. 108 ГПК РФ (истекает в соответствующее число; нет
+//     такого числа — последний день месяца), с переносом последнего дня на
+//     рабочий по ч. 2 ст. 108 (weekend_shift → shiftIfNonWorking);
+//   working_day — абз. 2 ч. 3 ст. 107 ГПК РФ (нерабочие дни не включаются);
+//     weekend_shift к таким срокам НЕ применяется — последний день рабочий по
+//     построению.
+// Начало течения во всех случаях — по ч. 3 ст. 107 через offset_start.
 
 import { shiftIfNonWorking, toISODate } from './calendar.js';
 
@@ -91,11 +95,31 @@ export function computeDeadline(term, anchorDate) {
     };
   }
 
-  if (duration.unit === 'day' || duration.unit === 'working_day') {
-    // Сроки в днях = рабочие дни (абз. 2 ч. 3 ст. 107 ГПК РФ) — вторая версия.
-    throw new Error(
-      'Сроки в днях (рабочие дни, абз. 2 ч. 3 ст. 107 ГПК РФ) — вторая версия, не MVP',
-    );
+  if (duration.unit === 'working_day' || duration.unit === 'day') {
+    // Сроки, исчисляемые днями: нерабочие дни не включаются
+    // (абз. 2 ч. 3 ст. 107 ГПК РФ; нерабочие — по ст. 111–112 ТК РФ через
+    // календарный модуль, п. 16 ПП ВС № 16, п. 22 ПП ВС № 17).
+    //
+    // Течение начинается со следующего дня после события (ч. 3 ст. 107); если
+    // этот день нерабочий, отсчёт начинается с первого рабочего. Считаются
+    // только рабочие дни; срок истекает в конце N-го рабочего дня.
+    //
+    // weekend_shift (ч. 2 ст. 108) к таким срокам НЕ применяется: последний
+    // день рабочий по построению, повторный перенос сдвинул бы дату лишний раз.
+    const firstDay = toDate(shiftIfNonWorking(addDays(anchor, offsetStart)));
+    let cursor = firstDay;
+    for (let counted = 1; counted < duration.value; counted += 1) {
+      cursor = toDate(shiftIfNonWorking(addDays(cursor, 1)));
+    }
+    const deadlineISO = toISODate(cursor);
+    return {
+      anchor: toISODate(anchor),
+      offset_start: offsetStart,
+      first_working_day: toISODate(firstDay),
+      raw_deadline: deadlineISO, // переноса нет — сырая и итоговая дата совпадают
+      deadline: deadlineISO,
+      shifted: false, // ч. 2 ст. 108 не применяется (см. выше)
+    };
   }
 
   throw new Error(`Неизвестная единица срока: ${duration.unit}`);
