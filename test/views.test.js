@@ -12,13 +12,12 @@ const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция →
 const ids = (nodes) => nodes.map((n) => n.id);
 const byId = (nodes, id) => nodes.find((n) => n.id === id);
 
-test('заглушки всегда присутствуют (2 шт., с explanation и norm)', () => {
-  // Раскрытые заглушки: частная жалоба (ст. 332) и упрощённое производство
-  // (глава 21.1) реализованы как узлы, поэтому заглушек осталось две —
-  // заочное решение и мировой судья без мотивированного решения.
+test('заглушки всегда присутствуют (1 шт., с explanation и norm)', () => {
+  // Раскрыты: частная жалоба (3.1), упрощённое производство (3.2), заочное
+  // решение (3.3). Осталась одна заглушка — мировой судья без мотивировки.
   const v = buildView(BASE, { today: '2025-05-01' });
-  assert.equal(v.stubs.length, 2);
-  assert.deepEqual(ids(v.stubs), ['default_judgment', 'justice_of_peace_no_reasoning']);
+  assert.equal(v.stubs.length, 1);
+  assert.deepEqual(ids(v.stubs), ['justice_of_peace_no_reasoning']);
   for (const s of v.stubs) {
     assert.ok(s.explanation && s.norm && s.title);
   }
@@ -376,5 +375,50 @@ test('упрощённое, ч. 7: событие не разрешено, по�
   assert.equal(entry.status, 'pending');
   assert.equal(entry.date, null);
   assert.match(entry.norm, /ч\. 7/);
-  assert.match(entry.note, /не заложена/);
+  assert.match(entry.note, /Укажите дату/);
+});
+
+test('заочное решение: карточки, выбор субъекта и пометка про ст. 244', () => {
+  const v = buildView(
+    { default_judgment_service_date: '2025-12-22', default_judgment_refusal_date: '2026-02-10' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(ids(v.cards), [
+    'default_judgment_cancellation_request',
+    'default_judgment_appeal',
+    'default_judgment_entry_notice',
+  ]);
+
+  const request = byId(v.cards, 'default_judgment_cancellation_request');
+  assert.equal(request.unit, 'working_day');
+  assert.equal(request.deadline, '2026-01-12');
+
+  const appeal = byId(v.cards, 'default_judgment_appeal');
+  assert.equal(appeal.deadline, '2026-03-10');
+  assert.match(appeal.norm, /абз\. 1 ч\. 2 ст\. 237/);
+
+  // Вступление в силу — карточка-пометка, а не расчёт.
+  const notice = byId(v.cards, 'default_judgment_entry_notice');
+  assert.equal(notice.kind, 'notice');
+  assert.match(notice.norm, /ст\. 244/);
+  assert.equal(notice.deadline, undefined);
+});
+
+test('заочное: без определения об отказе апелляция уходит в incomplete', () => {
+  const v = buildView({ default_judgment_service_date: '2025-12-22' }, { today: '2026-03-01' });
+  const inc = byId(v.incomplete, 'default_judgment_appeal');
+  assert.ok(inc);
+  assert.deepEqual(inc.missing_inputs.map((m) => m.id), ['default_judgment_refusal_date']);
+  assert.ok(!ids(v.cards).includes('default_judgment_appeal'));
+});
+
+test('заочное, иные лица: карточка апелляции с другой нормой и точкой отсчёта', () => {
+  const v = buildView(
+    { default_judgment_service_date: '2025-12-22', default_judgment_subject: 'other_persons' },
+    { today: '2026-03-01' },
+  );
+  const appeal = byId(v.cards, 'default_judgment_appeal');
+  assert.equal(appeal.deadline, '2026-02-12');
+  assert.match(appeal.norm, /абз\. 2 ч\. 2 ст\. 237/);
+  assert.match(appeal.note, /не подавал/);
 });

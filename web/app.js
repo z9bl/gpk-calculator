@@ -12,6 +12,8 @@ import {
   PRIVATE_COMPLAINT,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
+  DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
+  DEFAULT_JUDGMENT_APPEAL,
 } from '../src/chain.js';
 
 // Метаданные экспортируемых сроков (ics/duration) — по id карточки.
@@ -24,6 +26,8 @@ const ICS_META = {
   [PRIVATE_COMPLAINT.id]: PRIVATE_COMPLAINT,
   [SIMPLIFIED_REASONED_REQUEST.id]: SIMPLIFIED_REASONED_REQUEST,
   [SIMPLIFIED_APPEAL.id]: SIMPLIFIED_APPEAL,
+  [DEFAULT_JUDGMENT_CANCELLATION_REQUEST.id]: DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
+  [DEFAULT_JUDGMENT_APPEAL.id]: DEFAULT_JUDGMENT_APPEAL,
 };
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -45,6 +49,11 @@ const INPUT_LABELS = {
   simplified_reasoned_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   simplified_reasoned_date: 'Дата составления мотивированного решения',
   simplified_appeal_filed_date: 'Дата подачи апелляционной жалобы (упрощённое производство)',
+  simplified_appeal_ruling_date: 'Дата определения апелляционной инстанции (упрощённое производство)',
+  default_judgment_service_date: 'Дата вручения ответчику копии заочного решения',
+  default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
+  default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
+  default_judgment_subject: 'Кто обжалует заочное решение',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -61,7 +70,20 @@ const INPUT_HINTS = {
   simplified_reasoned_request_date: 'Запускает 10-дневный срок изготовления решения (ч. 4 ст. 232.4)',
   simplified_reasoned_date: 'Смещает отсчёт апелляции на день принятия в окончательной форме',
   simplified_appeal_filed_date: 'Переключает ветвь вступления в силу на ч. 7 ст. 232.4',
+  simplified_appeal_ruling_date: 'Дата вступления решения в силу по ч. 7 ст. 232.4',
+  default_judgment_service_date: 'Ст. 237 ГПК — точка отсчёта семидневного срока',
+  default_judgment_cancellation_request_date: 'Для иных лиц меняет точку отсчёта апелляции (абз. 2 ч. 2 ст. 237)',
+  default_judgment_refusal_date: 'От неё считается месячный срок апелляции',
 };
+
+// Узлы цепочки общего порядка — они требуют даты мотивированного решения.
+const GENERAL_CHAIN_NODES = new Set([
+  'appeal_general',
+  'entry_into_force',
+  'cassation_ksoyu',
+  'cassation_vs',
+  'enforcement_presentation',
+]);
 
 const CHAIN_ORDER = [
   'appeal_general',
@@ -76,6 +98,9 @@ const CHAIN_ORDER = [
   'simplified_reasoned_making',
   'simplified_appeal',
   'simplified_entry_into_force',
+  'default_judgment_cancellation_request',
+  'default_judgment_appeal',
+  'default_judgment_entry_notice',
 ];
 
 // --- Состояние --------------------------------------------------------------
@@ -427,6 +452,8 @@ function render() {
           opts.assumptionInvite = invite;
         }
         root.appendChild(renderEventCard(card, opts));
+      } else if (card.kind === 'notice') {
+        root.appendChild(renderNoticeCard(card));
       } else if (card.kind === 'event') {
         const eventEl = renderEventCard(card);
         appendFollowUpFields(eventEl, id);
@@ -454,6 +481,21 @@ function render() {
         // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
         // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
         if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
+        // Заочное решение: кто обжалует — влияет на точку отсчёта апелляции.
+        if (id === 'default_judgment_cancellation_request') {
+          const box = el('div', 'note');
+          box.appendChild(
+            renderChoiceField(
+              'default_judgment_subject',
+              [
+                { value: 'defendant', label: 'Ответчик (абз. 1 ч. 2 ст. 237)' },
+                { value: 'other_persons', label: 'Иные лица (абз. 2 ч. 2 ст. 237)' },
+              ],
+              state.inputs.default_judgment_subject || 'defendant',
+            ),
+          );
+          termEl.appendChild(box);
+        }
         // Заглушки рядом с узлом (напр. предъявление ИЛ).
         if (card.stubs) termEl.appendChild(renderRelatedStubs(card.stubs));
         appendFollowUpFields(termEl, id);
@@ -461,9 +503,10 @@ function render() {
       }
       continue;
     }
-    // Пока нет даты решения, приглашения по цепочке не плодим: поле для неё
-    // уже есть наверху страницы.
-    if (!chainAvailable) continue;
+    // Пока нет даты решения, приглашения по цепочке общего порядка не плодим:
+    // поле для неё уже есть наверху страницы. Приглашения независимых ветвей
+    // (рабочие дни, упрощённое, заочное) от этого не зависят и показываются.
+    if (!chainAvailable && GENERAL_CHAIN_NODES.has(id)) continue;
     const inc = incById(id);
     if (inc) {
       const incEl = renderIncompleteNode(inc);
@@ -488,6 +531,16 @@ const FOLLOW_UP_FIELDS = {
   simplified_entry_into_force: {
     field: 'simplified_appeal_filed_date',
     prompt: 'Апелляционная жалоба подана? Укажите дату (ч. 7 ст. 232.4).',
+    extraField: 'simplified_appeal_ruling_date',
+    extraWhen: () => Boolean(state.inputs.simplified_appeal_filed_date),
+  },
+  default_judgment_cancellation_request: {
+    field: 'default_judgment_cancellation_request_date',
+    prompt: 'Заявление об отмене подано? Укажите дату.',
+  },
+  default_judgment_appeal: {
+    field: 'default_judgment_refusal_date',
+    prompt: 'Определение об отказе в отмене вынесено? Укажите дату.',
   },
 };
 
@@ -497,7 +550,45 @@ function appendFollowUpFields(cardEl, id) {
   const box = el('div', 'note');
   box.appendChild(el('div', null, spec.prompt));
   box.appendChild(renderInviteField(spec.field).wrap);
+  // Второе поле показываем только когда оно уже осмысленно (напр. дату
+  // определения апелляции спрашиваем лишь после ввода даты подачи жалобы).
+  if (spec.extraField && (!spec.extraWhen || spec.extraWhen())) {
+    box.appendChild(renderInviteField(spec.extraField).wrap);
+  }
   cardEl.appendChild(box);
+}
+
+// Карточка-пометка: расчёт сознательно не выполняется (нет текста нормы).
+function renderNoticeCard(card) {
+  const c = el('div', 'card notice-card');
+  c.appendChild(el('div', 'kicker', 'Не рассчитывается'));
+  c.appendChild(el('h2', null, card.title));
+  c.appendChild(el('div', 'deadline', '—'));
+  c.appendChild(el('div', 'norm', card.norm));
+  c.appendChild(el('div', 'warn', card.reason));
+  return c;
+}
+
+// Поле выбора (не дата): например, субъект обжалования заочного решения.
+function renderChoiceField(id, options, current) {
+  const wrap = el('div', 'field');
+  const lab = el('label', null, INPUT_LABELS[id]);
+  lab.setAttribute('for', `in-${id}`);
+  wrap.appendChild(lab);
+  const select = el('select');
+  select.id = `in-${id}`;
+  for (const opt of options) {
+    const o = el('option', null, opt.label);
+    o.value = opt.value;
+    if (opt.value === current) o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener('change', () => {
+    state.inputs[id] = select.value;
+    render();
+  });
+  wrap.appendChild(select);
+  return wrap;
 }
 
 // Какой input выбирает редакцию нормы на каждом кассационном узле.
@@ -553,6 +644,7 @@ const OTHER_TERM_FIELDS = [
   'protocol_signed_date',
   'interim_ruling_date',
   'simplified_resolution_date',
+  'default_judgment_service_date',
 ];
 
 function renderOtherTerms() {

@@ -302,7 +302,7 @@ export const PRIVATE_COMPLAINT = {
 };
 
 // Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
-function computeSimpleTerm(term, anchorDate) {
+function computeSimpleTerm(term, anchorDate, overrides = null) {
   const anchor = toISO(anchorDate);
   if (anchor == null) return null;
   const calc = computeDeadline(term, anchor);
@@ -319,7 +319,9 @@ function computeSimpleTerm(term, anchorDate) {
     norm: term.norm_versions[0].norm,
   };
   if (calc.first_working_day) result.first_working_day = calc.first_working_day;
-  return result;
+  // overrides — для сроков, у которых норма и логика зависят не от редакции, а
+  // от субъекта обжалования (заочное решение, ч. 2 ст. 237).
+  return overrides ? { ...result, ...overrides } : result;
 }
 
 /**
@@ -441,23 +443,28 @@ const SIMPLIFIED_ENTRY_NORM = 'ст. 232.4 ГПК РФ';
 
 // Событие вступления в силу по ст. 232.4 — три ветви (ч. 5, 6, 7).
 // От текущей даты не зависит: ветвь определяется введёнными фактами.
-function resolveSimplifiedEntry(appealFiled, reasoned, appealDeadline) {
+function resolveSimplifiedEntry(appealFiled, reasoned, appealDeadline, appealRuling) {
   // ч. 7: подана апелляционная жалоба — со дня принятия определения
-  // апелляционной инстанцией. Этой даты среди inputs нет, поэтому событие
-  // не разрешается: показываем норму и чего не хватает, а не выдуманную дату.
+  // апелляционной инстанцией. Дата известна → событие разрешено; не введена →
+  // показываем норму и чего не хватает, а не выдуманную дату.
   if (appealFiled != null) {
-    return {
+    const base = {
       branch: 'appealed',
       part: 'ч. 7 ст. 232.4 ГПК РФ',
-      resolved: false,
-      date: null,
       logic:
         'Апелляционная жалоба подана — решение вступает в силу со дня принятия ' +
         'определения судом апелляционной инстанции.',
+    };
+    if (appealRuling != null) {
+      return { ...base, resolved: true, date: appealRuling };
+    }
+    return {
+      ...base,
+      resolved: false,
+      date: null,
       message: 'Вступит в силу со дня принятия определения судом апелляционной инстанции',
-      note:
-        'Дата определения апелляционной инстанции в расчёт не заложена — этот ' +
-        'срок не вычисляется.',
+      missing_inputs: ['simplified_appeal_ruling_date'],
+      note: 'Укажите дату определения апелляционной инстанции — тогда дата будет рассчитана.',
     };
   }
 
@@ -523,13 +530,185 @@ export function computeSimplified(inputs) {
   const appeal = computeSimpleTerm(SIMPLIFIED_APPEAL, reasoned ?? resolution);
   appeal.anchor_kind = reasoned != null ? 'reasoned' : 'resolution';
 
-  const entry = resolveSimplifiedEntry(appealFiled, reasoned, appeal.deadline);
+  const appealRuling = toISO(inputs.simplified_appeal_ruling_date);
+  const entry = resolveSimplifiedEntry(appealFiled, reasoned, appeal.deadline, appealRuling);
 
   return {
     reasoned_request: request,
     reasoned_making: making,
     appeal,
     entry_into_force: { norm: SIMPLIFIED_ENTRY_NORM, ...entry },
+  };
+}
+
+// --- Заочное решение (ст. 237 ГПК) ------------------------------------------
+//
+// Семидневный срок на заявление об отмене — в рабочих днях (абз. 2 ч. 3
+// ст. 107). Апелляционные сроки — месячные. Точка отсчёта апелляции зависит от
+// субъекта (ответчик / иные лица) и от того, подавал ли ответчик заявление.
+//
+// Вступление заочного решения в силу НЕ считается: ст. 244 ГПК в проект не
+// загружена, достраивать по аналогии с ч. 1 ст. 209 нельзя (раздел 9 SPEC).
+
+export const DEFAULT_JUDGMENT_SUBJECTS = ['defendant', 'other_persons'];
+
+const DEFAULT_JUDGMENT_CANCELLED_NOTE =
+  'Если заявление об отмене удовлетворено, заочное решение отменяется и ' +
+  'производство по делу возобновляется — срока апелляционного обжалования не ' +
+  'возникает.';
+
+export const DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
+  id: 'default_judgment_cancellation_request',
+  title: 'Заявление об отмене заочного решения',
+  duration: { value: 7, unit: 'working_day' },
+  anchor: { event: 'default_judgment_service_date', offset_start: 1 },
+  condition: 'default_judgment_service_date',
+  ics: true,
+  logic:
+    'Семь дней со дня вручения ответчику копии заочного решения. Срок ' +
+    'исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ). ' +
+    DEFAULT_JUDGMENT_CANCELLED_NOTE,
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'default_judgment_service_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 237 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Один срок с двумя наборами нормы/логики — по субъекту обжалования.
+export const DEFAULT_JUDGMENT_APPEAL = {
+  id: 'default_judgment_appeal',
+  title: 'Апелляционная жалоба (заочное решение)',
+  duration: { value: 1, unit: 'month' },
+  anchor: { offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { offset_start: 1 },
+      norm: { primary: 'ч. 2 ст. 237 ГПК РФ', calculation: ['ч. 1, 2 ст. 108 ГПК РФ'] },
+    },
+  ],
+};
+
+const DEFAULT_JUDGMENT_APPEAL_MODES = {
+  // Ответчик: месяц со дня вынесения определения об отказе в удовлетворении
+  // заявления об отмене.
+  defendant: {
+    anchor_kind: 'refusal',
+    norm: {
+      primary: 'абз. 1 ч. 2 ст. 237 ГПК РФ',
+      calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+    logic:
+      'Месяц со дня вынесения определения об отказе в удовлетворении заявления ' +
+      'об отмене заочного решения. ' + DEFAULT_JUDGMENT_CANCELLED_NOTE,
+  },
+  // Иные лица, заявление ответчиком не подавалось: месяц по истечении срока
+  // подачи заявления об отмене.
+  other_persons_no_request: {
+    anchor_kind: 'request_deadline',
+    norm: {
+      primary: 'абз. 2 ч. 2 ст. 237 ГПК РФ',
+      calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+    logic:
+      'Месяц по истечении срока подачи ответчиком заявления об отмене заочного ' +
+      'решения (семь рабочих дней со дня вручения копии).',
+  },
+  // Иные лица, заявление подано: месяц со дня определения об отказе.
+  other_persons_after_request: {
+    anchor_kind: 'refusal',
+    norm: {
+      primary: 'абз. 2 ч. 2 ст. 237 ГПК РФ',
+      calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+    logic:
+      'Ответчик подал заявление об отмене — месяц со дня вынесения определения ' +
+      'об отказе в его удовлетворении. ' + DEFAULT_JUDGMENT_CANCELLED_NOTE,
+  },
+};
+
+/**
+ * Заочное решение (ст. 237 ГПК). Независимая ветка по своим inputs.
+ * @param {object} inputs
+ * @returns {object|null} null, если не введена дата вручения копии решения.
+ */
+export function computeDefaultJudgment(inputs) {
+  const service = toISO(inputs?.default_judgment_service_date);
+  if (service == null) return null;
+
+  const requestFiled = toISO(inputs.default_judgment_cancellation_request_date);
+  const refusal = toISO(inputs.default_judgment_refusal_date);
+  const subject = DEFAULT_JUDGMENT_SUBJECTS.includes(inputs.default_judgment_subject)
+    ? inputs.default_judgment_subject
+    : 'defendant'; // по умолчанию — ответчик (ч. 1 ст. 237)
+
+  // ч. 1 ст. 237 — 7 рабочих дней на заявление об отмене (срок ответчика).
+  const request = computeSimpleTerm(DEFAULT_JUDGMENT_CANCELLATION_REQUEST, service);
+
+  // Какой режим апелляции применим и какая дата нужна.
+  let modeKey;
+  if (subject === 'defendant') modeKey = 'defendant';
+  else modeKey = requestFiled != null ? 'other_persons_after_request' : 'other_persons_no_request';
+  const mode = DEFAULT_JUDGMENT_APPEAL_MODES[modeKey];
+
+  let appeal = null;
+  let appealBlocked = null;
+  if (mode.anchor_kind === 'refusal') {
+    if (refusal != null) {
+      appeal = computeSimpleTerm(DEFAULT_JUDGMENT_APPEAL, refusal, {
+        norm: mode.norm,
+        logic: mode.logic,
+        anchor_kind: mode.anchor_kind,
+        subject,
+      });
+    } else {
+      appealBlocked = {
+        reason:
+          'Срок считается со дня вынесения определения об отказе в удовлетворении ' +
+          'заявления об отмене заочного решения — нужна его дата.',
+        missing: ['default_judgment_refusal_date'],
+        norm: mode.norm.primary,
+      };
+    }
+  } else {
+    // request_deadline: месяц по истечении срока подачи заявления об отмене.
+    appeal = computeSimpleTerm(DEFAULT_JUDGMENT_APPEAL, request.deadline, {
+      norm: mode.norm,
+      logic: mode.logic,
+      anchor_kind: mode.anchor_kind,
+      subject,
+    });
+  }
+
+  return {
+    subject,
+    cancellation_request: request,
+    appeal,
+    appeal_blocked: appealBlocked,
+    // Вступление в силу сознательно не рассчитывается — см. комментарий выше.
+    entry_into_force: {
+      computed: false,
+      norm: 'ст. 244 ГПК РФ',
+      message: 'Вступление заочного решения в силу не рассчитывается',
+      reason:
+        'Момент вступления заочного решения в законную силу определяется ст. 244 ' +
+        'ГПК РФ, текста которой в проекте нет. Достраивать его по аналогии с ' +
+        'ч. 1 ст. 209 нельзя — правило иное.',
+    },
   };
 }
 
@@ -813,5 +992,7 @@ export function computeChain(inputs, options = {}) {
     ...computeIndependentTerms(inputs),
     // Упрощённое производство — своя ветка со своим вступлением в силу.
     simplified: computeSimplified(inputs),
+    // Заочное решение — своя ветка; вступление в силу не рассчитывается.
+    default_judgment: computeDefaultJudgment(inputs),
   };
 }

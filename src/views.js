@@ -17,6 +17,7 @@ import {
   vsCassationVersionFor,
   computeIndependentTerms,
   computeSimplified,
+  computeDefaultJudgment,
 } from './chain.js';
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
@@ -66,18 +67,15 @@ const INPUT_LABELS = {
   simplified_reasoned_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   simplified_reasoned_date: 'Дата составления мотивированного решения',
   simplified_appeal_filed_date: 'Дата подачи апелляционной жалобы (упрощённое производство)',
+  simplified_appeal_ruling_date: 'Дата определения апелляционной инстанции (упрощённое производство)',
+  default_judgment_service_date: 'Дата вручения ответчику копии заочного решения',
+  default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
+  default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
+  default_judgment_subject: 'Кто обжалует заочное решение',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки.
 const STUBS = [
-  {
-    id: 'default_judgment',
-    title: 'Заочное решение',
-    explanation:
-      'Отмена — 7 дней со дня вручения копии ответчику; апелляция — месяц со ' +
-      'дня определения об отказе в отмене. Точка отсчёта — вручение, а не принятие.',
-    norm: 'ч. 1, 2 ст. 237 ГПК РФ',
-  },
   {
     id: 'justice_of_peace_no_reasoning',
     title: 'Мировой судья без мотивированного решения',
@@ -308,6 +306,61 @@ function simplifiedCards(simplified) {
   return cards;
 }
 
+// Карточки заочного решения (ст. 237): срок на заявление об отмене, апелляция
+// (по субъекту) и явная пометка, что вступление в силу не рассчитывается.
+function defaultJudgmentCards(dj) {
+  const cards = [];
+  const incomplete = [];
+
+  cards.push(workingDayCard(dj.cancellation_request));
+
+  if (dj.appeal) {
+    const card = {
+      id: dj.appeal.id,
+      kind: 'term',
+      title: dj.appeal.title,
+      status: 'computed',
+      deadline: dj.appeal.deadline,
+      norm: dj.appeal.norm.primary,
+      subject: dj.appeal.subject,
+      details: {
+        collapsed: true,
+        logic: dj.appeal.logic,
+        calculation: dj.appeal.norm.calculation,
+        midnight_rule: dj.appeal.midnight_rule,
+      },
+      note:
+        dj.appeal.anchor_kind === 'request_deadline'
+          ? 'Ответчик заявление об отмене не подавал — отсчёт по истечении срока его подачи.'
+          : 'Отсчёт со дня вынесения определения об отказе в отмене заочного решения.',
+    };
+    attachCalendarWarning(card);
+    cards.push(card);
+  } else if (dj.appeal_blocked) {
+    incomplete.push(
+      incompleteNode(
+        'default_judgment_appeal',
+        'term',
+        `Апелляционная жалоба (заочное решение) — ${dj.appeal_blocked.norm}`,
+        dj.appeal_blocked.reason,
+        missingInputs(dj.appeal_blocked.missing, {}),
+      ),
+    );
+  }
+
+  // Вступление в силу — не расчёт, а пометка о невозможности (ст. 244 ГПК).
+  cards.push({
+    id: 'default_judgment_entry_notice',
+    kind: 'notice',
+    title: 'Вступление заочного решения в законную силу',
+    norm: dj.entry_into_force.norm,
+    message: dj.entry_into_force.message,
+    reason: dj.entry_into_force.reason,
+  });
+
+  return { cards, incomplete };
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -438,7 +491,9 @@ function buildDownstream(inputs, today) {
     cards.push(enforcementCard(chain.enforcement));
   }
 
-  cards.push(...independentCards(chain));
+  const independent = independentNodes(chain);
+  cards.push(...independent.cards);
+  incomplete.push(...independent.incomplete);
 
   return { cards, incomplete };
 }
@@ -446,12 +501,14 @@ function buildDownstream(inputs, today) {
 // Карточки узлов, независимых от цепочки общего порядка: сроки в рабочих днях и
 // ветка упрощённого производства. Принимает либо результат цепочки, либо сами
 // inputs — во втором случае считает их сама.
-function independentCards(source) {
+function independentNodes(source) {
   const fromChain = source && 'protocol_remarks' in source;
   const terms = fromChain ? source : computeIndependentTerms(source);
   const simplified = fromChain ? source.simplified : computeSimplified(source);
+  const defaultJudgment = fromChain ? source.default_judgment : computeDefaultJudgment(source);
 
   const cards = [];
+  const incomplete = [];
   if (terms.protocol_remarks) {
     cards.push(workingDayCard(terms.protocol_remarks));
     if (terms.protocol_remarks_review) {
@@ -460,7 +517,12 @@ function independentCards(source) {
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
   if (simplified) cards.push(...simplifiedCards(simplified));
-  return cards;
+  if (defaultJudgment) {
+    const dj = defaultJudgmentCards(defaultJudgment);
+    cards.push(...dj.cards);
+    incomplete.push(...dj.incomplete);
+  }
+  return { cards, incomplete };
 }
 
 // --- Публичная сборка -------------------------------------------------------
@@ -485,8 +547,9 @@ export function buildView(inputs, options = {}) {
   if (inputs?.reasoned_decision_date == null) {
     // Цепочку обжалования без даты решения не построить, но независимые сроки в
     // рабочих днях от неё не зависят — показываем их и здесь.
+    const independent = independentNodes(inputs ?? {});
     return {
-      cards: independentCards(inputs ?? {}),
+      cards: independent.cards,
       incomplete: [
         incompleteNode(
           'appeal_general',
@@ -495,6 +558,7 @@ export function buildView(inputs, options = {}) {
           'Не указана дата мотивированного решения — расчёт цепочки обжалования невозможен.',
           missingInputs(['reasoned_decision_date'], inputs ?? {}),
         ),
+        ...independent.incomplete,
       ],
       stubs,
     };
