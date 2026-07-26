@@ -317,6 +317,10 @@ function computeSimpleTerm(term, anchorDate, overrides = null) {
     logic: term.logic,
     midnight_rule: term.midnight_rule,
     norm: term.norm_versions[0].norm,
+    // Фактическая длительность: у части сроков она зависит не от константы, а
+    // от входных данных (3/15 рабочих дней по явке, ч. 4 ст. 199). Нужна для
+    // правил напоминаний .ics.
+    duration: term.duration,
   };
   if (calc.first_working_day) result.first_working_day = calc.first_working_day;
   // overrides — для сроков, у которых норма и логика зависят не от редакции, а

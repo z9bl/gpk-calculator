@@ -2,37 +2,7 @@
 // логики: приложение только читает даты, вызывает buildView и рисует результат.
 
 import { buildView } from '../src/views.js';
-import { buildICS } from '../src/ics.js';
-import {
-  APPEAL_GENERAL,
-  CASSATION_KSOYU,
-  CASSATION_VS,
-  ENFORCEMENT_PRESENTATION,
-  PROTOCOL_REMARKS,
-  PRIVATE_COMPLAINT,
-  SIMPLIFIED_REASONED_REQUEST,
-  SIMPLIFIED_APPEAL,
-  DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
-  DEFAULT_JUDGMENT_APPEAL,
-  MIROVOY_REASONED_REQUEST,
-  MIROVOY_APPEAL,
-} from '../src/chain.js';
-
-// Метаданные экспортируемых сроков (ics/duration) — по id карточки.
-const ICS_META = {
-  [APPEAL_GENERAL.id]: APPEAL_GENERAL,
-  [CASSATION_KSOYU.id]: CASSATION_KSOYU,
-  [CASSATION_VS.id]: CASSATION_VS,
-  [ENFORCEMENT_PRESENTATION.id]: ENFORCEMENT_PRESENTATION,
-  [PROTOCOL_REMARKS.id]: PROTOCOL_REMARKS,
-  [PRIVATE_COMPLAINT.id]: PRIVATE_COMPLAINT,
-  [SIMPLIFIED_REASONED_REQUEST.id]: SIMPLIFIED_REASONED_REQUEST,
-  [SIMPLIFIED_APPEAL.id]: SIMPLIFIED_APPEAL,
-  [DEFAULT_JUDGMENT_CANCELLATION_REQUEST.id]: DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
-  [DEFAULT_JUDGMENT_APPEAL.id]: DEFAULT_JUDGMENT_APPEAL,
-  [MIROVOY_REASONED_REQUEST.id]: MIROVOY_REASONED_REQUEST,
-  [MIROVOY_APPEAL.id]: MIROVOY_APPEAL,
-};
+import { buildICS, icsTermsFromView } from '../src/ics.js';
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
 
@@ -248,7 +218,22 @@ function renderTermCard(card, opts = {}) {
   }
 
   if (card.warnings) {
-    for (const w of card.warnings) c.appendChild(el('div', 'warn', w.text));
+    for (const w of card.warnings) {
+      const box = el('div', 'warn');
+      box.appendChild(el('div', null, w.text));
+      // Структурные даты предупреждения форматируем здесь: views отдаёт ISO.
+      if (w.allowed_deadline && w.actual_date) {
+        box.appendChild(
+          el(
+            'div',
+            null,
+            `Срок отложения истекал ${isoToRu(w.allowed_deadline)}, ` +
+              `решение изготовлено ${isoToRu(w.actual_date)}.`,
+          ),
+        );
+      }
+      c.appendChild(box);
+    }
   }
 
   if (card.calendar_warning) c.appendChild(el('div', 'warn', card.calendar_warning.text));
@@ -378,22 +363,6 @@ function renderIncompleteNode(node) {
 
 let currentIcsTerms = []; // рассчитанные сроки с ics:true для кнопки «Скачать»
 
-// Экспортируемые сроки из карточек: рассчитанные (есть дедлайн) и с ics:true.
-function icsTermsFromView(view) {
-  const out = [];
-  for (const card of view.cards) {
-    const meta = ICS_META[card.id];
-    if (!meta || meta.ics !== true || !card.deadline) continue;
-    out.push({
-      title: card.title,
-      deadline: card.deadline,
-      norm: card.norm,
-      ics: true,
-      duration: meta.duration,
-    });
-  }
-  return out;
-}
 
 function updateDownloadButton() {
   const btn = document.getElementById('download-ics');

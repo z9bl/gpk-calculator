@@ -26,8 +26,48 @@ import {
   MIROVOY_APPEAL,
 } from './chain.js';
 
+import * as chainModule from './chain.js';
+
 const DAY_MS = 86_400_000;
 const PRODID = '-//gpk-calculator//Процессуальные сроки ГПК//RU';
+
+/**
+ * Реестр сроков по id узла. Собирается автоматически из экспортов chain.js,
+ * поэтому новый узел не может выпасть из экспорта .ics молча — он попадает в
+ * реестр вместе с самим определением срока.
+ */
+export const TERM_REGISTRY = Object.fromEntries(
+  Object.values(chainModule)
+    .filter(
+      (v) =>
+        v && typeof v === 'object' && typeof v.id === 'string' && v.duration && 'ics' in v,
+    )
+    .map((term) => [term.id, term]),
+);
+
+/**
+ * Экспортируемые сроки из структуры отображения: рассчитанные (есть дедлайн) и
+ * с ics: true. Длительность берётся из самой карточки, если она её несёт (она
+ * может отличаться от константы — например, 3 или 15 рабочих дней у заявления
+ * мировому судье в зависимости от явки), иначе из реестра.
+ * @param {{cards: object[]}} view — результат buildView.
+ * @returns {Array<object>} сроки для buildICS.
+ */
+export function icsTermsFromView(view) {
+  const out = [];
+  for (const card of (view && view.cards) || []) {
+    const meta = TERM_REGISTRY[card.id];
+    if (!meta || meta.ics !== true || !card.deadline) continue;
+    out.push({
+      title: card.title,
+      deadline: card.deadline,
+      norm: card.norm,
+      ics: true,
+      duration: card.duration || meta.duration,
+    });
+  }
+  return out;
+}
 
 // Правила напоминаний (раздел 8 SPEC.md) по длительности срока: смещения до
 // дедлайна, каждое со своей единицей (день — календарный, месяц — с клампингом).
@@ -56,14 +96,25 @@ function reminderOffsets(duration) {
   }
   // Сроки в рабочих днях: смещения тоже в рабочих днях — календарное смещение
   // на каникулах увело бы напоминание за границу срока.
-  if (duration && duration.unit === 'working_day' && duration.value === 5) {
-    return [{ unit: 'working_day', value: 2 }];
-  }
-  if (duration && duration.unit === 'working_day' && duration.value === 15) {
-    return [
-      { unit: 'working_day', value: 7 },
-      { unit: 'working_day', value: 3 },
-    ];
+  if (duration && duration.unit === 'working_day') {
+    switch (duration.value) {
+      case 3: // заявление мировому судье при явке (п. 1 ч. 4 ст. 199)
+        return [{ unit: 'working_day', value: 1 }];
+      case 5: // замечания на протокол, заявление по упрощённому производству
+        return [{ unit: 'working_day', value: 2 }];
+      case 7: // заявление об отмене заочного решения (ч. 1 ст. 237)
+        return [
+          { unit: 'working_day', value: 3 },
+          { unit: 'working_day', value: 1 },
+        ];
+      case 15: // частная жалоба, апелляция по упрощённому, заявление без явки
+        return [
+          { unit: 'working_day', value: 7 },
+          { unit: 'working_day', value: 3 },
+        ];
+      default:
+        return [];
+    }
   }
   return [];
 }

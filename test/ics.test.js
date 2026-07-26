@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildICS, icsTermsFromChain } from '../src/ics.js';
+import { buildICS, icsTermsFromChain, icsTermsFromView, TERM_REGISTRY } from '../src/ics.js';
+import { buildView } from '../src/views.js';
 import { computeChain } from '../src/chain.js';
 import { addDays, addMonths } from '../src/engine.js';
 import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } from '../src/calendar.js';
@@ -263,4 +264,102 @@ test('смещение в рабочих днях даёт больший зап
   assert.ok(!isWorkingDay(calendarRaw));
   assert.equal(shiftBackIfNonWorking(calendarRaw), '2025-12-30');
   assert.equal(subtractWorkingDays('2026-01-15', 4), '2025-12-30');
+});
+
+// --- Структурная проверка полноты экспорта ----------------------------------
+// Проверяем по списку узлов, а не перечислением: следующий добавленный узел с
+// ics: true обязан попасть и в реестр, и в скачиваемый файл — иначе тест падает.
+
+// Входные данные, активирующие все ветви расчёта сразу.
+const ALL_BRANCHES_INPUTS = {
+  // цепочка общего порядка (вступление в силу разрешено → появляется срок ИЛ)
+  reasoned_decision_date: '2025-03-11',
+  appeal_filed_date: '2025-04-05',
+  appeal_ruling_date: '2025-06-02',
+  appeal_ruling_reasoned_date: '2025-06-10',
+  // кассация в ВС
+  ksoyu_ruling_date: '2025-08-01',
+  ksoyu_ruling_reasoned_date: '2025-08-05',
+  // сроки в рабочих днях
+  protocol_signed_date: '2025-07-01',
+  interim_ruling_date: '2025-07-02',
+  // упрощённое производство
+  simplified_resolution_date: '2025-07-03',
+  simplified_reasoned_request_date: '2025-07-04',
+  simplified_reasoned_date: '2025-07-10',
+  // заочное решение
+  default_judgment_service_date: '2025-07-05',
+  default_judgment_refusal_date: '2025-08-10',
+  // мировой судья
+  mirovoy_resolution_date: '2025-07-06',
+  mirovoy_request_date: '2025-07-07',
+  mirovoy_reasoned_date: '2025-07-15',
+};
+
+test('реестр сроков собран из chain.js и покрывает все узлы с ics: true', () => {
+  const withIcs = Object.values(TERM_REGISTRY).filter((t) => t.ics === true);
+  assert.ok(withIcs.length >= 12, `в реестре ${withIcs.length} экспортируемых сроков`);
+  // Реестр строится по id — id должен совпадать с ключом.
+  for (const [id, term] of Object.entries(TERM_REGISTRY)) {
+    assert.equal(term.id, id);
+    assert.ok(term.duration && term.duration.unit, `${id}: нет duration`);
+  }
+});
+
+test('каждый узел с ics: true попадает в скачиваемый файл', () => {
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: '2026-01-15' });
+  const terms = icsTermsFromView(view); // ровно тот путь, что у кнопки «Скачать»
+  const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
+
+  const visibleIds = new Set(view.cards.map((c) => c.id));
+  const expected = Object.values(TERM_REGISTRY).filter(
+    (t) => t.ics === true && visibleIds.has(t.id),
+  );
+  // Набор входных данных должен активировать все экспортируемые узлы: иначе
+  // проверка становится дырявой и новый узел проскочит.
+  const missingFromView = Object.values(TERM_REGISTRY)
+    .filter((t) => t.ics === true && !visibleIds.has(t.id))
+    .map((t) => t.id);
+  assert.deepEqual(missingFromView, [], 'все узлы с ics:true должны быть видны в этом наборе');
+
+  const exportedTitles = terms.map((t) => t.title);
+  for (const term of expected) {
+    const card = view.cards.find((c) => c.id === term.id);
+    assert.ok(
+      exportedTitles.includes(card.title),
+      `узел ${term.id} не попал в список экспорта`,
+    );
+    // И сам дедлайн присутствует в файле как событие на весь день.
+    assert.ok(
+      ics.includes(`DTSTART;VALUE=DATE:${card.deadline.replace(/-/g, '')}`),
+      `узел ${term.id}: дедлайн ${card.deadline} отсутствует в .ics`,
+    );
+  }
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, expected.length);
+});
+
+test('узлы с ics: false в файл не попадают', () => {
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: '2026-01-15' });
+  const exportedIds = new Set(
+    icsTermsFromView(view).map((t) => view.cards.find((c) => c.title === t.title)?.id),
+  );
+  for (const term of Object.values(TERM_REGISTRY)) {
+    if (term.ics === false) {
+      assert.ok(!exportedIds.has(term.id), `справочный срок ${term.id} не должен экспортироваться`);
+    }
+  }
+});
+
+test('длительность берётся из карточки: 15 рабочих дней у мирового без явки', () => {
+  // Регрессия: реестр несёт 3 рабочих дня (значение по умолчанию), а при отсутствии
+  // явки срок 15-дневный — правила напоминаний должны соответствовать факту.
+  const view = buildView(
+    { mirovoy_resolution_date: '2025-12-22', mirovoy_attendance: 'absent' },
+    { today: '2026-01-15' },
+  );
+  const term = icsTermsFromView(view).find((t) => t.title.includes('мотивированного решения'));
+  assert.deepEqual(term.duration, { value: 15, unit: 'working_day' });
+  const ics = buildICS([term], { referenceDate: '2020-01-01', now: NOW });
+  // 15 рабочих дней → два напоминания (за 7 и 3), а не одно (правило для 3 дней).
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
 });
