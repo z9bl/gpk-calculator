@@ -246,12 +246,24 @@ function renderTermCard(card, opts = {}) {
 
   if (card.calendar_warning) c.appendChild(el('div', 'warn', card.calendar_warning.text));
 
+  if (card.exhaustion_warning) c.appendChild(renderExhaustionWarning(card.exhaustion_warning));
+
   if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
 
   if (card.alternative) c.appendChild(renderAlternative(card));
 
   if (card.details) c.appendChild(renderDetails(card.details));
   return c;
+}
+
+// Исчерпание способов обжалования: акт в апелляции не обжаловался.
+// Расчёт остаётся — он верен для актов, не подлежащих апелляционному обжалованию.
+function renderExhaustionWarning(w) {
+  const box = el('div', 'warn');
+  box.appendChild(el('div', null, w.text));
+  box.appendChild(el('div', 'hint', w.calculation_note));
+  box.appendChild(el('div', 'hint', `${w.norm} · ${w.clarification}`));
+  return box;
 }
 
 function renderBoundaryWarning(bw) {

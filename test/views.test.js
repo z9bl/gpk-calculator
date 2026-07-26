@@ -541,3 +541,38 @@ test('кассация по делам мировых судей: маршрут
   assert.match(kc.note, /прежний маршрут/);
   assert.match(kc.note, /ч\. 2 ст\. 3 ФЗ № 79-ФЗ/);
 });
+
+test('исчерпание: предупреждение в карточках обоих кассационных узлов (not_appealed)', () => {
+  // Решение первой инстанции, апелляции не было → кассация в КСОЮ.
+  const ksoyu = buildView(BASE, { today: '2025-05-01' });
+  const kw = byId(ksoyu.cards, 'cassation_ksoyu').exhaustion_warning;
+  assert.ok(kw, 'карточка КСОЮ должна нести предупреждение');
+  assert.equal(kw.code, 'appeal_not_exhausted');
+  assert.match(kw.text, /возврату без рассмотрения/);
+  assert.match(kw.calculation_note, /судебный приказ/);
+
+  // Решение мирового судьи, апелляции не было → президиум областного суда.
+  const presidium = buildView({ mirovoy_resolution_date: '2026-01-15' }, { today: '2026-07-01' });
+  const pc = byId(presidium.cards, 'mirovoy_cassation');
+  assert.equal(pc.version_id, 'presidium_from_79fz');
+  assert.equal(pc.exhaustion_warning.code, 'appeal_not_exhausted');
+});
+
+test('исчерпание: в ветви appealed предупреждения нет ни в одной карточке', () => {
+  const ksoyu = buildView(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-02',
+    },
+    { today: '2025-07-01' },
+  );
+  assert.equal(byId(ksoyu.cards, 'cassation_ksoyu').exhaustion_warning, undefined);
+
+  const presidium = buildView(
+    { mirovoy_resolution_date: '2026-01-15', mirovoy_appeal_ruling_reasoned_date: '2026-03-01' },
+    { today: '2026-07-01' },
+  );
+  assert.equal(byId(presidium.cards, 'mirovoy_cassation').exhaustion_warning, undefined);
+});
