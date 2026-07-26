@@ -290,14 +290,30 @@ test('просрочка: подача позже дедлайна → стат�
 });
 
 test('предупреждение: мотивированное решение позже срока отложения (ч. 2 ст. 199)', () => {
-  const v = buildView(
-    { reasoned_decision_date: '2025-03-25', hearing_end_date: '2025-03-11' }, // 14 дней
+  // Порог считается в рабочих днях: 10 рабочих дней от 11.03.2025 истекают
+  // 25.03.2025. Изготовление 26.03 — нарушение.
+  const over = buildView(
+    { reasoned_decision_date: '2025-03-26', hearing_end_date: '2025-03-11' },
     { today: '2025-05-01' },
   );
-  const appeal = byId(v.cards, 'appeal_general');
+  const appeal = byId(over.cards, 'appeal_general');
   assert.ok(appeal.warnings && appeal.warnings.length === 1);
   assert.equal(appeal.warnings[0].code, 'reasoned_over_delay');
   assert.equal(appeal.warnings[0].threshold_days, 10); // разбирательство в 2025 → новая редакция
+  assert.equal(appeal.warnings[0].threshold_unit, 'working_day');
+  assert.equal(appeal.warnings[0].allowed_deadline, '2025-03-25');
+  assert.equal(appeal.warnings[0].actual_date, '2025-03-26');
+});
+
+test('порог в рабочих днях: 14 календарных дней укладываются в 10 рабочих', () => {
+  // Тот же разрыв в календарных днях (14) нарушением не является: между
+  // 11.03.2025 и 25.03.2025 ровно десять рабочих дней. При календарном счёте
+  // предупреждение было бы ложным.
+  const v = buildView(
+    { reasoned_decision_date: '2025-03-25', hearing_end_date: '2025-03-11' },
+    { today: '2025-05-01' },
+  );
+  assert.equal(byId(v.cards, 'appeal_general').warnings, undefined);
 });
 
 test('порог ч. 2 ст. 199 темпоральный: 5 дней до 01.09.2024, 10 — с 01.09.2024', () => {

@@ -154,17 +154,27 @@ function buildAppealCard(inputs) {
   if (inputs.hearing_end_date != null) {
     const hearingEnd = toISO(inputs.hearing_end_date);
     const version = reasonedDelayVersionFor(hearingEnd);
-    const gap = daysBetween(hearingEnd, calc.anchor);
-    if (gap > version.days) {
+    // Порог — срок в днях, значит в рабочих (абз. 2 ч. 3 ст. 107; изъятия для
+    // этого срока ГПК не устанавливает). Считаем тем же движком, что и сроки:
+    // последний допустимый день = N-й рабочий день после окончания разбирательства.
+    const allowed = computeDeadline(
+      { duration: { value: version.days, unit: 'working_day' }, anchor: { offset_start: 1 } },
+      hearingEnd,
+    ).deadline;
+    if (calc.anchor > allowed) {
       card.warnings = [
         {
           code: 'reasoned_over_delay',
           version_id: version.id,
           threshold_days: version.days,
+          threshold_unit: 'working_day',
+          allowed_deadline: allowed,
+          actual_date: calc.anchor,
           text:
-            `Мотивированное решение изготовлено на ${gap}-й день после окончания ` +
-            `разбирательства (> ${version.days} дней, ${version.norm}). Срок ` +
-            'обжалования считается от фактической даты (п. 16 ПП ВС № 16).',
+            `Мотивированное решение изготовлено позже срока отложения — ` +
+            `${version.days} рабочих дней после окончания разбирательства ` +
+            `(${version.norm}). Срок обжалования считается от фактической даты ` +
+            '(п. 16 ПП ВС № 16).',
         },
       ];
     }
@@ -255,6 +265,7 @@ function workingDayCard(term, extra = {}) {
     deadline: term.deadline,
     norm: term.norm.primary,
     unit: 'working_day',
+    duration: term.duration,
     first_working_day: term.first_working_day,
     details: {
       collapsed: true,
@@ -326,6 +337,7 @@ function defaultJudgmentCards(dj) {
       status: 'computed',
       deadline: dj.appeal.deadline,
       norm: dj.appeal.norm.primary,
+      duration: dj.appeal.duration,
       subject: dj.appeal.subject,
       details: {
         collapsed: true,
@@ -379,6 +391,7 @@ function mirovoyCards(m) {
     status: 'computed',
     deadline: m.appeal.deadline,
     norm: m.appeal.norm.primary,
+    duration: m.appeal.duration,
     details: {
       collapsed: true,
       logic: m.appeal.logic,
