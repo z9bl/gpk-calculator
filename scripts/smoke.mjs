@@ -68,7 +68,11 @@ if ((await page.locator('.fatal').count()) > 0) {
   problems.push('.fatal показан — приложение не инициализировалось');
 }
 if ((await page.locator('#reasoned').count()) === 0) problems.push('нет поля #reasoned');
-if ((await page.locator('#stubs .stub').count()) < 1) problems.push('заглушки не отрисованы');
+// Признак того, что render() отработал: секция «Другие сроки» с полями-триггерами
+// независимых ветвей. Заглушки для этого больше не годятся — все ветви раскрыты.
+if ((await page.locator('#other-terms input').count()) < 1) {
+  problems.push('секция «Другие сроки» не отрисована');
+}
 
 // Ввод даты должен дать карточки без новых ошибок.
 await page.fill('#reasoned', '11.03.2024');

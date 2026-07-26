@@ -712,6 +712,208 @@ export function computeDefaultJudgment(inputs) {
   };
 }
 
+// --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199 ГПК) ---------
+//
+// Мировой судья вправе не составлять мотивированное решение (ч. 3 ст. 199).
+// Сроки на заявление — в рабочих днях; длительность зависит от того,
+// присутствовал ли участник в заседании (ч. 4 ст. 199).
+
+export const MIROVOY_ATTENDANCE_VALUES = ['present', 'absent'];
+
+const MIROVOY_NO_REASONED_NOTE =
+  'Мировой судья вправе не составлять мотивированное решение (ч. 3 ст. 199 ГПК РФ). ' +
+  'Если заявление о его составлении не подавалось, апелляционный срок считается ' +
+  'от даты объявления резолютивной части.';
+
+export const MIROVOY_REASONED_REQUEST = {
+  id: 'mirovoy_reasoned_request',
+  title: 'Заявление о составлении мотивированного решения (мировой судья)',
+  duration: { value: 3, unit: 'working_day' }, // переопределяется по явке
+  anchor: { event: 'mirovoy_resolution_date', offset_start: 1 },
+  condition: 'mirovoy_resolution_date',
+  ics: true,
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'mirovoy_resolution_date', offset_start: 1 },
+      norm: { primary: 'ч. 4 ст. 199 ГПК РФ', calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'] },
+    },
+  ],
+};
+
+// Длительность и норма зависят от явки участника в заседание (ч. 4 ст. 199).
+const MIROVOY_REQUEST_MODES = {
+  present: {
+    days: 3,
+    norm: {
+      primary: 'п. 1 ч. 4 ст. 199 ГПК РФ',
+      calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+    },
+    logic:
+      'Три дня со дня объявления резолютивной части решения — участник ' +
+      'присутствовал в судебном заседании. Срок в рабочих днях (абз. 2 ч. 3 ' +
+      'ст. 107 ГПК РФ). ' + MIROVOY_NO_REASONED_NOTE,
+  },
+  absent: {
+    days: 15,
+    norm: {
+      primary: 'п. 2 ч. 4 ст. 199 ГПК РФ',
+      calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'],
+    },
+    logic:
+      'Пятнадцать дней со дня объявления резолютивной части решения — участник ' +
+      'в судебном заседании не присутствовал. Срок в рабочих днях (абз. 2 ч. 3 ' +
+      'ст. 107 ГПК РФ). ' + MIROVOY_NO_REASONED_NOTE,
+  },
+};
+
+export const MIROVOY_REASONED_MAKING = {
+  id: 'mirovoy_reasoned_making',
+  title: 'Составление мотивированного решения мировым судьёй',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'mirovoy_request_date', offset_start: 1 },
+  informational: true, // срок суда, справочно
+  ics: false,
+  logic:
+    'Десять дней со дня поступления заявления о составлении мотивированного ' +
+    'решения. Срок в рабочих днях.',
+  midnight_rule: null,
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'mirovoy_request_date', offset_start: 1 },
+      norm: { primary: 'ч. 5 ст. 199 ГПК РФ', calculation: ['ч. 3 ст. 107 (абз. 2) ГПК РФ'] },
+    },
+  ],
+};
+
+export const MIROVOY_APPEAL = {
+  id: 'mirovoy_appeal',
+  title: 'Апелляционная жалоба на решение мирового судьи',
+  duration: { value: 1, unit: 'month' },
+  anchor: { offset_start: 1 },
+  condition: 'mirovoy_resolution_date',
+  weekend_shift: true,
+  ics: true,
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { offset_start: 1 },
+      norm: {
+        primary: 'ч. 2 ст. 321 ГПК РФ',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+        clarification: 'п. 17 ПП ВС РФ от 22.06.2021 № 16',
+      },
+    },
+  ],
+};
+
+// Точка отсчёта апелляции — по п. 17 ПП ВС № 16 (сверено дословно, раздел 9):
+// со дня, следующего за днём принятия решения, а при составлении мотивированного
+// решения по заявлению — со дня, следующего за днём его составления.
+const MIROVOY_APPEAL_MODES = {
+  resolution: {
+    logic:
+      'Месяц со дня, следующего за днём принятия решения (объявления ' +
+      'резолютивной части): мотивированное решение не составлялось. ' +
+      MIROVOY_NO_REASONED_NOTE,
+  },
+  reasoned: {
+    logic:
+      'Мотивированное решение составлено по заявлению — месяц со дня, ' +
+      'следующего за днём его составления (п. 17 ПП ВС № 16).',
+  },
+};
+
+/**
+ * Мировой судья без мотивированного решения (ч. 3–5 ст. 199 ГПК).
+ * Независимая ветка по своим inputs.
+ * @param {object} inputs
+ * @returns {object|null} null, если не введена дата объявления резолютивной части.
+ */
+export function computeMirovoy(inputs) {
+  const resolution = toISO(inputs?.mirovoy_resolution_date);
+  if (resolution == null) return null;
+
+  const requestFiled = toISO(inputs.mirovoy_request_date);
+  const reasoned = toISO(inputs.mirovoy_reasoned_date);
+  const attendance = MIROVOY_ATTENDANCE_VALUES.includes(inputs.mirovoy_attendance)
+    ? inputs.mirovoy_attendance
+    : 'present'; // по умолчанию — присутствовал (более короткий срок, 3 дня)
+
+  // ч. 4 ст. 199 — 3 или 15 рабочих дней на заявление, в зависимости от явки.
+  const requestMode = MIROVOY_REQUEST_MODES[attendance];
+  const request = computeSimpleTerm(
+    { ...MIROVOY_REASONED_REQUEST, duration: { value: requestMode.days, unit: 'working_day' } },
+    resolution,
+    { norm: requestMode.norm, logic: requestMode.logic, attendance },
+  );
+
+  // ч. 5 ст. 199 — 10 рабочих дней на составление, от поступления заявления.
+  const making = requestFiled != null
+    ? computeSimpleTerm(MIROVOY_REASONED_MAKING, requestFiled)
+    : null;
+
+  // Апелляция: от мотивированного решения, если оно составлено, иначе от
+  // объявления резолютивной части (п. 17 ПП ВС № 16).
+  const appealAnchorKind = reasoned != null ? 'reasoned' : 'resolution';
+  const appeal = computeSimpleTerm(MIROVOY_APPEAL, reasoned ?? resolution, {
+    logic: MIROVOY_APPEAL_MODES[appealAnchorKind].logic,
+    anchor_kind: appealAnchorKind,
+  });
+
+  return {
+    attendance,
+    reasoned_request: request,
+    reasoned_making: making,
+    appeal,
+  };
+}
+
+// --- Валидация даты мотивированного решения (ч. 2 ст. 199 ГПК) --------------
+//
+// Темпоральная модель (раздел 10): ФЗ № 135-ФЗ от 12.06.2024 увеличил срок
+// отложения составления мотивированного решения с пяти до десяти дней; в силе с
+// 01.09.2024. Редакция выбирается по дате окончания судебного разбирательства.
+export const REASONED_DECISION_DELAY = {
+  norm_versions: [
+    {
+      id: 'before_135fz',
+      from: null,
+      to: '2024-08-31',
+      days: 5,
+      norm: 'ч. 2 ст. 199 ГПК РФ (в редакции до ФЗ № 135-ФЗ от 12.06.2024)',
+    },
+    {
+      id: 'from_135fz',
+      from: '2024-09-01',
+      to: null,
+      days: 10,
+      norm: 'ч. 2 ст. 199 ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)',
+    },
+  ],
+};
+
+/**
+ * Редакция ч. 2 ст. 199 на дату окончания разбирательства.
+ * @param {string|null} hearingEndISO
+ * @returns {{id:string, days:number, norm:string}}
+ */
+export function reasonedDelayVersionFor(hearingEndISO) {
+  const versions = REASONED_DECISION_DELAY.norm_versions;
+  return hearingEndISO == null
+    ? versions[versions.length - 1]
+    : pickVersion(versions, hearingEndISO);
+}
+
 const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
@@ -994,5 +1196,7 @@ export function computeChain(inputs, options = {}) {
     simplified: computeSimplified(inputs),
     // Заочное решение — своя ветка; вступление в силу не рассчитывается.
     default_judgment: computeDefaultJudgment(inputs),
+    // Мировой судья без мотивированного решения — своя ветка.
+    mirovoy: computeMirovoy(inputs),
   };
 }

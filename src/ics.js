@@ -20,6 +20,10 @@ import {
   PRIVATE_COMPLAINT,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
+  DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
+  DEFAULT_JUDGMENT_APPEAL,
+  MIROVOY_REASONED_REQUEST,
+  MIROVOY_APPEAL,
 } from './chain.js';
 
 const DAY_MS = 86_400_000;
@@ -278,6 +282,46 @@ export function icsTermsFromChain(chain) {
       norm: s.appeal.norm.primary,
       ics: SIMPLIFIED_APPEAL.ics,
       duration: SIMPLIFIED_APPEAL.duration,
+    });
+  }
+  // Заочное решение (ст. 237): заявление об отмене и апелляция.
+  if (chain && chain.default_judgment) {
+    const dj = chain.default_judgment;
+    terms.push({
+      title: dj.cancellation_request.title,
+      deadline: dj.cancellation_request.deadline,
+      norm: dj.cancellation_request.norm.primary,
+      ics: DEFAULT_JUDGMENT_CANCELLATION_REQUEST.ics,
+      duration: DEFAULT_JUDGMENT_CANCELLATION_REQUEST.duration,
+    });
+    if (dj.appeal) {
+      terms.push({
+        title: dj.appeal.title,
+        deadline: dj.appeal.deadline,
+        norm: dj.appeal.norm.primary,
+        ics: DEFAULT_JUDGMENT_APPEAL.ics,
+        duration: DEFAULT_JUDGMENT_APPEAL.duration,
+      });
+    }
+  }
+  // Мировой судья (ч. 3–5 ст. 199): заявление и апелляция. Срок составления
+  // решения судьёй — ics: false (справочный).
+  if (chain && chain.mirovoy) {
+    const m = chain.mirovoy;
+    terms.push({
+      title: m.reasoned_request.title,
+      deadline: m.reasoned_request.deadline,
+      norm: m.reasoned_request.norm.primary,
+      ics: MIROVOY_REASONED_REQUEST.ics,
+      // Длительность зависит от явки — берём фактическую для правил напоминаний.
+      duration: { value: m.attendance === 'absent' ? 15 : 3, unit: 'working_day' },
+    });
+    terms.push({
+      title: m.appeal.title,
+      deadline: m.appeal.deadline,
+      norm: m.appeal.norm.primary,
+      ics: MIROVOY_APPEAL.ics,
+      duration: MIROVOY_APPEAL.duration,
     });
   }
   return terms;
