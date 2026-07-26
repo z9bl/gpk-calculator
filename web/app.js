@@ -33,6 +33,8 @@ const INPUT_LABELS = {
   mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
+  mirovoy_appeal_ruling_reasoned_date:
+    'Дата изготовления мотивированного апелляционного определения районного суда',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -57,6 +59,8 @@ const INPUT_HINTS = {
   mirovoy_request_date: 'Запускает 10-дневный срок составления решения (ч. 5 ст. 199)',
   mirovoy_reasoned_date: 'Смещает отсчёт апелляции (п. 17 ПП ВС № 16)',
   vs_ruling_date: 'Надзор в Президиум ВС — 3 месяца (ч. 2 ст. 391.2). Не путать с определением КСОЮ',
+  mirovoy_appeal_ruling_reasoned_date:
+    'Если дело прошло апелляцию в районном суде — от неё считается кассационный срок',
 };
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
@@ -87,6 +91,7 @@ const CHAIN_ORDER = [
   'mirovoy_reasoned_request',
   'mirovoy_reasoned_making',
   'mirovoy_appeal',
+  'mirovoy_cassation',
   'supervision',
 ];
 
@@ -389,6 +394,7 @@ function downloadICS() {
 // --- Главный рендер ---------------------------------------------------------
 
 function render() {
+  renderedFields.clear();
   const view = buildView(state.inputs, { today });
   currentIcsTerms = icsTermsFromView(view);
   updateDownloadButton();
@@ -550,6 +556,7 @@ const FOLLOW_UP_FIELDS = {
   mirovoy_appeal: {
     field: 'mirovoy_reasoned_date',
     prompt: 'Мотивированное решение составлено? Укажите дату — отсчёт сместится на неё.',
+    extraField: 'mirovoy_appeal_ruling_reasoned_date',
   },
 };
 
@@ -600,20 +607,40 @@ function renderChoiceField(id, options, current) {
   return wrap;
 }
 
-// Какой input выбирает редакцию нормы на каждом кассационном узле.
+// Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
+// маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
   cassation_ksoyu: 'cassation_filed_date',
   cassation_vs: 'vs_cassation_filed_date',
+  mirovoy_cassation: 'cassation_filed_date',
 };
+
+// Один и тот же input может относиться к нескольким узлам (cassation_filed_date
+// — и к кассации общего порядка, и к кассации по делам мировых судей). Поле
+// рисуем один раз за проход, иначе получатся два элемента с одинаковым id.
+const renderedFields = new Set();
+
+function fieldAlreadyRendered(id) {
+  if (renderedFields.has(id)) return true;
+  renderedFields.add(id);
+  return false;
+}
 
 // Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
 // Без него редакция берётся по текущей дате.
 function renderRedactionField(inputId) {
   const box = el('div', 'note');
   box.appendChild(
-    el('div', null, 'Редакция нормы — по дате подачи жалобы (иначе по текущей дате).'),
+    el('div', null, 'Редакция нормы и маршрут — по дате подачи жалобы (иначе по текущей дате).'),
   );
-  box.appendChild(renderInviteField(inputId).wrap);
+  if (fieldAlreadyRendered(inputId)) {
+    // Поле уже показано выше на другом узле — не дублируем, а ссылаемся.
+    box.appendChild(
+      el('p', 'hint', `Поле «${INPUT_LABELS[inputId]}» — выше, у предыдущего срока.`),
+    );
+  } else {
+    box.appendChild(renderInviteField(inputId).wrap);
+  }
   return box;
 }
 

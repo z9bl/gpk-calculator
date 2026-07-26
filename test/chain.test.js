@@ -776,3 +776,61 @@ test('надзор: перенос последнего дня (ч. 2 ст. 108)
   assert.equal(t.deadline, '2026-04-13');
   assert.equal(t.shifted, true);
 });
+
+// --- Кассация по делам мировых судей (глава 40.1 ГПК, ФЗ № 79-ФЗ) -----------
+
+const MIR_CASS = {
+  mirovoy_resolution_date: '2026-01-15',
+  mirovoy_appeal_ruling_reasoned_date: '2026-03-01',
+};
+
+test('кассация мировых: отсчёт от мотивированного апелляционного определения', () => {
+  const c = computeMirovoy(MIR_CASS, '2026-07-01').cassation;
+  assert.equal(c.anchor_kind, 'appeal_reasoned');
+  assert.equal(c.anchor, '2026-03-01');
+  assert.equal(c.deadline, '2026-06-01');
+  assert.match(c.logic, /мотивированного апелляционного определения/);
+});
+
+test('кассация мировых: отсчёт от вступления в силу, если апелляции не было', () => {
+  // Решение 15.01.2026 → апелляция 16.02.2026 → вступление в силу 17.02.2026.
+  const m = computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }, '2026-07-01');
+  assert.equal(m.appeal.deadline, '2026-02-16');
+  assert.equal(m.cassation.anchor_kind, 'entry_into_force');
+  assert.equal(m.cassation.anchor, '2026-02-17');
+  assert.equal(m.cassation.deadline, '2026-05-18'); // 17.05.2026 — воскресенье
+  assert.match(m.cassation.logic, /вступления обжалуемого постановления/);
+});
+
+test('кассация мировых: граница маршрута 09.05 / 10.05.2026', () => {
+  const before = computeMirovoy({ ...MIR_CASS, cassation_filed_date: '2026-05-09' }, '2026-07-01');
+  const after = computeMirovoy({ ...MIR_CASS, cassation_filed_date: '2026-05-10' }, '2026-07-01');
+  assert.equal(before.cassation.version_id, 'ksoyu_before_79fz');
+  assert.match(before.cassation.norm.primary, /376\.1/);
+  assert.equal(after.cassation.version_id, 'presidium_from_79fz');
+  assert.match(after.cassation.norm.primary, /375\.2/);
+  // Срок в обоих маршрутах считается одинаково — меняется только суд и норма.
+  assert.equal(before.cassation.deadline, after.cassation.deadline);
+});
+
+test('кассация мировых: переходное положение помечается только для прежнего маршрута', () => {
+  const before = computeMirovoy({ ...MIR_CASS, cassation_filed_date: '2026-05-09' }, '2026-07-01');
+  assert.match(before.cassation.transitional_note, /по прежним правилам/);
+  assert.match(before.cassation.court, /Кассационный суд общей юрисдикции/);
+  const after = computeMirovoy({ ...MIR_CASS, cassation_filed_date: '2026-05-10' }, '2026-07-01');
+  assert.equal(after.cassation.transitional_note, undefined);
+  assert.match(after.cassation.court, /Президиум областного/);
+});
+
+test('кассация мировых: при планировании маршрут по текущей дате', () => {
+  assert.equal(computeMirovoy(MIR_CASS, '2026-05-09').cassation.version_id, 'ksoyu_before_79fz');
+  assert.equal(computeMirovoy(MIR_CASS, '2026-05-10').cassation.version_id, 'presidium_from_79fz');
+});
+
+test('кассация мировых: узла нет без данных апелляции районного суда', () => {
+  // Апелляционного определения нет и срок апелляционного обжалования ещё течёт.
+  const m = computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }, '2026-02-01');
+  assert.equal(m.cassation, null);
+  // Без текущей даты тоже нечего показывать.
+  assert.equal(computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }).cassation, null);
+});
