@@ -290,6 +290,8 @@ const ALL_BRANCHES_INPUTS = {
   // заочное решение
   default_judgment_service_date: '2025-07-05',
   default_judgment_refusal_date: '2025-08-10',
+  // надзор в Президиум ВС
+  vs_ruling_date: '2025-09-01',
   // мировой судья
   mirovoy_resolution_date: '2025-07-06',
   mirovoy_request_date: '2025-07-07',
@@ -362,4 +364,16 @@ test('длительность берётся из карточки: 15 рабо
   const ics = buildICS([term], { referenceDate: '2020-01-01', now: NOW });
   // 15 рабочих дней → два напоминания (за 7 и 3), а не одно (правило для 3 дней).
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
+});
+
+test('надзор уходит в .ics с напоминаниями трёхмесячного срока (30/14/7/3)', () => {
+  const view = buildView({ vs_ruling_date: '2027-09-01' }, { today: '2026-07-26' });
+  const terms = icsTermsFromView(view);
+  const sup = terms.find((t) => t.title.includes('Надзорная'));
+  assert.ok(sup, 'надзорный срок в списке экспорта');
+  assert.deepEqual(sup.duration, { value: 3, unit: 'month' });
+
+  const ics = buildICS(terms, { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${sup.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4); // 30/14/7/3
 });

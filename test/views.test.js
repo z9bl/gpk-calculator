@@ -493,3 +493,15 @@ test('мировой судья: срок составления решения 
   assert.equal(making.informational, true);
   assert.equal(making.deadline, '2026-01-20');
 });
+
+test('надзор: карточка появляется по дате определения коллегии ВС', () => {
+  const without = buildView({ ksoyu_ruling_date: '2025-09-01' }, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('supervision'), 'дата КСОЮ узел надзора не открывает');
+
+  const v = buildView({ vs_ruling_date: '2025-09-01' }, { today: '2026-03-01' });
+  const sup = byId(v.cards, 'supervision');
+  assert.ok(sup);
+  assert.equal(sup.deadline, '2025-12-01');
+  assert.match(sup.norm, /391\.2/);
+  assert.deepEqual(sup.duration, { value: 3, unit: 'month' });
+});

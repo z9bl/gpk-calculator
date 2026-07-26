@@ -731,3 +731,48 @@ test('мировой: месячный срок апелляции с перен
   assert.equal(m.appeal.deadline, '2026-02-16');
   assert.equal(m.appeal.shifted, true);
 });
+
+// --- Надзор в Президиум ВС РФ (глава 41.1 ГПК) ------------------------------
+
+test('надзор: 3 месяца от даты вынесения определения коллегии ВС (ч. 2 ст. 391.2)', () => {
+  const t = computeIndependentTerms({ vs_ruling_date: '2025-09-01' }).supervision;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.deadline, '2025-12-01');
+  assert.match(t.norm.primary, /ч\. 2 ст\. 391\.2/);
+  assert.match(t.norm.clarification, /390\.17/);
+});
+
+test('надзор считается от вынесения, а не от возможной даты мотивировки', () => {
+  // Определение коллегии ВС вступает в силу со дня вынесения (ст. 390.17),
+  // поэтому дата изготовления мотивированного определения на срок не влияет —
+  // в отличие от кассации в ВС по ч. 1 ст. 390.3.
+  const base = { vs_ruling_date: '2025-09-01' };
+  const withReasoned = {
+    ...base,
+    // поля мотивировки соседних узлов не должны сдвигать надзорный срок
+    ksoyu_ruling_reasoned_date: '2025-09-20',
+    appeal_ruling_reasoned_date: '2025-09-20',
+  };
+  assert.equal(
+    computeIndependentTerms(withReasoned).supervision.deadline,
+    computeIndependentTerms(base).supervision.deadline,
+  );
+  assert.equal(computeIndependentTerms(withReasoned).supervision.anchor, '2025-09-01');
+  assert.match(computeIndependentTerms(base).supervision.logic, /390\.17/);
+  assert.match(computeIndependentTerms(base).supervision.logic, /390\.3/); // пояснение разницы
+});
+
+test('надзор: узла нет без даты определения коллегии ВС (п. 6 ч. 2 ст. 391.1)', () => {
+  assert.equal(computeIndependentTerms({}).supervision, null);
+  // Дата определения КСОЮ узел надзора не открывает — это другая инстанция.
+  assert.equal(computeIndependentTerms({ ksoyu_ruling_date: '2025-09-01' }).supervision, null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).supervision, null);
+});
+
+test('надзор: перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 11.01.2026 + 3 месяца = 11.04.2026 (суббота) → 13.04.2026 (понедельник).
+  const t = computeIndependentTerms({ vs_ruling_date: '2026-01-11' }).supervision;
+  assert.equal(t.raw_deadline, '2026-04-11');
+  assert.equal(t.deadline, '2026-04-13');
+  assert.equal(t.shifted, true);
+});
