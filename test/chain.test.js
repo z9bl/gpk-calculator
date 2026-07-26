@@ -834,3 +834,44 @@ test('кассация мировых: узла нет без данных ап�
   // Без текущей даты тоже нечего показывать.
   assert.equal(computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }).cassation, null);
 });
+
+// --- Исчерпание способов обжалования (абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1) ---
+
+test('исчерпание: КСОЮ в ветви not_appealed несёт предупреждение', () => {
+  const c = computeChain({ reasoned_decision_date: '2025-03-11' }, { today: '2025-05-01' });
+  assert.equal(c.entry_into_force.branch, 'not_appealed');
+  const w = c.cassation.exhaustion_warning;
+  assert.ok(w, 'предупреждение должно быть');
+  assert.equal(w.code, 'appeal_not_exhausted');
+  assert.match(w.norm, /абз\. 2 ч\. 1 ст\. 376/);
+  assert.match(w.norm, /ч\. 2 ст\. 375\.1/);
+  assert.match(w.clarification, /№ 17/);
+  assert.match(w.text, /возврату без рассмотрения/);
+  assert.match(w.calculation_note, /судебный приказ/);
+  // Расчёт остаётся: предупреждение его не отменяет.
+  assert.equal(c.cassation.deadline, '2025-07-14'); // 12.07.2025 — суббота
+});
+
+test('исчерпание: в ветви appealed предупреждения нет', () => {
+  const c = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-02',
+    },
+    { today: '2025-07-01' },
+  );
+  assert.equal(c.entry_into_force.branch, 'appealed');
+  assert.equal(c.cassation.exhaustion_warning, undefined);
+});
+
+test('исчерпание: кассация мировых несёт предупреждение только без апелляции', () => {
+  const notAppealed = computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }, '2026-07-01');
+  assert.equal(notAppealed.cassation.anchor_kind, 'entry_into_force');
+  assert.equal(notAppealed.cassation.exhaustion_warning.code, 'appeal_not_exhausted');
+
+  const appealed = computeMirovoy(MIR_CASS, '2026-07-01');
+  assert.equal(appealed.cassation.anchor_kind, 'appeal_reasoned');
+  assert.equal(appealed.cassation.exhaustion_warning, undefined);
+});

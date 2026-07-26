@@ -87,6 +87,33 @@ export const CASSATION_KSOYU = {
   ],
 };
 
+// --- Исчерпание способов обжалования (абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1) --
+//
+// Кассационная жалоба подаётся при условии, что иные способы обжалования
+// исчерпаны до дня вступления постановления в законную силу. Применительно к
+// решению суда первой инстанции «иные способы» — это апелляционное обжалование
+// (п. 3 ПП ВС № 17, сверено дословно, см. раздел 9). Если решение не
+// обжаловалось в апелляции, кассационная жалоба подлежит возврату без
+// рассмотрения.
+//
+// Расчёт срока при этом остаётся: он верен для актов, не подлежащих
+// апелляционному обжалованию, которые Пленум прямо называет в том же пункте.
+const EXHAUSTION_WARNING = {
+  code: 'appeal_not_exhausted',
+  norm: 'абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1 ГПК РФ',
+  clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+  text:
+    'Кассационная жалоба подаётся при условии, что иные способы обжалования ' +
+    'исчерпаны до дня вступления постановления в законную силу. Для решения ' +
+    'суда первой инстанции это апелляционное обжалование: если решение в ' +
+    'апелляции не обжаловалось, кассационная жалоба подлежит возврату без ' +
+    'рассмотрения.',
+  calculation_note:
+    'Срок рассчитан и верен для актов, которые не подлежат апелляционному ' +
+    'обжалованию: судебный приказ, определение об утверждении мирового ' +
+    'соглашения, определения по делам об оспаривании решений третейских судов.',
+};
+
 // Редакция нормы по дате (ч. 3 ст. 1 ГПК): границы включительны, null = без границы.
 function pickVersion(versions, dateISO) {
   return versions.find(
@@ -1043,6 +1070,9 @@ function computeMirovoyCassation(inputs, mirovoyAppeal, referenceDate) {
     effective_date: effectiveDate,
   });
   if (version.transitional_note) result.transitional_note = version.transitional_note;
+  // Апелляции не было (отсчёт от вступления в силу) — то же предупреждение.
+  const warn = exhaustionWarningFor(anchorKind === 'entry_into_force');
+  if (warn) result.exhaustion_warning = warn;
   return result;
 }
 
@@ -1288,6 +1318,12 @@ function computeVersionedTerm(term, effectiveDate, resolveAnchorFor, altDates) {
   return result;
 }
 
+// Предупреждение об исчерпании способов обжалования — показывается, когда акт
+// первой инстанции в апелляции не обжаловался. Расчёт не меняется.
+function exhaustionWarningFor(notAppealed) {
+  return notAppealed ? EXHAUSTION_WARNING : null;
+}
+
 // Кассация в КСОЮ. referenceDate — текущая дата (ISO) для выбора редакции, если
 // не введена дата подачи кассационной жалобы.
 function computeCassation(inputs, entry, referenceDate) {
@@ -1298,12 +1334,18 @@ function computeCassation(inputs, entry, referenceDate) {
     entry.branch === 'appealed'
       ? { ruling: inputs.appeal_ruling_date, reasoned: inputs.appeal_ruling_reasoned_date }
       : null;
-  return computeVersionedTerm(
+  const result = computeVersionedTerm(
     CASSATION_KSOYU,
     effectiveDate,
     (version) => resolveCassationAnchor(version, inputs, entry),
     altDates,
   );
+  // Ветвь not_appealed: решение первой инстанции в апелляции не обжаловалось.
+  if (result) {
+    const warn = exhaustionWarningFor(entry.branch === 'not_appealed');
+    if (warn) result.exhaustion_warning = warn;
+  }
+  return result;
 }
 
 // Кассация в Судебную коллегию ВС РФ (ст. 390.3).

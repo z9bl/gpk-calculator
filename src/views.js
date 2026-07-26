@@ -232,6 +232,7 @@ function cassationCard(cassation) {
   };
   if (cassation.alternative) card.alternative = cassation.alternative;
   if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
+  if (cassation.exhaustion_warning) card.exhaustion_warning = cassation.exhaustion_warning;
   attachCalendarWarning(card);
   return card;
 }
@@ -415,6 +416,7 @@ function mirovoyCards(m) {
     const cass = monthTermCard(m.cassation);
     cass.version_id = m.cassation.version_id;
     cass.court = m.cassation.court;
+    if (m.cassation.exhaustion_warning) cass.exhaustion_warning = m.cassation.exhaustion_warning;
     if (m.cassation.transitional_note) cass.note = m.cassation.transitional_note;
     cards.push(cass);
   }
