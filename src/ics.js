@@ -2,11 +2,15 @@
 //
 // Экспортируются только сроки с ics: true. Событие — на весь день в дату
 // дедлайна; в нём название срока, дата и норма (в описании). Напоминания —
-// по правилам раздела 8: 1 месяц → за 14/7/3 дня; 3 месяца → за 30/14/7/3 дня.
+// по правилам раздела 8: 1 месяц → за 14/7/3 дня; 3 месяца → за 30/14/7/3 дня;
+// 3 года (предъявление ИЛ) → за 3 месяца/1 месяц/7 дней. Смещения в месяцах
+// вычитаются календарно с клампингом на последний день месяца (как addMonths
+// движка, в обратную сторону); смещение в 7 дней — календарных, не рабочих.
 // Дата напоминания на нерабочий день сдвигается НАЗАД, к предыдущему рабочему
 // (через календарный модуль). Напоминание раньше даты расчёта не создаётся.
 
 import { shiftBackIfNonWorking, toISODate } from './calendar.js';
+import { addMonths } from './engine.js';
 import {
   APPEAL_GENERAL,
   CASSATION_KSOYU,
@@ -17,10 +21,31 @@ import {
 const DAY_MS = 86_400_000;
 const PRODID = '-//gpk-calculator//Процессуальные сроки ГПК//RU';
 
-// Правила напоминаний (раздел 8 SPEC.md): дни до дедлайна по длительности срока.
+// Правила напоминаний (раздел 8 SPEC.md) по длительности срока: смещения до
+// дедлайна, каждое со своей единицей (день — календарный, месяц — с клампингом).
 function reminderOffsets(duration) {
-  if (duration && duration.unit === 'month' && duration.value === 1) return [14, 7, 3];
-  if (duration && duration.unit === 'month' && duration.value === 3) return [30, 14, 7, 3];
+  if (duration && duration.unit === 'month' && duration.value === 1) {
+    return [
+      { unit: 'day', value: 14 },
+      { unit: 'day', value: 7 },
+      { unit: 'day', value: 3 },
+    ];
+  }
+  if (duration && duration.unit === 'month' && duration.value === 3) {
+    return [
+      { unit: 'day', value: 30 },
+      { unit: 'day', value: 14 },
+      { unit: 'day', value: 7 },
+      { unit: 'day', value: 3 },
+    ];
+  }
+  if (duration && duration.unit === 'year' && duration.value === 3) {
+    return [
+      { unit: 'month', value: 3 },
+      { unit: 'month', value: 1 },
+      { unit: 'day', value: 7 },
+    ];
+  }
   return [];
 }
 
@@ -32,6 +57,11 @@ function toDate(iso) {
 }
 function addDaysISO(iso, n) {
   return toISODate(new Date(toDate(iso).getTime() + n * DAY_MS));
+}
+// Смещение назад от дедлайна на одно правило напоминания (день или месяц).
+function offsetBackISO(deadlineISO, off) {
+  if (off.unit === 'month') return toISODate(addMonths(deadlineISO, -off.value));
+  return addDaysISO(deadlineISO, -off.value);
 }
 function compact(iso) {
   return iso.replace(/-/g, ''); // YYYY-MM-DD → YYYYMMDD
@@ -85,7 +115,7 @@ function foldLine(line) {
 function reminderDates(term, referenceDate) {
   const out = [];
   for (const off of reminderOffsets(term.duration)) {
-    const shifted = shiftBackIfNonWorking(addDaysISO(term.deadline, -off));
+    const shifted = shiftBackIfNonWorking(offsetBackISO(term.deadline, off));
     if (referenceDate != null && shifted < referenceDate) continue; // раньше даты расчёта
     out.push(shifted);
   }
