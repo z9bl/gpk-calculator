@@ -246,25 +246,6 @@ function enforcementCard(enf) {
   return card;
 }
 
-// Карточка срока предъявления ИЛ. Рядом — заглушки по смежным случаям (в card.stubs).
-function enforcementCard(enf) {
-  return {
-    id: enf.id,
-    kind: 'term',
-    title: enf.title,
-    status: 'computed',
-    deadline: enf.deadline,
-    norm: enf.norm.primary,
-    details: {
-      collapsed: true,
-      logic: enf.logic,
-      calculation: enf.norm.calculation,
-      midnight_rule: enf.midnight_rule,
-    },
-    stubs: ENFORCEMENT_STUBS,
-  };
-}
-
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.

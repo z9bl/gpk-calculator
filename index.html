@@ -143,6 +143,8 @@
 
       .fatal { background: var(--miss-bg); color: var(--miss-ink); border: 1px solid var(--miss-line);
                padding: 14px; border-radius: 10px; font-size: 14px; }
+      .fatal-detail { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
+               font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
     </style>
 
     <script type="importmap">
@@ -182,16 +184,49 @@
       // Календарь загружается до импорта приложения — шим node:fs отдаёт эти
       // данные синхронно (см. web/fs-shim.js).
       const boot = document.getElementById('results');
+      function showFatal(message, detail) {
+        boot.textContent = '';
+        const box = document.createElement('div');
+        box.className = 'fatal';
+        box.append(message);
+        if (detail) {
+          const pre = document.createElement('pre');
+          pre.className = 'fatal-detail';
+          pre.textContent = detail;
+          box.append(pre);
+        }
+        boot.append(box);
+      }
+
+      // Случай 1: не удалось загрузить calendar_data.json — почти всегда страницу
+      // открыли как файл (file://), а не через веб-сервер.
+      let calendarJson;
       try {
         const res = await fetch('./calendar_data.json');
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        globalThis.__CALENDAR_JSON__ = await res.text();
+        calendarJson = await res.text();
+      } catch (e) {
+        showFatal(
+          'Не удалось загрузить calendar_data.json. Откройте страницу через ' +
+            'локальный веб-сервер (например python3 -m http.server), а не как файл (file://).',
+          String((e && e.message) || e),
+        );
+        throw e;
+      }
+      globalThis.__CALENDAR_JSON__ = calendarJson;
+
+      // Случай 2: календарь загружен, но приложение не инициализировалось —
+      // это ошибка в скрипте (синтаксис/рантайм), а не в сервере. Показываем
+      // текст ошибки без ложного совета про сервер и пробрасываем в консоль.
+      try {
         await import('./web/app.js');
       } catch (e) {
-        boot.innerHTML =
-          '<div class="fatal">Не удалось загрузить календарь. Откройте страницу через ' +
-          'локальный веб-сервер (например <code>python3 -m http.server</code>), ' +
-          'а не как файл. Причина: ' + String(e && e.message || e) + '</div>';
+        showFatal(
+          'Календарь загружен, но приложение не запустилось — ошибка в скрипте, ' +
+            'а не в сервере. Текст ошибки (см. также консоль браузера):',
+          String((e && e.stack) || (e && e.message) || e),
+        );
+        throw e;
       }
     </script>
   </body>
