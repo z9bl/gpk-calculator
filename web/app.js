@@ -10,6 +10,8 @@ import {
   ENFORCEMENT_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
+  SIMPLIFIED_REASONED_REQUEST,
+  SIMPLIFIED_APPEAL,
 } from '../src/chain.js';
 
 // Метаданные экспортируемых сроков (ics/duration) — по id карточки.
@@ -20,6 +22,8 @@ const ICS_META = {
   [ENFORCEMENT_PRESENTATION.id]: ENFORCEMENT_PRESENTATION,
   [PROTOCOL_REMARKS.id]: PROTOCOL_REMARKS,
   [PRIVATE_COMPLAINT.id]: PRIVATE_COMPLAINT,
+  [SIMPLIFIED_REASONED_REQUEST.id]: SIMPLIFIED_REASONED_REQUEST,
+  [SIMPLIFIED_APPEAL.id]: SIMPLIFIED_APPEAL,
 };
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -37,6 +41,10 @@ const INPUT_LABELS = {
   protocol_signed_date: 'Дата подписания протокола судебного заседания',
   protocol_remarks_filed_date: 'Дата подачи замечаний на протокол',
   interim_ruling_date: 'Дата вынесения определения судом первой инстанции',
+  simplified_resolution_date: 'Дата подписания резолютивной части решения (упрощённое производство)',
+  simplified_reasoned_request_date: 'Дата подачи заявления о составлении мотивированного решения',
+  simplified_reasoned_date: 'Дата составления мотивированного решения',
+  simplified_appeal_filed_date: 'Дата подачи апелляционной жалобы (упрощённое производство)',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -49,6 +57,10 @@ const INPUT_HINTS = {
   protocol_signed_date: 'Срок 5 рабочих дней (ч. 1 ст. 231 ГПК)',
   protocol_remarks_filed_date: 'Если не указана — срок рассмотрения считается от последнего дня подачи',
   interim_ruling_date: 'Срок 15 рабочих дней (ст. 332 ГПК)',
+  simplified_resolution_date: 'Глава 21.1 ГПК — все сроки в рабочих днях',
+  simplified_reasoned_request_date: 'Запускает 10-дневный срок изготовления решения (ч. 4 ст. 232.4)',
+  simplified_reasoned_date: 'Смещает отсчёт апелляции на день принятия в окончательной форме',
+  simplified_appeal_filed_date: 'Переключает ветвь вступления в силу на ч. 7 ст. 232.4',
 };
 
 const CHAIN_ORDER = [
@@ -60,6 +72,10 @@ const CHAIN_ORDER = [
   'protocol_remarks',
   'protocol_remarks_review',
   'private_complaint',
+  'simplified_reasoned_request',
+  'simplified_reasoned_making',
+  'simplified_appeal',
+  'simplified_entry_into_force',
 ];
 
 // --- Состояние --------------------------------------------------------------
@@ -247,7 +263,14 @@ function renderEventCard(card, opts = {}) {
   c.appendChild(el('h2', null, card.title));
 
   if (card.status === 'pending') {
-    c.appendChild(el('div', 'deadline', `не ранее ${isoToRu(card.not_earlier_than)}`));
+    // Ветвь может дать нижнюю границу («не ранее …») либо только правило —
+    // тогда вместо даты прочерк, а формулировка идёт отдельной строкой.
+    if (card.not_earlier_than) {
+      c.appendChild(el('div', 'deadline', `не ранее ${isoToRu(card.not_earlier_than)}`));
+    } else {
+      c.appendChild(el('div', 'deadline', '—'));
+      if (card.message) c.appendChild(el('div', 'hint', card.message));
+    }
   } else {
     c.appendChild(el('div', 'deadline', isoToRu(card.date)));
   }
@@ -364,16 +387,14 @@ function render() {
   const root = document.getElementById('results');
   root.textContent = '';
 
-  if (!state.inputs.reasoned_decision_date) {
+  // Без даты мотивированного решения цепочка общего порядка не считается, но
+  // независимые узлы (рабочие дни, упрощённое производство) — считаются, и
+  // рисуются тем же кодом ниже, чтобы не расходиться в поведении.
+  const chainAvailable = Boolean(state.inputs.reasoned_decision_date);
+  if (!chainAvailable) {
     root.appendChild(
-      el('p', 'empty', 'Введите дату мотивированного решения — появятся рассчитанные сроки.'),
+      el('p', 'empty', 'Введите дату мотивированного решения — появятся сроки цепочки обжалования.'),
     );
-    // Независимые сроки в рабочих днях от даты решения не зависят — показываем.
-    for (const id of CHAIN_ORDER) {
-      const card = view.cards.find((n) => n.id === id);
-      if (card) root.appendChild(renderTermCard(card));
-    }
-    return;
   }
 
   const cardById = (id) => view.cards.find((n) => n.id === id);
@@ -407,7 +428,9 @@ function render() {
         }
         root.appendChild(renderEventCard(card, opts));
       } else if (card.kind === 'event') {
-        root.appendChild(renderEventCard(card));
+        const eventEl = renderEventCard(card);
+        appendFollowUpFields(eventEl, id);
+        root.appendChild(eventEl);
       } else {
         const opts = {};
         if (id === 'cassation_ksoyu' && notAppealedAssumption) {
@@ -433,10 +456,14 @@ function render() {
         if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
         // Заглушки рядом с узлом (напр. предъявление ИЛ).
         if (card.stubs) termEl.appendChild(renderRelatedStubs(card.stubs));
+        appendFollowUpFields(termEl, id);
         root.appendChild(termEl);
       }
       continue;
     }
+    // Пока нет даты решения, приглашения по цепочке не плодим: поле для неё
+    // уже есть наверху страницы.
+    if (!chainAvailable) continue;
     const inc = incById(id);
     if (inc) {
       const incEl = renderIncompleteNode(inc);
@@ -445,6 +472,32 @@ function render() {
       root.appendChild(incEl);
     }
   }
+}
+
+// Необязательные поля-уточнения, привязанные к конкретной карточке: ввод даты
+// меняет расчёт соседних узлов (упрощённое производство, глава 21.1).
+const FOLLOW_UP_FIELDS = {
+  simplified_reasoned_request: {
+    field: 'simplified_reasoned_request_date',
+    prompt: 'Заявление уже подано? Укажите дату — появится срок изготовления решения.',
+  },
+  simplified_appeal: {
+    field: 'simplified_reasoned_date',
+    prompt: 'Мотивированное решение составлено? Укажите дату — отсчёт сместится на неё.',
+  },
+  simplified_entry_into_force: {
+    field: 'simplified_appeal_filed_date',
+    prompt: 'Апелляционная жалоба подана? Укажите дату (ч. 7 ст. 232.4).',
+  },
+};
+
+function appendFollowUpFields(cardEl, id) {
+  const spec = FOLLOW_UP_FIELDS[id];
+  if (!spec) return;
+  const box = el('div', 'note');
+  box.appendChild(el('div', null, spec.prompt));
+  box.appendChild(renderInviteField(spec.field).wrap);
+  cardEl.appendChild(box);
 }
 
 // Какой input выбирает редакцию нормы на каждом кассационном узле.
@@ -496,7 +549,11 @@ function renderRelatedStubs(stubs) {
 // Замечания на протокол и частная жалоба не зависят от цепочки обжалования —
 // у каждого свой триггер-input. Поля всегда видимы; узлы появляются в
 // результатах после ввода даты.
-const OTHER_TERM_FIELDS = ['protocol_signed_date', 'interim_ruling_date'];
+const OTHER_TERM_FIELDS = [
+  'protocol_signed_date',
+  'interim_ruling_date',
+  'simplified_resolution_date',
+];
 
 function renderOtherTerms() {
   const root = document.getElementById('other-terms');

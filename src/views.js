@@ -16,6 +16,7 @@ import {
   cassationVersionFor,
   vsCassationVersionFor,
   computeIndependentTerms,
+  computeSimplified,
 } from './chain.js';
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
@@ -61,6 +62,10 @@ const INPUT_LABELS = {
   protocol_signed_date: 'Дата подписания протокола судебного заседания',
   protocol_remarks_filed_date: 'Дата подачи замечаний на протокол',
   interim_ruling_date: 'Дата вынесения определения судом первой инстанции',
+  simplified_resolution_date: 'Дата подписания резолютивной части решения (упрощённое производство)',
+  simplified_reasoned_request_date: 'Дата подачи заявления о составлении мотивированного решения',
+  simplified_reasoned_date: 'Дата составления мотивированного решения',
+  simplified_appeal_filed_date: 'Дата подачи апелляционной жалобы (упрощённое производство)',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки.
@@ -72,15 +77,6 @@ const STUBS = [
       'Отмена — 7 дней со дня вручения копии ответчику; апелляция — месяц со ' +
       'дня определения об отказе в отмене. Точка отсчёта — вручение, а не принятие.',
     norm: 'ч. 1, 2 ст. 237 ГПК РФ',
-  },
-  {
-    id: 'simplified',
-    title: 'Упрощённое производство',
-    explanation:
-      'Апелляция — 15 дней, срок в днях: нерабочие дни не включаются ' +
-      '(абз. 2 ч. 3 ст. 107 ГПК РФ). Механика рабочих дней реализована, но эта ' +
-      'ветка требует своей точки отсчёта и пока не рассчитывается.',
-    norm: 'ч. 8 ст. 232.4 ГПК РФ',
   },
   {
     id: 'justice_of_peace_no_reasoning',
@@ -144,8 +140,10 @@ function termCard(term, calc) {
 }
 
 // Примечание о достоверности календаря (draft/preliminary год + зона переносов).
-function attachCalendarWarning(card) {
-  const note = calendarNote(card.deadline);
+// Для карточек-событий дату надо передать явно: у них поле date, а не deadline.
+function attachCalendarWarning(card, date = card.deadline) {
+  if (date == null) return;
+  const note = calendarNote(date);
   if (note) card.calendar_warning = note;
 }
 
@@ -267,6 +265,47 @@ function workingDayCard(term, extra = {}) {
   if (term.anchor_note) card.note = term.anchor_note;
   attachCalendarWarning(card);
   return card;
+}
+
+// Карточки упрощённого производства (глава 21.1): три срока + своё событие
+// вступления в силу по ст. 232.4.
+function simplifiedCards(simplified) {
+  const cards = [];
+
+  cards.push(workingDayCard(simplified.reasoned_request));
+
+  if (simplified.reasoned_making) {
+    const making = workingDayCard(simplified.reasoned_making, { informational: true });
+    making.note =
+      simplified.reasoned_making.trigger === 'appeal_filed'
+        ? 'Отсчёт от даты подачи апелляционной жалобы (ч. 4 ст. 232.4).'
+        : 'Отсчёт от даты поступления заявления о составлении мотивированного решения.';
+    cards.push(making);
+  }
+
+  const appeal = workingDayCard(simplified.appeal);
+  appeal.note =
+    simplified.appeal.anchor_kind === 'reasoned'
+      ? 'Мотивированное решение составлено — отсчёт со дня принятия решения в окончательной форме.'
+      : 'Мотивированное решение не составлялось — отсчёт со дня принятия решения.';
+  cards.push(appeal);
+
+  const entry = simplified.entry_into_force;
+  const entryCard = {
+    id: 'simplified_entry_into_force',
+    kind: 'event',
+    title: 'Вступление решения в законную силу (упрощённое производство)',
+    status: entry.resolved ? 'resolved' : 'pending',
+    norm: `${entry.norm} — ${entry.part}`,
+    date: entry.date,
+    details: { collapsed: true, logic: entry.logic },
+  };
+  if (entry.message) entryCard.message = entry.message;
+  if (entry.note) entryCard.note = entry.note;
+  attachCalendarWarning(entryCard, entry.date);
+  cards.push(entryCard);
+
+  return cards;
 }
 
 const ENTRY_TITLE = 'Вступление решения в законную силу';
@@ -404,11 +443,14 @@ function buildDownstream(inputs, today) {
   return { cards, incomplete };
 }
 
-// Карточки независимых сроков в рабочих днях. Принимает либо результат цепочки,
-// либо сами inputs — во втором случае считает их сама.
+// Карточки узлов, независимых от цепочки общего порядка: сроки в рабочих днях и
+// ветка упрощённого производства. Принимает либо результат цепочки, либо сами
+// inputs — во втором случае считает их сама.
 function independentCards(source) {
-  const terms =
-    source && 'protocol_remarks' in source ? source : computeIndependentTerms(source);
+  const fromChain = source && 'protocol_remarks' in source;
+  const terms = fromChain ? source : computeIndependentTerms(source);
+  const simplified = fromChain ? source.simplified : computeSimplified(source);
+
   const cards = [];
   if (terms.protocol_remarks) {
     cards.push(workingDayCard(terms.protocol_remarks));
@@ -417,6 +459,7 @@ function independentCards(source) {
     }
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
+  if (simplified) cards.push(...simplifiedCards(simplified));
   return cards;
 }
 

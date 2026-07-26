@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeChain, computeIndependentTerms } from '../src/chain.js';
+import { computeChain, computeIndependentTerms, computeSimplified } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
 // апелляция 1 месяц → 11.04.2025 (пятница, рабочий).
@@ -462,4 +462,106 @@ test('независимые сроки считаются без даты мо�
   const t = computeIndependentTerms({ interim_ruling_date: '2025-12-26' });
   assert.equal(t.private_complaint.deadline, '2026-01-28');
   assert.equal(t.protocol_remarks, null);
+});
+
+// --- Упрощённое производство (глава 21.1 ГПК) --------------------------------
+// Все сроки в рабочих днях (п. 16–17 ПП ВС № 16). Резолютивная часть подписана
+// 22.12.2025 — сроки пересекают январские каникулы.
+
+const SIMPL = { simplified_resolution_date: '2025-12-22' };
+
+test('упрощённое: узла нет без даты резолютивной части', () => {
+  assert.equal(computeSimplified({}), null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).simplified, null);
+});
+
+test('упрощённое: заявление о мотивированном решении — 5 рабочих дней (ч. 3 ст. 232.4)', () => {
+  const s = computeSimplified(SIMPL);
+  assert.equal(s.reasoned_request.first_working_day, '2025-12-23');
+  assert.equal(s.reasoned_request.deadline, '2025-12-29');
+  assert.match(s.reasoned_request.norm.primary, /ч\. 3 ст\. 232\.4/);
+});
+
+test('упрощённое: апелляция — 15 рабочих дней, пересечение январских каникул', () => {
+  const s = computeSimplified(SIMPL);
+  // 23.12 (1) ... каникулы 31.12–11.01 ... 22.01.2026 (15)
+  assert.equal(s.appeal.deadline, '2026-01-22');
+  assert.equal(s.appeal.anchor_kind, 'resolution');
+  assert.ok(s.appeal.deadline > '2026-01-11', 'срок уезжает за каникулы');
+  // 15 календарных дней дали бы 06.01.2026 — внутри каникул, на две недели раньше.
+  assert.ok(s.appeal.deadline > '2026-01-06');
+  assert.match(s.appeal.norm.primary, /ч\. 8 ст\. 232\.4/);
+});
+
+test('упрощённое: обе точки отсчёта апелляции', () => {
+  // Без мотивированного решения — со дня принятия (резолютивной части).
+  const plain = computeSimplified(SIMPL);
+  assert.equal(plain.appeal.anchor, '2025-12-22');
+  assert.equal(plain.appeal.deadline, '2026-01-22');
+
+  // С мотивированным решением — со дня принятия в окончательной форме.
+  const reasoned = computeSimplified({ ...SIMPL, simplified_reasoned_date: '2026-01-15' });
+  assert.equal(reasoned.appeal.anchor, '2026-01-15');
+  assert.equal(reasoned.appeal.anchor_kind, 'reasoned');
+  assert.equal(reasoned.appeal.deadline, '2026-02-05');
+  assert.notEqual(reasoned.appeal.deadline, plain.appeal.deadline);
+});
+
+test('упрощённое: 10 рабочих дней на изготовление — от заявления и от подачи жалобы', () => {
+  // От поступления заявления (ч. 4 ст. 232.4).
+  const byRequest = computeSimplified({ ...SIMPL, simplified_reasoned_request_date: '2025-12-24' });
+  assert.equal(byRequest.reasoned_making.trigger, 'request');
+  assert.equal(byRequest.reasoned_making.anchor, '2025-12-24');
+  assert.equal(byRequest.reasoned_making.deadline, '2026-01-19');
+
+  // От подачи апелляционной жалобы, если заявления не было.
+  const byAppeal = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2025-12-25' });
+  assert.equal(byAppeal.reasoned_making.trigger, 'appeal_filed');
+  assert.equal(byAppeal.reasoned_making.anchor, '2025-12-25');
+  assert.equal(byAppeal.reasoned_making.deadline, '2026-01-20');
+
+  // Если есть оба факта — от более раннего.
+  const both = computeSimplified({
+    ...SIMPL,
+    simplified_reasoned_request_date: '2025-12-24',
+    simplified_appeal_filed_date: '2025-12-25',
+  });
+  assert.equal(both.reasoned_making.trigger, 'request');
+  assert.equal(both.reasoned_making.anchor, '2025-12-24');
+
+  // Без обоих фактов срок изготовления не считается.
+  assert.equal(computeSimplified(SIMPL).reasoned_making, null);
+});
+
+test('упрощённое, ч. 5: жалоба не подана → по истечении 15 дней со дня принятия', () => {
+  const s = computeSimplified(SIMPL);
+  assert.equal(s.entry_into_force.branch, 'not_appealed');
+  assert.match(s.entry_into_force.part, /ч\. 5 ст\. 232\.4/);
+  assert.equal(s.entry_into_force.resolved, true);
+  assert.equal(s.entry_into_force.date, '2026-01-23'); // дедлайн 22.01 + 1
+});
+
+test('упрощённое, ч. 6: составлено мотивированное → по истечении срока по ч. 8', () => {
+  const s = computeSimplified({ ...SIMPL, simplified_reasoned_date: '2026-01-15' });
+  assert.equal(s.entry_into_force.branch, 'reasoned');
+  assert.match(s.entry_into_force.part, /ч\. 6 ст\. 232\.4/);
+  assert.equal(s.entry_into_force.resolved, true);
+  assert.equal(s.entry_into_force.date, '2026-02-06'); // дедлайн 05.02 + 1
+});
+
+test('упрощённое, ч. 7: подана жалоба → со дня определения апелляции, дата не вычисляется', () => {
+  const s = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' });
+  assert.equal(s.entry_into_force.branch, 'appealed');
+  assert.match(s.entry_into_force.part, /ч\. 7 ст\. 232\.4/);
+  assert.equal(s.entry_into_force.resolved, false);
+  assert.equal(s.entry_into_force.date, null);
+  assert.match(s.entry_into_force.message, /определения судом апелляционной инстанции/);
+  assert.match(s.entry_into_force.note, /не заложена/);
+});
+
+test('упрощённое: событие — своё, по ст. 232.4, а не общее по ч. 1 ст. 209', () => {
+  const r = computeChain({ ...BASE, ...SIMPL }, { today: '2026-03-01' });
+  assert.match(r.simplified.entry_into_force.norm, /232\.4/);
+  assert.match(r.entry_into_force.norm, /ст\. 209/); // общая цепочка не затронута
+  assert.notEqual(r.simplified.entry_into_force.date, r.entry_into_force.date);
 });
