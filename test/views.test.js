@@ -12,12 +12,13 @@ const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция →
 const ids = (nodes) => nodes.map((n) => n.id);
 const byId = (nodes, id) => nodes.find((n) => n.id === id);
 
-test('заглушки всегда присутствуют (3 шт., с explanation и norm)', () => {
-  // Частная жалоба перестала быть заглушкой — реализована как узел на
-  // механике рабочих дней (ст. 332), поэтому заглушек осталось три.
+test('заглушки всегда присутствуют (2 шт., с explanation и norm)', () => {
+  // Раскрытые заглушки: частная жалоба (ст. 332) и упрощённое производство
+  // (глава 21.1) реализованы как узлы, поэтому заглушек осталось две —
+  // заочное решение и мировой судья без мотивированного решения.
   const v = buildView(BASE, { today: '2025-05-01' });
-  assert.equal(v.stubs.length, 3);
-  assert.ok(!ids(v.stubs).includes('private_complaint'));
+  assert.equal(v.stubs.length, 2);
+  assert.deepEqual(ids(v.stubs), ['default_judgment', 'justice_of_peace_no_reasoning']);
   for (const s of v.stubs) {
     assert.ok(s.explanation && s.norm && s.title);
   }
@@ -334,4 +335,46 @@ test('независимые сроки видны без даты мотиви�
   assert.deepEqual(ids(v.cards), ['private_complaint']);
   // цепочка при этом честно помечена как нерассчитанная
   assert.deepEqual(ids(v.incomplete), ['appeal_general']);
+});
+
+test('упрощённое производство: три карточки без заявления, событие по ст. 232.4', () => {
+  const v = buildView({ simplified_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
+  assert.deepEqual(ids(v.cards), [
+    'simplified_reasoned_request',
+    'simplified_appeal',
+    'simplified_entry_into_force',
+  ]);
+  const appeal = byId(v.cards, 'simplified_appeal');
+  assert.equal(appeal.unit, 'working_day');
+  assert.equal(appeal.deadline, '2026-01-22');
+  assert.match(appeal.note, /не составлялось/);
+
+  const entry = byId(v.cards, 'simplified_entry_into_force');
+  assert.equal(entry.kind, 'event');
+  assert.equal(entry.status, 'resolved');
+  assert.match(entry.norm, /232\.4/);
+  assert.match(entry.norm, /ч\. 5/);
+});
+
+test('упрощённое: срок изготовления появляется после заявления, помечен справочным', () => {
+  const v = buildView(
+    { simplified_resolution_date: '2025-12-22', simplified_reasoned_request_date: '2025-12-24' },
+    { today: '2026-03-01' },
+  );
+  const making = byId(v.cards, 'simplified_reasoned_making');
+  assert.ok(making);
+  assert.equal(making.informational, true);
+  assert.equal(making.deadline, '2026-01-19');
+});
+
+test('упрощённое, ч. 7: событие не разрешено, показывает норму и чего не хватает', () => {
+  const v = buildView(
+    { simplified_resolution_date: '2025-12-22', simplified_appeal_filed_date: '2026-01-20' },
+    { today: '2026-03-01' },
+  );
+  const entry = byId(v.cards, 'simplified_entry_into_force');
+  assert.equal(entry.status, 'pending');
+  assert.equal(entry.date, null);
+  assert.match(entry.norm, /ч\. 7/);
+  assert.match(entry.note, /не заложена/);
 });

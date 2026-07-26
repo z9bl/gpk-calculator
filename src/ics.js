@@ -18,6 +18,8 @@ import {
   ENFORCEMENT_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
+  SIMPLIFIED_REASONED_REQUEST,
+  SIMPLIFIED_APPEAL,
 } from './chain.js';
 
 const DAY_MS = 86_400_000;
@@ -257,6 +259,25 @@ export function icsTermsFromChain(chain) {
       norm: chain.private_complaint.norm.primary,
       ics: PRIVATE_COMPLAINT.ics,
       duration: PRIVATE_COMPLAINT.duration,
+    });
+  }
+  // Упрощённое производство: заявление о мотивированном решении и апелляция.
+  // Срок изготовления решения судом — ics: false (справочный), не экспортируется.
+  if (chain && chain.simplified) {
+    const s = chain.simplified;
+    terms.push({
+      title: s.reasoned_request.title,
+      deadline: s.reasoned_request.deadline,
+      norm: s.reasoned_request.norm.primary,
+      ics: SIMPLIFIED_REASONED_REQUEST.ics,
+      duration: SIMPLIFIED_REASONED_REQUEST.duration,
+    });
+    terms.push({
+      title: s.appeal.title,
+      deadline: s.appeal.deadline,
+      norm: s.appeal.norm.primary,
+      ics: SIMPLIFIED_APPEAL.ics,
+      duration: SIMPLIFIED_APPEAL.duration,
     });
   }
   return terms;

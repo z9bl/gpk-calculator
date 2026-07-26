@@ -359,6 +359,180 @@ function computeProtocolRemarks(inputs) {
   return { remarks, review };
 }
 
+// --- Упрощённое производство (глава 21.1 ГПК) -------------------------------
+//
+// Все сроки в днях — рабочие: п. 16 ПП ВС № 16 относит правило абз. 2 ч. 3
+// ст. 107 к срокам апелляционного обжалования, п. 17 прямо называет
+// пятнадцатидневный срок по делам упрощённого производства (сверено дословно,
+// см. раздел 9 SPEC.md). weekend_shift не применяется — см. 3.1.
+//
+// Вступление в силу здесь — своё, по ст. 232.4, а не общее по ч. 1 ст. 209.
+
+const SIMPLIFIED_CALC_NORMS = ['ч. 3 ст. 107 (абз. 2) ГПК РФ', 'п. 16, 17 ПП ВС РФ № 16'];
+
+export const SIMPLIFIED_REASONED_REQUEST = {
+  id: 'simplified_reasoned_request',
+  title: 'Заявление о составлении мотивированного решения',
+  duration: { value: 5, unit: 'working_day' },
+  anchor: { event: 'simplified_resolution_date', offset_start: 1 },
+  condition: 'simplified_resolution_date',
+  ics: true,
+  logic:
+    'Пять дней со дня подписания резолютивной части решения. Срок в рабочих ' +
+    'днях (абз. 2 ч. 3 ст. 107 ГПК РФ, п. 16–17 ПП ВС № 16).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'simplified_resolution_date', offset_start: 1 },
+      norm: { primary: 'ч. 3 ст. 232.4 ГПК РФ', calculation: SIMPLIFIED_CALC_NORMS },
+    },
+  ],
+};
+
+export const SIMPLIFIED_REASONED_MAKING = {
+  id: 'simplified_reasoned_making',
+  title: 'Изготовление мотивированного решения судом',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'simplified_reasoned_trigger', offset_start: 1 },
+  informational: true, // срок суда, справочно
+  ics: false,
+  logic:
+    'Десять дней со дня поступления заявления о составлении мотивированного ' +
+    'решения либо со дня подачи апелляционной жалобы. Срок в рабочих днях.',
+  midnight_rule: null,
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'simplified_reasoned_trigger', offset_start: 1 },
+      norm: { primary: 'ч. 4 ст. 232.4 ГПК РФ', calculation: SIMPLIFIED_CALC_NORMS },
+    },
+  ],
+};
+
+export const SIMPLIFIED_APPEAL = {
+  id: 'simplified_appeal',
+  title: 'Апелляционная жалоба (упрощённое производство)',
+  duration: { value: 15, unit: 'working_day' },
+  anchor: { event: 'simplified_resolution_date', offset_start: 1 },
+  condition: 'simplified_resolution_date',
+  ics: true,
+  logic:
+    'Пятнадцать дней со дня принятия решения, а при составлении мотивированного ' +
+    'решения — со дня принятия решения в окончательной форме. Срок в рабочих ' +
+    'днях (п. 17 ПП ВС № 16).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'simplified_resolution_date', offset_start: 1 },
+      norm: { primary: 'ч. 8 ст. 232.4 ГПК РФ', calculation: SIMPLIFIED_CALC_NORMS },
+    },
+  ],
+};
+
+const SIMPLIFIED_ENTRY_NORM = 'ст. 232.4 ГПК РФ';
+
+// Событие вступления в силу по ст. 232.4 — три ветви (ч. 5, 6, 7).
+// От текущей даты не зависит: ветвь определяется введёнными фактами.
+function resolveSimplifiedEntry(appealFiled, reasoned, appealDeadline) {
+  // ч. 7: подана апелляционная жалоба — со дня принятия определения
+  // апелляционной инстанцией. Этой даты среди inputs нет, поэтому событие
+  // не разрешается: показываем норму и чего не хватает, а не выдуманную дату.
+  if (appealFiled != null) {
+    return {
+      branch: 'appealed',
+      part: 'ч. 7 ст. 232.4 ГПК РФ',
+      resolved: false,
+      date: null,
+      logic:
+        'Апелляционная жалоба подана — решение вступает в силу со дня принятия ' +
+        'определения судом апелляционной инстанции.',
+      message: 'Вступит в силу со дня принятия определения судом апелляционной инстанции',
+      note:
+        'Дата определения апелляционной инстанции в расчёт не заложена — этот ' +
+        'срок не вычисляется.',
+    };
+  }
+
+  const date = toISO(addDays(appealDeadline, 1)); // по истечении срока обжалования
+
+  // ч. 6: составлено мотивированное решение — по истечении срока по ч. 8
+  // (пятнадцать рабочих дней со дня принятия решения в окончательной форме).
+  if (reasoned != null) {
+    return {
+      branch: 'reasoned',
+      part: 'ч. 6 ст. 232.4 ГПК РФ',
+      resolved: true,
+      date,
+      logic:
+        'Составлено мотивированное решение — вступает в силу по истечении срока ' +
+        'апелляционного обжалования по ч. 8 ст. 232.4 (пятнадцать рабочих дней ' +
+        'со дня принятия решения в окончательной форме).',
+    };
+  }
+
+  // ч. 5: жалоба не подана — по истечении пятнадцати дней со дня принятия.
+  return {
+    branch: 'not_appealed',
+    part: 'ч. 5 ст. 232.4 ГПК РФ',
+    resolved: true,
+    date,
+    logic:
+      'Жалоба не подана и мотивированное решение не составлялось — вступает в ' +
+      'силу по истечении пятнадцати дней со дня принятия решения.',
+  };
+}
+
+/**
+ * Упрощённое производство (глава 21.1 ГПК). Независимая ветка: считается по
+ * своим inputs, от цепочки общего порядка не зависит.
+ * @param {object} inputs
+ * @returns {object|null} null, если не введена дата резолютивной части.
+ */
+export function computeSimplified(inputs) {
+  const resolution = toISO(inputs?.simplified_resolution_date);
+  if (resolution == null) return null;
+
+  const reasonedRequest = toISO(inputs.simplified_reasoned_request_date);
+  const reasoned = toISO(inputs.simplified_reasoned_date);
+  const appealFiled = toISO(inputs.simplified_appeal_filed_date);
+
+  // ч. 3 ст. 232.4 — 5 рабочих дней на заявление о мотивированном решении.
+  const request = computeSimpleTerm(SIMPLIFIED_REASONED_REQUEST, resolution);
+
+  // ч. 4 ст. 232.4 — 10 рабочих дней на изготовление, от поступления заявления
+  // либо от подачи апелляционной жалобы; при обоих фактах — от более раннего.
+  const triggers = [];
+  if (reasonedRequest != null) triggers.push({ kind: 'request', date: reasonedRequest });
+  if (appealFiled != null) triggers.push({ kind: 'appeal_filed', date: appealFiled });
+  triggers.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const making = triggers.length
+    ? computeSimpleTerm(SIMPLIFIED_REASONED_MAKING, triggers[0].date)
+    : null;
+  if (making) making.trigger = triggers[0].kind;
+
+  // ч. 8 ст. 232.4 — 15 рабочих дней; при составлении мотивированного решения
+  // точка отсчёта смещается на день принятия в окончательной форме.
+  const appeal = computeSimpleTerm(SIMPLIFIED_APPEAL, reasoned ?? resolution);
+  appeal.anchor_kind = reasoned != null ? 'reasoned' : 'resolution';
+
+  const entry = resolveSimplifiedEntry(appealFiled, reasoned, appeal.deadline);
+
+  return {
+    reasoned_request: request,
+    reasoned_making: making,
+    appeal,
+    entry_into_force: { norm: SIMPLIFIED_ENTRY_NORM, ...entry },
+  };
+}
+
 const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
@@ -637,5 +811,7 @@ export function computeChain(inputs, options = {}) {
     enforcement,
     // Сроки в рабочих днях — независимые узлы, каждый по своему input.
     ...computeIndependentTerms(inputs),
+    // Упрощённое производство — своя ветка со своим вступлением в силу.
+    simplified: computeSimplified(inputs),
   };
 }
