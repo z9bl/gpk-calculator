@@ -78,6 +78,7 @@ const INPUT_LABELS = {
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
   mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
+  vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
@@ -408,6 +409,27 @@ function mirovoyCards(m) {
   return cards;
 }
 
+// Карточка месячного срока, посчитанного через computeSimpleTerm.
+function monthTermCard(term) {
+  const card = {
+    id: term.id,
+    kind: 'term',
+    title: term.title,
+    status: 'computed',
+    deadline: term.deadline,
+    norm: term.norm.primary,
+    duration: term.duration,
+    details: {
+      collapsed: true,
+      logic: term.logic,
+      calculation: term.norm.calculation,
+      midnight_rule: term.midnight_rule,
+    },
+  };
+  attachCalendarWarning(card);
+  return card;
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -564,6 +586,7 @@ function independentNodes(source) {
     }
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
+  if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {
     const dj = defaultJudgmentCards(defaultJudgment);

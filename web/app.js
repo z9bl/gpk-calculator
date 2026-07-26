@@ -32,6 +32,7 @@ const INPUT_LABELS = {
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
   mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
   mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
+  vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -55,6 +56,7 @@ const INPUT_HINTS = {
   mirovoy_resolution_date: 'Ч. 3–5 ст. 199 ГПК — сроки в рабочих днях',
   mirovoy_request_date: 'Запускает 10-дневный срок составления решения (ч. 5 ст. 199)',
   mirovoy_reasoned_date: 'Смещает отсчёт апелляции (п. 17 ПП ВС № 16)',
+  vs_ruling_date: 'Надзор в Президиум ВС — 3 месяца (ч. 2 ст. 391.2). Не путать с определением КСОЮ',
 };
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
@@ -85,6 +87,7 @@ const CHAIN_ORDER = [
   'mirovoy_reasoned_request',
   'mirovoy_reasoned_making',
   'mirovoy_appeal',
+  'supervision',
 ];
 
 // --- Состояние --------------------------------------------------------------
@@ -652,6 +655,7 @@ const OTHER_TERM_FIELDS = [
   'simplified_resolution_date',
   'default_judgment_service_date',
   'mirovoy_resolution_date',
+  'vs_ruling_date',
 ];
 
 function renderOtherTerms() {
