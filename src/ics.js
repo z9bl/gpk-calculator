@@ -9,7 +9,7 @@
 // Дата напоминания на нерабочий день сдвигается НАЗАД, к предыдущему рабочему
 // (через календарный модуль). Напоминание раньше даты расчёта не создаётся.
 
-import { shiftBackIfNonWorking, toISODate } from './calendar.js';
+import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from './calendar.js';
 import { addMonths } from './engine.js';
 import {
   APPEAL_GENERAL,
@@ -48,6 +48,17 @@ function reminderOffsets(duration) {
       { unit: 'day', value: 7 },
     ];
   }
+  // Сроки в рабочих днях: смещения тоже в рабочих днях — календарное смещение
+  // на каникулах увело бы напоминание за границу срока.
+  if (duration && duration.unit === 'working_day' && duration.value === 5) {
+    return [{ unit: 'working_day', value: 2 }];
+  }
+  if (duration && duration.unit === 'working_day' && duration.value === 15) {
+    return [
+      { unit: 'working_day', value: 7 },
+      { unit: 'working_day', value: 3 },
+    ];
+  }
   return [];
 }
 
@@ -60,9 +71,10 @@ function toDate(iso) {
 function addDaysISO(iso, n) {
   return toISODate(new Date(toDate(iso).getTime() + n * DAY_MS));
 }
-// Смещение назад от дедлайна на одно правило напоминания (день или месяц).
+// Смещение назад от дедлайна на одно правило напоминания.
 function offsetBackISO(deadlineISO, off) {
   if (off.unit === 'month') return toISODate(addMonths(deadlineISO, -off.value));
+  if (off.unit === 'working_day') return subtractWorkingDays(deadlineISO, off.value);
   return addDaysISO(deadlineISO, -off.value);
 }
 function compact(iso) {
@@ -117,9 +129,12 @@ function foldLine(line) {
 function reminderDates(term, referenceDate) {
   const out = [];
   for (const off of reminderOffsets(term.duration)) {
-    const shifted = shiftBackIfNonWorking(offsetBackISO(term.deadline, off));
-    if (referenceDate != null && shifted < referenceDate) continue; // раньше даты расчёта
-    out.push(shifted);
+    const raw = offsetBackISO(term.deadline, off);
+    // Смещение в рабочих днях уже даёт рабочий день — сдвигать нечего (как и с
+    // дедлайном срока в рабочих днях). Календарные смещения сдвигаем назад.
+    const date = off.unit === 'working_day' ? raw : shiftBackIfNonWorking(raw);
+    if (referenceDate != null && date < referenceDate) continue; // раньше даты расчёта
+    out.push(date);
   }
   return [...new Set(out)]; // после сдвига даты могут совпасть
 }

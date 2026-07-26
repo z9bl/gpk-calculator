@@ -174,6 +174,26 @@ export function shiftBackIfNonWorking(date) {
 }
 
 /**
+ * Отступ назад на N рабочих дней от даты. Нерабочие дни не считаются; результат
+ * — рабочий день по построению, дополнительный сдвиг не нужен. Используется для
+ * дат напоминаний по срокам, исчисляемым в рабочих днях (раздел 8 SPEC.md):
+ * смещение считается в рабочих днях, потому что и сам срок в них исчисляется.
+ * @param {Date|string} date — отсчётная дата (обычно дедлайн).
+ * @param {number} n — сколько рабочих дней отступить назад.
+ * @returns {Date|string} тип результата совпадает с типом аргумента.
+ */
+export function subtractWorkingDays(date, n) {
+  let dt = normalize(date);
+  for (let i = 0; i < n; i += 1) {
+    dt = new Date(dt.getTime() - DAY_MS);
+    while (!isWorkingDay(dt)) {
+      dt = new Date(dt.getTime() - DAY_MS);
+    }
+  }
+  return typeof date === 'string' ? toKey(dt) : dt;
+}
+
+/**
  * Уровень достоверности календаря года (три уровня, п. 5.4 SPEC.md).
  * @param {number} year
  * @returns {{ level: 'final'|'draft'|'preliminary', preliminary: boolean, draft: boolean }}
