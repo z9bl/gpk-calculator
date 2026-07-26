@@ -8,6 +8,7 @@ import {
   computeIndependentTerms,
   computeSimplified,
   computeDefaultJudgment,
+  computeMirovoy,
 } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
@@ -658,4 +659,75 @@ test('заочное: вступление в силу не рассчитыва
   assert.match(d.entry_into_force.reason, /нет/);
   // по аналогии с ч. 1 ст. 209 не достраиваем
   assert.equal(d.entry_into_force.date, undefined);
+});
+
+// --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199) -------------
+
+const MIR = { mirovoy_resolution_date: '2025-12-22' };
+
+test('мировой: узла нет без даты объявления резолютивной части', () => {
+  assert.equal(computeMirovoy({}), null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).mirovoy, null);
+});
+
+test('мировой, участник присутствовал: 3 рабочих дня (п. 1 ч. 4 ст. 199)', () => {
+  const m = computeMirovoy(MIR);
+  assert.equal(m.attendance, 'present'); // значение по умолчанию
+  assert.equal(m.reasoned_request.deadline, '2025-12-25');
+  assert.match(m.reasoned_request.norm.primary, /п\. 1 ч\. 4 ст\. 199/);
+  assert.match(m.reasoned_request.logic, /вправе не составлять/); // ч. 3 ст. 199
+});
+
+test('мировой, участник не присутствовал: 15 рабочих дней (п. 2 ч. 4 ст. 199)', () => {
+  const m = computeMirovoy({ ...MIR, mirovoy_attendance: 'absent' });
+  assert.equal(m.attendance, 'absent');
+  assert.equal(m.reasoned_request.deadline, '2026-01-22');
+  assert.match(m.reasoned_request.norm.primary, /п\. 2 ч\. 4 ст\. 199/);
+  // Ветвь явки действительно меняет срок.
+  assert.notEqual(m.reasoned_request.deadline, computeMirovoy(MIR).reasoned_request.deadline);
+});
+
+test('мировой: трёхдневный срок через январские каникулы растягивается впятеро', () => {
+  // Резолютивная часть 30.12.2025: первый рабочий день течения — 12.01.2026,
+  // три рабочих дня → 14.01.2026, то есть 15 календарных дней на «три дня».
+  const m = computeMirovoy({ mirovoy_resolution_date: '2025-12-30' });
+  assert.equal(m.reasoned_request.first_working_day, '2026-01-12');
+  assert.equal(m.reasoned_request.deadline, '2026-01-14');
+  const span = Math.round(
+    (Date.parse('2026-01-14') - Date.parse('2025-12-30')) / 86_400_000,
+  );
+  assert.equal(span, 15);
+  assert.ok(span > 3 * 4, 'календарный размах многократно превышает три дня');
+});
+
+test('мировой: 10 рабочих дней на составление решения (ч. 5 ст. 199)', () => {
+  assert.equal(computeMirovoy(MIR).reasoned_making, null); // без заявления не считается
+  const m = computeMirovoy({ ...MIR, mirovoy_request_date: '2025-12-25' });
+  assert.equal(m.reasoned_making.anchor, '2025-12-25');
+  assert.equal(m.reasoned_making.deadline, '2026-01-20');
+  assert.match(m.reasoned_making.norm.primary, /ч\. 5 ст\. 199/);
+});
+
+test('мировой: апелляция без мотивированного решения — от резолютивной части', () => {
+  const m = computeMirovoy(MIR);
+  assert.equal(m.appeal.anchor, '2025-12-22');
+  assert.equal(m.appeal.anchor_kind, 'resolution');
+  assert.equal(m.appeal.deadline, '2026-01-22');
+  assert.match(m.appeal.logic, /вправе не составлять/);
+});
+
+test('мировой: апелляция с мотивированным решением — от дня его составления', () => {
+  const m = computeMirovoy({ ...MIR, mirovoy_reasoned_date: '2026-01-15' });
+  assert.equal(m.appeal.anchor, '2026-01-15');
+  assert.equal(m.appeal.anchor_kind, 'reasoned');
+  assert.equal(m.appeal.deadline, '2026-02-16'); // 15.02.2026 — воскресенье
+  assert.notEqual(m.appeal.deadline, computeMirovoy(MIR).appeal.deadline);
+});
+
+test('мировой: месячный срок апелляции с переносом последнего дня (ч. 2 ст. 108)', () => {
+  // Мотивированное решение 15.01.2026 → 15.02.2026 (вс) → перенос на 16.02.2026.
+  const m = computeMirovoy({ ...MIR, mirovoy_reasoned_date: '2026-01-15' });
+  assert.equal(m.appeal.raw_deadline, '2026-02-15');
+  assert.equal(m.appeal.deadline, '2026-02-16');
+  assert.equal(m.appeal.shifted, true);
 });

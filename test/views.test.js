@@ -12,15 +12,11 @@ const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция →
 const ids = (nodes) => nodes.map((n) => n.id);
 const byId = (nodes, id) => nodes.find((n) => n.id === id);
 
-test('заглушки всегда присутствуют (1 шт., с explanation и norm)', () => {
+test('заглушек в модели больше нет — все ветви раскрыты', () => {
   // Раскрыты: частная жалоба (3.1), упрощённое производство (3.2), заочное
-  // решение (3.3). Осталась одна заглушка — мировой судья без мотивировки.
+  // решение (3.3), мировой судья без мотивировки (3.4).
   const v = buildView(BASE, { today: '2025-05-01' });
-  assert.equal(v.stubs.length, 1);
-  assert.deepEqual(ids(v.stubs), ['justice_of_peace_no_reasoning']);
-  for (const s of v.stubs) {
-    assert.ok(s.explanation && s.norm && s.title);
-  }
+  assert.deepEqual(v.stubs, []);
 });
 
 test('нет даты мотивированного решения → нет карточек цепочки, узел в incomplete', () => {
@@ -293,14 +289,44 @@ test('просрочка: подача позже дедлайна → стат�
   assert.match(appeal.overdue.norm, /112/);
 });
 
-test('предупреждение: мотивированное решение позже 10 дней (ч. 2 ст. 199)', () => {
+test('предупреждение: мотивированное решение позже срока отложения (ч. 2 ст. 199)', () => {
   const v = buildView(
     { reasoned_decision_date: '2025-03-25', hearing_end_date: '2025-03-11' }, // 14 дней
     { today: '2025-05-01' },
   );
   const appeal = byId(v.cards, 'appeal_general');
   assert.ok(appeal.warnings && appeal.warnings.length === 1);
-  assert.equal(appeal.warnings[0].code, 'reasoned_over_10_days');
+  assert.equal(appeal.warnings[0].code, 'reasoned_over_delay');
+  assert.equal(appeal.warnings[0].threshold_days, 10); // разбирательство в 2025 → новая редакция
+});
+
+test('порог ч. 2 ст. 199 темпоральный: 5 дней до 01.09.2024, 10 — с 01.09.2024', () => {
+  // Разрыв 7 дней: до отсечки это нарушение (порог 5), после — нет (порог 10).
+  const before = buildView(
+    { hearing_end_date: '2024-08-31', reasoned_decision_date: '2024-09-07' },
+    { today: '2024-12-01' },
+  );
+  const beforeWarn = byId(before.cards, 'appeal_general').warnings;
+  assert.ok(beforeWarn && beforeWarn.length === 1);
+  assert.equal(beforeWarn[0].version_id, 'before_135fz');
+  assert.equal(beforeWarn[0].threshold_days, 5);
+  assert.match(beforeWarn[0].text, /до ФЗ № 135-ФЗ/);
+
+  const after = buildView(
+    { hearing_end_date: '2024-09-01', reasoned_decision_date: '2024-09-08' },
+    { today: '2024-12-01' },
+  );
+  assert.equal(byId(after.cards, 'appeal_general').warnings, undefined);
+
+  // За границей нового порога предупреждение снова появляется.
+  const afterOver = buildView(
+    { hearing_end_date: '2024-09-01', reasoned_decision_date: '2024-09-15' }, // 14 дней
+    { today: '2024-12-01' },
+  );
+  const afterWarn = byId(afterOver.cards, 'appeal_general').warnings;
+  assert.ok(afterWarn && afterWarn.length === 1);
+  assert.equal(afterWarn[0].version_id, 'from_135fz');
+  assert.equal(afterWarn[0].threshold_days, 10);
 });
 
 test('в пределах 10 дней — предупреждения нет', () => {
@@ -421,4 +447,33 @@ test('заочное, иные лица: карточка апелляции с 
   assert.equal(appeal.deadline, '2026-02-12');
   assert.match(appeal.norm, /абз\. 2 ч\. 2 ст\. 237/);
   assert.match(appeal.note, /не подавал/);
+});
+
+test('мировой судья: карточки ветви, выбор явки меняет срок', () => {
+  const present = buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
+  assert.deepEqual(ids(present.cards), ['mirovoy_reasoned_request', 'mirovoy_appeal']);
+  const req = byId(present.cards, 'mirovoy_reasoned_request');
+  assert.equal(req.unit, 'working_day');
+  assert.equal(req.deadline, '2025-12-25');
+
+  const absent = buildView(
+    { mirovoy_resolution_date: '2025-12-22', mirovoy_attendance: 'absent' },
+    { today: '2026-03-01' },
+  );
+  assert.equal(byId(absent.cards, 'mirovoy_reasoned_request').deadline, '2026-01-22');
+
+  const appeal = byId(present.cards, 'mirovoy_appeal');
+  assert.equal(appeal.deadline, '2026-01-22');
+  assert.match(appeal.note, /не составлялось/);
+});
+
+test('мировой судья: срок составления решения появляется после заявления', () => {
+  const v = buildView(
+    { mirovoy_resolution_date: '2025-12-22', mirovoy_request_date: '2025-12-25' },
+    { today: '2026-03-01' },
+  );
+  const making = byId(v.cards, 'mirovoy_reasoned_making');
+  assert.ok(making);
+  assert.equal(making.informational, true);
+  assert.equal(making.deadline, '2026-01-20');
 });

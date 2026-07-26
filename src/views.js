@@ -18,6 +18,8 @@ import {
   computeIndependentTerms,
   computeSimplified,
   computeDefaultJudgment,
+  computeMirovoy,
+  reasonedDelayVersionFor,
 } from './chain.js';
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
@@ -72,19 +74,15 @@ const INPUT_LABELS = {
   default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
   default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
   default_judgment_subject: 'Кто обжалует заочное решение',
+  mirovoy_resolution_date: 'Дата объявления резолютивной части (мировой судья)',
+  mirovoy_attendance: 'Участник присутствовал в судебном заседании',
+  mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
+  mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
 };
 
-// Заглушки (п. 4.4 SPEC.md) — статические карточки.
-const STUBS = [
-  {
-    id: 'justice_of_peace_no_reasoning',
-    title: 'Мировой судья без мотивированного решения',
-    explanation:
-      'Срок зависит от подачи заявления о составлении мотивированного решения ' +
-      '(3 или 15 дней в зависимости от присутствия в заседании).',
-    norm: 'ч. 4, 5 ст. 199 ГПК РФ, п. 17 ПП ВС РФ № 16',
-  },
-];
+// Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
+// список пуст: неподдерживаемых ветвей в модели больше нет.
+const STUBS = [];
 
 // --- Вспомогательные --------------------------------------------------------
 
@@ -149,17 +147,23 @@ function buildAppealCard(inputs) {
   const calc = computeDeadline(APPEAL_GENERAL, inputs.reasoned_decision_date);
   const card = termCard(APPEAL_GENERAL, calc);
 
-  // Предупреждение: мотивированное решение изготовлено позже 10 дней
-  // (ч. 2 ст. 199; warn_not_block — считаем от фактической даты, п. 16 ПП ВС № 16).
+  // Предупреждение: мотивированное решение изготовлено позже срока отложения
+  // по ч. 2 ст. 199. Порог темпоральный (раздел 10): до 31.08.2024 — 5 дней,
+  // с 01.09.2024 — 10 дней (ФЗ № 135-ФЗ). Редакция — по дате окончания
+  // разбирательства. warn_not_block: считаем от фактической даты (п. 16 ПП ВС № 16).
   if (inputs.hearing_end_date != null) {
-    const gap = daysBetween(toISO(inputs.hearing_end_date), calc.anchor);
-    if (gap > 10) {
+    const hearingEnd = toISO(inputs.hearing_end_date);
+    const version = reasonedDelayVersionFor(hearingEnd);
+    const gap = daysBetween(hearingEnd, calc.anchor);
+    if (gap > version.days) {
       card.warnings = [
         {
-          code: 'reasoned_over_10_days',
+          code: 'reasoned_over_delay',
+          version_id: version.id,
+          threshold_days: version.days,
           text:
-            `Мотивированное решение изготовлено на ${gap}-й день после ` +
-            'окончания разбирательства (> 10 дней, ч. 2 ст. 199 ГПК РФ). Срок ' +
+            `Мотивированное решение изготовлено на ${gap}-й день после окончания ` +
+            `разбирательства (> ${version.days} дней, ${version.norm}). Срок ` +
             'обжалования считается от фактической даты (п. 16 ПП ВС № 16).',
         },
       ];
@@ -361,6 +365,36 @@ function defaultJudgmentCards(dj) {
   return { cards, incomplete };
 }
 
+// Карточки ветки мирового судьи (ч. 3–5 ст. 199).
+function mirovoyCards(m) {
+  const cards = [];
+  cards.push(workingDayCard(m.reasoned_request));
+  if (m.reasoned_making) {
+    cards.push(workingDayCard(m.reasoned_making, { informational: true }));
+  }
+  const appeal = {
+    id: m.appeal.id,
+    kind: 'term',
+    title: m.appeal.title,
+    status: 'computed',
+    deadline: m.appeal.deadline,
+    norm: m.appeal.norm.primary,
+    details: {
+      collapsed: true,
+      logic: m.appeal.logic,
+      calculation: m.appeal.norm.calculation,
+      midnight_rule: m.appeal.midnight_rule,
+    },
+    note:
+      m.appeal.anchor_kind === 'reasoned'
+        ? 'Мотивированное решение составлено — отсчёт со дня, следующего за днём его составления.'
+        : 'Мотивированное решение не составлялось — отсчёт со дня, следующего за днём принятия решения.',
+  };
+  attachCalendarWarning(appeal);
+  cards.push(appeal);
+  return cards;
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -506,6 +540,7 @@ function independentNodes(source) {
   const terms = fromChain ? source : computeIndependentTerms(source);
   const simplified = fromChain ? source.simplified : computeSimplified(source);
   const defaultJudgment = fromChain ? source.default_judgment : computeDefaultJudgment(source);
+  const mirovoy = fromChain ? source.mirovoy : computeMirovoy(source);
 
   const cards = [];
   const incomplete = [];
@@ -522,6 +557,7 @@ function independentNodes(source) {
     cards.push(...dj.cards);
     incomplete.push(...dj.incomplete);
   }
+  if (mirovoy) cards.push(...mirovoyCards(mirovoy));
   return { cards, incomplete };
 }
 

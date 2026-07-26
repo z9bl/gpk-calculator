@@ -14,6 +14,8 @@ import {
   SIMPLIFIED_APPEAL,
   DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
   DEFAULT_JUDGMENT_APPEAL,
+  MIROVOY_REASONED_REQUEST,
+  MIROVOY_APPEAL,
 } from '../src/chain.js';
 
 // Метаданные экспортируемых сроков (ics/duration) — по id карточки.
@@ -28,6 +30,8 @@ const ICS_META = {
   [SIMPLIFIED_APPEAL.id]: SIMPLIFIED_APPEAL,
   [DEFAULT_JUDGMENT_CANCELLATION_REQUEST.id]: DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
   [DEFAULT_JUDGMENT_APPEAL.id]: DEFAULT_JUDGMENT_APPEAL,
+  [MIROVOY_REASONED_REQUEST.id]: MIROVOY_REASONED_REQUEST,
+  [MIROVOY_APPEAL.id]: MIROVOY_APPEAL,
 };
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -54,6 +58,10 @@ const INPUT_LABELS = {
   default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
   default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
   default_judgment_subject: 'Кто обжалует заочное решение',
+  mirovoy_resolution_date: 'Дата объявления резолютивной части (мировой судья)',
+  mirovoy_attendance: 'Участник присутствовал в судебном заседании',
+  mirovoy_request_date: 'Дата подачи заявления о составлении мотивированного решения',
+  mirovoy_reasoned_date: 'Дата составления мотивированного решения мировым судьёй',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подавалась',
@@ -74,6 +82,9 @@ const INPUT_HINTS = {
   default_judgment_service_date: 'Ст. 237 ГПК — точка отсчёта семидневного срока',
   default_judgment_cancellation_request_date: 'Для иных лиц меняет точку отсчёта апелляции (абз. 2 ч. 2 ст. 237)',
   default_judgment_refusal_date: 'От неё считается месячный срок апелляции',
+  mirovoy_resolution_date: 'Ч. 3–5 ст. 199 ГПК — сроки в рабочих днях',
+  mirovoy_request_date: 'Запускает 10-дневный срок составления решения (ч. 5 ст. 199)',
+  mirovoy_reasoned_date: 'Смещает отсчёт апелляции (п. 17 ПП ВС № 16)',
 };
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
@@ -101,6 +112,9 @@ const CHAIN_ORDER = [
   'default_judgment_cancellation_request',
   'default_judgment_appeal',
   'default_judgment_entry_notice',
+  'mirovoy_reasoned_request',
+  'mirovoy_reasoned_making',
+  'mirovoy_appeal',
 ];
 
 // --- Состояние --------------------------------------------------------------
@@ -481,6 +495,21 @@ function render() {
         // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
         // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
         if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
+        // Мировой судья: явка участника — влияет на длительность срока (3/15).
+        if (id === 'mirovoy_reasoned_request') {
+          const box = el('div', 'note');
+          box.appendChild(
+            renderChoiceField(
+              'mirovoy_attendance',
+              [
+                { value: 'present', label: 'Присутствовал — 3 рабочих дня (п. 1 ч. 4 ст. 199)' },
+                { value: 'absent', label: 'Не присутствовал — 15 рабочих дней (п. 2 ч. 4 ст. 199)' },
+              ],
+              state.inputs.mirovoy_attendance || 'present',
+            ),
+          );
+          termEl.appendChild(box);
+        }
         // Заочное решение: кто обжалует — влияет на точку отсчёта апелляции.
         if (id === 'default_judgment_cancellation_request') {
           const box = el('div', 'note');
@@ -541,6 +570,14 @@ const FOLLOW_UP_FIELDS = {
   default_judgment_appeal: {
     field: 'default_judgment_refusal_date',
     prompt: 'Определение об отказе в отмене вынесено? Укажите дату.',
+  },
+  mirovoy_reasoned_request: {
+    field: 'mirovoy_request_date',
+    prompt: 'Заявление уже подано? Укажите дату — появится срок составления решения.',
+  },
+  mirovoy_appeal: {
+    field: 'mirovoy_reasoned_date',
+    prompt: 'Мотивированное решение составлено? Укажите дату — отсчёт сместится на неё.',
   },
 };
 
@@ -645,6 +682,7 @@ const OTHER_TERM_FIELDS = [
   'interim_ruling_date',
   'simplified_resolution_date',
   'default_judgment_service_date',
+  'mirovoy_resolution_date',
 ];
 
 function renderOtherTerms() {
@@ -669,6 +707,10 @@ function renderOtherTerms() {
 function renderStubs() {
   const view = buildView({}, { today });
   const root = document.getElementById('stubs');
+  root.textContent = '';
+  // Все ветви раскрыты — блока «неподдерживаемые» больше нет; заголовок без
+  // содержимого не рисуем.
+  if (!view.stubs.length) return;
   root.appendChild(el('h2', null, 'Неподдерживаемые ветки'));
   for (const s of view.stubs) root.appendChild(stubCard(s));
 }
