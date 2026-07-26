@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 
 import { buildICS, icsTermsFromChain } from '../src/ics.js';
 import { computeChain } from '../src/chain.js';
-import { addMonths } from '../src/engine.js';
-import { toISODate } from '../src/calendar.js';
+import { addDays, addMonths } from '../src/engine.js';
+import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } from '../src/calendar.js';
 
 const NOW = '2025-01-01T00:00:00Z'; // фиксируем DTSTAMP для детерминизма
 
@@ -202,4 +202,65 @@ test('4. расчёт от старого решения: часть напом�
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280703T090000Z'));
   assert.ok(!ics.includes('20280410T090000Z'));
   assert.ok(!ics.includes('20280609T090000Z'));
+});
+
+// --- Напоминания для сроков в рабочих днях -----------------------------------
+// Смещения считаются в рабочих днях: срок исчисляется в них же, а календарное
+// смещение на каникулах даёт меньший запас, чем задумано (см. проверку ниже).
+
+// Замечания на протокол: 5 рабочих дней от 28.12.2025 → дедлайн 14.01.2026.
+const REMARKS_TERM = {
+  title: 'Замечания на протокол судебного заседания',
+  deadline: '2026-01-14',
+  norm: 'ч. 1 ст. 231 ГПК РФ',
+  ics: true,
+  duration: { value: 5, unit: 'working_day' },
+};
+
+// Частная жалоба: 15 рабочих дней от 15.12.2025 → дедлайн 15.01.2026
+// (срок пересекает январские каникулы).
+const COMPLAINT_TERM = {
+  title: 'Частная жалоба на определение суда первой инстанции',
+  deadline: '2026-01-15',
+  norm: 'ст. 332 ГПК РФ',
+  ics: true,
+  duration: { value: 15, unit: 'working_day' },
+};
+
+test('для 5-дневного срока создаётся ровно одно напоминание (за 2 рабочих дня)', () => {
+  const ics = buildICS([REMARKS_TERM], { referenceDate: '2025-12-29', now: NOW });
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 1);
+  // 14.01 → 13.01 (1) → 12.01 (2)
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260112T090000Z'));
+});
+
+test('срок, пересекающий январские каникулы: напоминания не уходят раньше даты расчёта', () => {
+  const referenceDate = '2025-12-16'; // день расчёта, сразу после вынесения определения
+  const ics = buildICS([COMPLAINT_TERM], { referenceDate, now: NOW });
+
+  // Оба напоминания созданы (ни одно не отсеяно как прошлое).
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
+  const triggers = [...ics.matchAll(/TRIGGER;VALUE=DATE-TIME:(\d{4})(\d{2})(\d{2})T/g)].map(
+    (m) => `${m[1]}-${m[2]}-${m[3]}`,
+  );
+  // 15.01 − 7 рабочих = 25.12.2025 (через каникулы); 15.01 − 3 рабочих = 12.01.2026.
+  assert.deepEqual(triggers, ['2025-12-25', '2026-01-12']);
+
+  for (const t of triggers) {
+    assert.ok(t >= referenceDate, `напоминание ${t} не раньше даты расчёта`);
+    assert.ok(t <= COMPLAINT_TERM.deadline, `напоминание ${t} не позже дедлайна`);
+    assert.ok(isWorkingDay(t), `напоминание ${t} — рабочий день по построению`);
+  }
+});
+
+test('смещение в рабочих днях даёт больший запас, чем календарное, на каникулах', () => {
+  // 7 рабочих дней назад от 15.01.2026 = 25.12.2025 — семь рабочих дней запаса.
+  assert.equal(subtractWorkingDays('2026-01-15', 7), '2025-12-25');
+  // 7 календарных дней назад = 08.01.2026 — нерабочий день внутри каникул;
+  // после сдвига назад это 30.12.2025, то есть всего 4 рабочих дня запаса.
+  const calendarRaw = toISODate(addDays('2026-01-15', -7));
+  assert.equal(calendarRaw, '2026-01-08');
+  assert.ok(!isWorkingDay(calendarRaw));
+  assert.equal(shiftBackIfNonWorking(calendarRaw), '2025-12-30');
+  assert.equal(subtractWorkingDays('2026-01-15', 4), '2025-12-30');
 });
