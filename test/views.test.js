@@ -12,15 +12,18 @@ const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция →
 const ids = (nodes) => nodes.map((n) => n.id);
 const byId = (nodes, id) => nodes.find((n) => n.id === id);
 
-test('заглушки всегда присутствуют (4 шт., с explanation и norm)', () => {
+test('заглушки всегда присутствуют (3 шт., с explanation и norm)', () => {
+  // Частная жалоба перестала быть заглушкой — реализована как узел на
+  // механике рабочих дней (ст. 332), поэтому заглушек осталось три.
   const v = buildView(BASE, { today: '2025-05-01' });
-  assert.equal(v.stubs.length, 4);
+  assert.equal(v.stubs.length, 3);
+  assert.ok(!ids(v.stubs).includes('private_complaint'));
   for (const s of v.stubs) {
     assert.ok(s.explanation && s.norm && s.title);
   }
 });
 
-test('нет даты мотивированного решения → нет карточек, узел в incomplete', () => {
+test('нет даты мотивированного решения → нет карточек цепочки, узел в incomplete', () => {
   const v = buildView({}, { today: '2025-05-01' });
   assert.deepEqual(ids(v.cards), []);
   assert.deepEqual(ids(v.incomplete), ['appeal_general']);
@@ -306,4 +309,29 @@ test('в пределах 10 дней — предупреждения нет', 
     { today: '2025-05-01' },
   );
   assert.equal(byId(v.cards, 'appeal_general').warnings, undefined);
+});
+
+test('карточки сроков в рабочих днях: появляются по своему input, помечены unit', () => {
+  const v = buildView(
+    { ...BASE, protocol_signed_date: '2025-12-28', interim_ruling_date: '2025-12-26' },
+    { today: '2026-02-01' },
+  );
+  const remarks = byId(v.cards, 'protocol_remarks');
+  const review = byId(v.cards, 'protocol_remarks_review');
+  const complaint = byId(v.cards, 'private_complaint');
+
+  assert.ok(remarks && review && complaint);
+  assert.equal(remarks.unit, 'working_day');
+  assert.equal(remarks.deadline, '2026-01-14');
+  assert.equal(remarks.first_working_day, '2025-12-29'); // виден первый день течения
+  assert.equal(review.informational, true); // срок суда — справочно
+  assert.equal(complaint.deadline, '2026-01-28');
+  assert.match(complaint.norm, /ст\. 332/);
+});
+
+test('независимые сроки видны без даты мотивированного решения', () => {
+  const v = buildView({ interim_ruling_date: '2025-12-26' }, { today: '2026-02-01' });
+  assert.deepEqual(ids(v.cards), ['private_complaint']);
+  // цепочка при этом честно помечена как нерассчитанная
+  assert.deepEqual(ids(v.incomplete), ['appeal_general']);
 });

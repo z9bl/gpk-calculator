@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { addMonths, computeDeadline } from '../src/engine.js';
-import { toISODate } from '../src/calendar.js';
+import { addDays, addMonths, computeDeadline } from '../src/engine.js';
+import { toISODate, isWorkingDay, shiftIfNonWorking } from '../src/calendar.js';
 
 // Срок как в модели п. 4.2: 1 месяц, течение со следующего дня (ч. 3 ст. 107),
 // перенос выходного (ч. 2 ст. 108).
@@ -69,11 +69,95 @@ test('weekend_shift: false отключает перенос', () => {
   assert.equal(r.shifted, false);
 });
 
-test('единица в днях в MVP не считается (принцип заглушек)', () => {
+test('неизвестная единица срока — явная ошибка', () => {
   assert.throws(
-    () => computeDeadline({ duration: { value: 15, unit: 'day' } }, '2021-06-02'),
-    /вторая версия/,
+    () => computeDeadline({ duration: { value: 2, unit: 'week' } }, '2021-06-02'),
+    /Неизвестная единица/,
   );
+});
+
+// --- unit: working_day (абз. 2 ч. 3 ст. 107 ГПК) -----------------------------
+
+function wdTerm(value, weekendShift) {
+  const term = { duration: { value, unit: 'working_day' }, anchor: { offset_start: 1 } };
+  if (weekendShift !== undefined) term.weekend_shift = weekendShift;
+  return term;
+}
+
+// Независимый от реализации счётчик: N-й рабочий день, начиная со дня после
+// события. Используется как перекрёстная проверка результата движка.
+function nthWorkingDayAfter(anchorISO, n) {
+  let cursor = new Date(anchorISO + 'T00:00:00Z');
+  let counted = 0;
+  while (counted < n) {
+    cursor = new Date(cursor.getTime() + 86_400_000);
+    if (isWorkingDay(toISODate(cursor))) counted += 1;
+  }
+  return toISODate(cursor);
+}
+
+test('1. 5 рабочих дней от 28.12.2025 — срок уезжает за январские каникулы', () => {
+  const r = computeDeadline(wdTerm(5), '2025-12-28');
+  // 28.12 — воскресенье, течение начинается с 29.12 (первый рабочий).
+  assert.equal(r.first_working_day, '2025-12-29');
+  // Рабочие: 29.12, 30.12 → каникулы 31.12–11.01 → 12.01, 13.01, 14.01.
+  assert.equal(r.deadline, '2026-01-14');
+  assert.ok(r.deadline > '2026-01-11', 'срок должен уехать за январские праздники');
+  assert.equal(r.deadline, nthWorkingDayAfter('2025-12-28', 5)); // перекрёстная проверка
+});
+
+test('2. 15 рабочих дней от конца декабря vs 15 календарных — разница больше недели', () => {
+  const working = computeDeadline(wdTerm(15), '2025-12-26');
+  assert.equal(working.deadline, '2026-01-28');
+  assert.equal(working.deadline, nthWorkingDayAfter('2025-12-26', 15));
+
+  // 15 календарных дней от той же даты (с переносом последнего дня по ч. 2 ст. 108).
+  const calendarRaw = toISODate(addDays('2025-12-26', 15)); // 10.01.2026
+  const calendarShifted = shiftIfNonWorking(calendarRaw); // 12.01.2026
+  assert.equal(calendarShifted, '2026-01-12');
+
+  const diffDays = Math.round(
+    (Date.parse(working.deadline) - Date.parse(calendarShifted)) / 86_400_000,
+  );
+  assert.equal(diffDays, 16);
+  assert.ok(diffDays > 7, 'на новогодних каникулах разница превышает неделю');
+});
+
+test('3. событие в пятницу — отсчёт начинается с понедельника', () => {
+  // 13.02.2026 — пятница; 14–15.02 выходные.
+  const r = computeDeadline(wdTerm(5), '2026-02-13');
+  assert.equal(r.first_working_day, '2026-02-16'); // понедельник
+  assert.equal(r.deadline, '2026-02-20');
+  assert.equal(r.deadline, nthWorkingDayAfter('2026-02-13', 5));
+});
+
+test('4. событие накануне праздника — первый день отсчёта после него', () => {
+  // 11.06.2026 — четверг; 12.06 (пт) — День России, 13–14 — выходные.
+  const r = computeDeadline(wdTerm(5), '2026-06-11');
+  assert.equal(r.first_working_day, '2026-06-15'); // понедельник после праздника
+  assert.ok(!isWorkingDay('2026-06-12'));
+  assert.equal(r.deadline, '2026-06-19');
+  assert.equal(r.deadline, nthWorkingDayAfter('2026-06-11', 5));
+});
+
+test('5. к сроку в рабочих днях НЕ применяется перенос по ч. 2 ст. 108', () => {
+  const r = computeDeadline(wdTerm(5), '2025-12-28');
+  // Последний день рабочий по построению — переносить нечего.
+  assert.equal(r.shifted, false);
+  assert.equal(r.raw_deadline, r.deadline);
+  assert.ok(isWorkingDay(r.deadline));
+  // Повторный перенос ничего бы не изменил — то есть лишних суток нет.
+  assert.equal(shiftIfNonWorking(r.deadline), r.deadline);
+  // Явный флаг weekend_shift на таком сроке не меняет результат: движок его
+  // игнорирует, двойного применения нет.
+  assert.equal(computeDeadline(wdTerm(5, true), '2025-12-28').deadline, r.deadline);
+  assert.equal(computeDeadline(wdTerm(5, false), '2025-12-28').deadline, r.deadline);
+});
+
+test('working_day: 1 рабочий день = первый рабочий день течения', () => {
+  const r = computeDeadline(wdTerm(1), '2026-02-13'); // пятница
+  assert.equal(r.deadline, '2026-02-16');
+  assert.equal(r.first_working_day, r.deadline);
 });
 
 // --- Единица year (ч. 1 ст. 108: соответствующие месяц и число последнего года) ---

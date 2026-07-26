@@ -84,6 +84,8 @@
         padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: 2px;
       }
       .badge.assume { background: var(--accent-soft); color: var(--accent); }
+      .badge.wd { background: #eaf6ec; color: var(--ok); }
+      .badge.info { background: #f0f2f5; color: var(--muted); }
 
       details.more { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
       details.more > summary {
@@ -134,6 +136,11 @@
       .related-stubs-title { font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 0 0 4px; }
       .related-stubs .stub { border-top: none; padding: 8px 0 4px; }
 
+      .other-terms { margin-top: 26px; }
+      .other-terms h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 4px; }
+      .other-terms > p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+      .other-terms .invite { border-style: solid; border-color: var(--line); }
+
       .stubs { margin-top: 30px; }
       .stubs h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
       .stub { border-top: 1px solid var(--line); padding: 12px 0; }
@@ -176,6 +183,8 @@
       <main id="results">
         <p class="empty">Введите дату мотивированного решения — появятся рассчитанные сроки.</p>
       </main>
+
+      <section class="other-terms" id="other-terms"></section>
 
       <section class="stubs" id="stubs"></section>
     </div>
