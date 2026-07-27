@@ -67,6 +67,26 @@
       #download-ics:disabled { background: #c3ccd8; cursor: not-allowed; }
       .toolbar-hint { color: var(--muted); font-size: 13px; }
 
+      .situation-switch { margin-bottom: 16px; }
+      .situations { border: none; margin: 0; padding: 0; }
+      .situations legend {
+        padding: 0; margin-bottom: 8px;
+        font-size: 12px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted);
+      }
+      .situation-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      label.situation {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
+        background: var(--card); font-size: 14px; cursor: pointer;
+      }
+      label.situation input { margin: 0; accent-color: var(--accent); }
+      label.situation:hover { border-color: var(--accent); }
+      label.situation.active {
+        border-color: var(--accent); background: var(--accent-soft);
+        color: var(--accent); font-weight: 600;
+      }
+      label.situation:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
       .card {
         background: var(--card);
         border: 1px solid var(--line);
@@ -175,8 +195,10 @@
     <div class="wrap">
       <header>
         <h1>Калькулятор процессуальных сроков по ГПК РФ</h1>
-        <p>Апелляция → вступление в силу → кассация в КСОЮ. Каждый срок — с нормой и логикой исчисления.</p>
+        <p>Выберите ситуацию — расчёт покажет сроки только вашей ветви. Каждый срок — с нормой и логикой исчисления.</p>
       </header>
+
+      <section class="situation-switch" id="situation"></section>
 
       <section class="primary">
         <label for="reasoned">
@@ -188,9 +210,11 @@
         <p class="field-error" id="reasoned-error"></p>
       </section>
 
+      <section class="other-terms" id="situation-inputs"></section>
+
       <div class="toolbar">
         <button id="download-ics" type="button" disabled>Скачать .ics</button>
-        <span class="toolbar-hint">Экспортируются рассчитанные сроки апелляции и кассации с напоминаниями.</span>
+        <span class="toolbar-hint">Экспортируются рассчитанные сроки выбранной ситуации с напоминаниями.</span>
       </div>
 
       <main id="results">
