@@ -73,6 +73,9 @@ const INPUT_LABELS = {
   default_judgment_service_date: 'Дата вручения ответчику копии заочного решения',
   default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
   default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
+  default_judgment_cancellation_date: 'Дата определения об отмене заочного решения (заявление удовлетворено)',
+  default_judgment_appeal_filed_date: 'Дата подачи апелляционной жалобы (заочное решение)',
+  default_judgment_appeal_ruling_date: 'Дата определения апелляционной инстанции (заочное решение)',
   default_judgment_subject: 'Кто обжалует заочное решение',
   mirovoy_resolution_date: 'Дата объявления резолютивной части (мировой судья)',
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
@@ -368,15 +371,23 @@ function defaultJudgmentCards(dj) {
     );
   }
 
-  // Вступление в силу — не расчёт, а пометка о невозможности (ст. 244 ГПК).
-  cards.push({
-    id: 'default_judgment_entry_notice',
-    kind: 'notice',
+  // Вступление в силу — своё событие по ч. 1 ст. 244 с тремя ветвями; общее
+  // правило ч. 1 ст. 209 к заочному решению не применяется.
+  const entry = dj.entry_into_force;
+  const entryCard = {
+    id: 'default_judgment_entry_into_force',
+    kind: 'event',
     title: 'Вступление заочного решения в законную силу',
-    norm: dj.entry_into_force.norm,
-    message: dj.entry_into_force.message,
-    reason: dj.entry_into_force.reason,
-  });
+    status: entry.resolved ? 'resolved' : entry.applicable === false ? 'not_applicable' : 'pending',
+    norm: entry.norm,
+    date: entry.date,
+    branch: entry.branch,
+    details: { collapsed: true, logic: entry.logic },
+  };
+  if (entry.message) entryCard.message = entry.message;
+  if (entry.note) entryCard.note = entry.note;
+  attachCalendarWarning(entryCard, entry.date);
+  cards.push(entryCard);
 
   return { cards, incomplete };
 }

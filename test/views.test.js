@@ -420,7 +420,7 @@ test('упрощённое, ч. 7: событие не разрешено, по�
   assert.match(entry.note, /Укажите дату/);
 });
 
-test('заочное решение: карточки, выбор субъекта и пометка про ст. 244', () => {
+test('заочное решение: карточки, выбор субъекта и событие ст. 244', () => {
   const v = buildView(
     { default_judgment_service_date: '2025-12-22', default_judgment_refusal_date: '2026-02-10' },
     { today: '2026-03-01' },
@@ -428,7 +428,7 @@ test('заочное решение: карточки, выбор субъект
   assert.deepEqual(ids(v.cards), [
     'default_judgment_cancellation_request',
     'default_judgment_appeal',
-    'default_judgment_entry_notice',
+    'default_judgment_entry_into_force',
   ]);
 
   const request = byId(v.cards, 'default_judgment_cancellation_request');
@@ -439,11 +439,80 @@ test('заочное решение: карточки, выбор субъект
   assert.equal(appeal.deadline, '2026-03-10');
   assert.match(appeal.norm, /абз\. 1 ч\. 2 ст\. 237/);
 
-  // Вступление в силу — карточка-пометка, а не расчёт.
-  const notice = byId(v.cards, 'default_judgment_entry_notice');
-  assert.equal(notice.kind, 'notice');
-  assert.match(notice.norm, /ст\. 244/);
-  assert.equal(notice.deadline, undefined);
+  // Вступление в силу — событие с ветвями, а не пометка о невозможности.
+  const entry = byId(v.cards, 'default_judgment_entry_into_force');
+  assert.equal(entry.kind, 'event');
+  assert.equal(entry.status, 'resolved');
+  assert.equal(entry.branch, 'refused_not_appealed');
+  assert.match(entry.norm, /ч\. 1 ст\. 244/);
+  assert.equal(entry.date, '2026-03-11');
+});
+
+test('заочное решение: карточка ст. 244 в трёх ветвях и при отмене решения', () => {
+  const base = { default_judgment_service_date: '2025-12-22' };
+
+  // Ветвь 1 — не обжаловано (иные лица: срок известен без определения об отказе).
+  const notAppealed = buildView(
+    { ...base, default_judgment_subject: 'other_persons' },
+    { today: '2026-03-01' },
+  );
+  const e1 = byId(notAppealed.cards, 'default_judgment_entry_into_force');
+  assert.equal(e1.branch, 'not_appealed');
+  assert.equal(e1.status, 'resolved');
+  assert.equal(e1.date, '2026-02-13');
+
+  // Та же ветвь у ответчика: срок считается от определения об отказе, его нет —
+  // карточка показывает правило без даты.
+  const defendant = buildView({ ...base }, { today: '2026-03-01' });
+  const e1d = byId(defendant.cards, 'default_judgment_entry_into_force');
+  assert.equal(e1d.branch, 'not_appealed');
+  assert.equal(e1d.status, 'pending');
+  assert.equal(e1d.date, null);
+  assert.match(e1d.note, /определения об отказе/);
+
+  // Ветвь 3 — обжаловано, без даты определения апелляции.
+  const appealedNoRuling = buildView(
+    {
+      ...base,
+      default_judgment_refusal_date: '2026-02-10',
+      default_judgment_appeal_filed_date: '2026-03-02',
+    },
+    { today: '2026-04-01' },
+  );
+  const e3 = byId(appealedNoRuling.cards, 'default_judgment_entry_into_force');
+  assert.equal(e3.branch, 'appealed');
+  assert.equal(e3.status, 'pending');
+  assert.equal(e3.date, null);
+  assert.match(e3.message, /после рассмотрения апелляционной жалобы/);
+
+  // Ветвь 3 — с датой определения.
+  const appealedWithRuling = buildView(
+    {
+      ...base,
+      default_judgment_refusal_date: '2026-02-10',
+      default_judgment_appeal_filed_date: '2026-03-02',
+      default_judgment_appeal_ruling_date: '2026-06-15',
+    },
+    { today: '2026-07-01' },
+  );
+  const e3r = byId(appealedWithRuling.cards, 'default_judgment_entry_into_force');
+  assert.equal(e3r.status, 'resolved');
+  assert.equal(e3r.date, '2026-06-15');
+
+  // Заявление об отмене удовлетворено — отдельное состояние, даты нет.
+  const cancelled = buildView(
+    {
+      ...base,
+      default_judgment_cancellation_request_date: '2026-01-09',
+      default_judgment_cancellation_date: '2026-01-20',
+    },
+    { today: '2026-03-01' },
+  );
+  const ec = byId(cancelled.cards, 'default_judgment_entry_into_force');
+  assert.equal(ec.branch, 'cancellation_granted');
+  assert.equal(ec.status, 'not_applicable');
+  assert.equal(ec.date, null);
+  assert.match(ec.message, /отменено/);
 });
 
 test('заочное: без определения об отказе апелляция уходит в incomplete', () => {

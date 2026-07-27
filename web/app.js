@@ -27,6 +27,10 @@ const INPUT_LABELS = {
   default_judgment_service_date: 'Дата вручения ответчику копии заочного решения',
   default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
   default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
+  default_judgment_cancellation_date:
+    'Дата определения об отмене заочного решения (заявление удовлетворено)',
+  default_judgment_appeal_filed_date: 'Дата подачи апелляционной жалобы (заочное решение)',
+  default_judgment_appeal_ruling_date: 'Дата определения апелляционной инстанции (заочное решение)',
   default_judgment_subject: 'Кто обжалует заочное решение',
   mirovoy_resolution_date: 'Дата объявления резолютивной части (мировой судья)',
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
@@ -55,6 +59,10 @@ const INPUT_HINTS = {
   default_judgment_service_date: 'Ст. 237 ГПК — точка отсчёта семидневного срока',
   default_judgment_cancellation_request_date: 'Для иных лиц меняет точку отсчёта апелляции (абз. 2 ч. 2 ст. 237)',
   default_judgment_refusal_date: 'От неё считается месячный срок апелляции',
+  default_judgment_cancellation_date:
+    'Если заявление удовлетворено: решение отменено, вступления в силу не наступает',
+  default_judgment_appeal_filed_date: 'Переключает ветвь вступления в силу на третью (ч. 1 ст. 244)',
+  default_judgment_appeal_ruling_date: 'Дата вступления решения в силу, если оно не отменено',
   mirovoy_resolution_date: 'Ч. 3–5 ст. 199 ГПК — сроки в рабочих днях',
   mirovoy_request_date: 'Запускает 10-дневный срок составления решения (ч. 5 ст. 199)',
   mirovoy_reasoned_date: 'Смещает отсчёт апелляции (п. 17 ПП ВС № 16)',
@@ -87,7 +95,7 @@ const CHAIN_ORDER = [
   'simplified_entry_into_force',
   'default_judgment_cancellation_request',
   'default_judgment_appeal',
-  'default_judgment_entry_notice',
+  'default_judgment_entry_into_force',
   'mirovoy_reasoned_request',
   'mirovoy_reasoned_making',
   'mirovoy_appeal',
@@ -135,15 +143,58 @@ function pluralDays(n) {
 }
 
 // Автоформатирование ввода: цифры → ДД.ММ.ГГГГ.
+//
+// Расчёт обновляется по каждому вводу (событие input), а не по уходу с поля:
+// карточки появляются сразу, как только дата набрана полностью. Неполный и
+// некорректный ввод трактуется как отсутствие значения — отрисовка от него не
+// ломается.
+//
+// Слушаем только input. change здесь вреден: он срабатывает на уходе с поля, а
+// перерисовка пересобирает карточки — поле, в которое пользователь только что
+// кликнул, уничтожалось бы вместе с фокусом. Вставку мышью и автозаполнение
+// input покрывает сам.
 function attachDateMask(input, onCommit) {
-  input.addEventListener('input', () => {
+  const handle = () => {
     const digits = input.value.replace(/\D/g, '').slice(0, 8);
     let out = digits;
     if (digits.length > 4) out = `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
     else if (digits.length > 2) out = `${digits.slice(0, 2)}.${digits.slice(2)}`;
     input.value = out;
-  });
-  input.addEventListener('change', () => onCommit(input));
+    onCommit(input, { raw: out, iso: ruToISO(out), complete: digits.length === 8 });
+  };
+  input.addEventListener('input', handle);
+}
+
+// Сырой текст полей дат. Расчёт идёт по каждому вводу, а render() пересобирает
+// поля заново — недобранная дата в state.inputs не попадает, поэтому её нужно
+// хранить отдельно, иначе перерисовка стирала бы набранное на полпути.
+const rawDates = new Map();
+
+// Ошибку показываем только для набранной целиком, но несуществующей даты
+// (например 31.02.2025). Пока дата неполная, поле просто пустует по смыслу.
+function dateFieldError(raw) {
+  return raw.length === 10 && ruToISO(raw) == null ? 'Неверная дата. Формат ДД.ММ.ГГГГ.' : '';
+}
+
+// Текст, который должно показывать поле: сырой ввод, если он есть, иначе —
+// значение из state.
+function dateFieldValue(id) {
+  const raw = rawDates.get(id);
+  if (raw != null) return raw;
+  return state.inputs[id] ? isoToRu(state.inputs[id]) : '';
+}
+
+// Общая фиксация ввода даты: в state попадает только полная существующая дата,
+// всё остальное — как отсутствие значения.
+function commitDateInput(id, input, errorEl, { raw, iso, complete }) {
+  if (raw === '') rawDates.delete(id);
+  else rawDates.set(id, raw);
+  const invalid = complete && iso == null;
+  errorEl.textContent = invalid ? 'Неверная дата. Формат ДД.ММ.ГГГГ.' : '';
+  input.classList.toggle('invalid', invalid);
+  if (iso == null) delete state.inputs[id];
+  else state.inputs[id] = iso;
+  render();
 }
 
 // --- Утилиты DOM ------------------------------------------------------------
@@ -306,14 +357,17 @@ function renderEventCard(card, opts = {}) {
   c.appendChild(el('div', 'kicker', 'Событие'));
   c.appendChild(el('h2', null, card.title));
 
-  if (card.status === 'pending') {
+  if (card.status !== 'resolved') {
     // Ветвь может дать нижнюю границу («не ранее …») либо только правило —
     // тогда вместо даты прочерк, а формулировка идёт отдельной строкой.
+    // Состояние not_applicable — событие не наступает вовсе (решение отменено).
     if (card.not_earlier_than) {
       c.appendChild(el('div', 'deadline', `не ранее ${isoToRu(card.not_earlier_than)}`));
     } else {
       c.appendChild(el('div', 'deadline', '—'));
-      if (card.message) c.appendChild(el('div', 'hint', card.message));
+      if (card.message) {
+        c.appendChild(el('div', card.status === 'not_applicable' ? 'warn' : 'hint', card.message));
+      }
     }
   } else {
     c.appendChild(el('div', 'deadline', isoToRu(card.date)));
@@ -338,32 +392,17 @@ function renderInviteField(id) {
   input.setAttribute('inputmode', 'numeric');
   input.placeholder = 'ДД.ММ.ГГГГ';
   input.autocomplete = 'off';
-  if (state.inputs[id]) input.value = isoToRu(state.inputs[id]);
+  input.value = dateFieldValue(id);
   wrap.appendChild(input);
   if (INPUT_HINTS[id]) wrap.appendChild(el('p', 'hint', INPUT_HINTS[id]));
   const err = el('p', 'field-error');
+  // Поле пересоздаётся при каждой перерисовке, поэтому состояние ошибки
+  // восстанавливаем из сырого текста, а не держим в самом элементе.
+  err.textContent = dateFieldError(input.value);
+  if (err.textContent) input.classList.add('invalid');
   wrap.appendChild(err);
 
-  attachDateMask(input, (el2) => {
-    const raw = el2.value.trim();
-    if (raw === '') {
-      delete state.inputs[id];
-      err.textContent = '';
-      input.classList.remove('invalid');
-      render();
-      return;
-    }
-    const iso = ruToISO(raw);
-    if (!iso) {
-      err.textContent = 'Неверная дата. Формат ДД.ММ.ГГГГ.';
-      input.classList.add('invalid');
-      return;
-    }
-    err.textContent = '';
-    input.classList.remove('invalid');
-    state.inputs[id] = iso;
-    render();
-  });
+  attachDateMask(input, (el2, parsed) => commitDateInput(id, el2, err, parsed));
   return { wrap, input };
 }
 
@@ -405,7 +444,26 @@ function downloadICS() {
 
 // --- Главный рендер ---------------------------------------------------------
 
+// Расчёт идёт по каждому вводу, а render() пересобирает поля заново — без
+// восстановления фокуса каретка выпадала бы из поля на каждом нажатии.
+// Поля адресуются по устойчивым id (`in-<input>`), поэтому хватает id и позиции
+// каретки.
+function captureFocus() {
+  const active = document.activeElement;
+  if (!active || active.tagName !== 'INPUT' || !active.id) return null;
+  return { id: active.id, start: active.selectionStart, end: active.selectionEnd };
+}
+
+function restoreFocus(snapshot) {
+  if (!snapshot) return;
+  const next = document.getElementById(snapshot.id);
+  if (!next || next === document.activeElement) return;
+  next.focus();
+  if (snapshot.start != null) next.setSelectionRange(snapshot.start, snapshot.end);
+}
+
 function render() {
+  const focus = captureFocus();
   renderedFields.clear();
   const view = buildView(state.inputs, { today });
   currentIcsTerms = icsTermsFromView(view);
@@ -534,6 +592,8 @@ function render() {
       root.appendChild(incEl);
     }
   }
+
+  restoreFocus(focus);
 }
 
 // Необязательные поля-уточнения, привязанные к конкретной карточке: ввод даты
@@ -556,10 +616,19 @@ const FOLLOW_UP_FIELDS = {
   default_judgment_cancellation_request: {
     field: 'default_judgment_cancellation_request_date',
     prompt: 'Заявление об отмене подано? Укажите дату.',
+    // Исход заявления спрашиваем только после того, как оно подано.
+    extraField: 'default_judgment_cancellation_date',
+    extraWhen: () => Boolean(state.inputs.default_judgment_cancellation_request_date),
   },
   default_judgment_appeal: {
     field: 'default_judgment_refusal_date',
     prompt: 'Определение об отказе в отмене вынесено? Укажите дату.',
+  },
+  default_judgment_entry_into_force: {
+    field: 'default_judgment_appeal_filed_date',
+    prompt: 'Заочное решение обжаловано в апелляции? Укажите дату подачи жалобы (ч. 1 ст. 244).',
+    extraField: 'default_judgment_appeal_ruling_date',
+    extraWhen: () => Boolean(state.inputs.default_judgment_appeal_filed_date),
   },
   mirovoy_reasoned_request: {
     field: 'mirovoy_request_date',
@@ -587,6 +656,9 @@ function appendFollowUpFields(cardEl, id) {
 }
 
 // Карточка-пометка: расчёт сознательно не выполняется (нет текста нормы).
+// Сейчас таких узлов нет — ст. 244 раскрыта событием. Механизм оставлен: это
+// UI-выражение правила раздела 9 SPEC, и он понадобится следующему узлу, для
+// которого текста нормы не окажется.
 function renderNoticeCard(card) {
   const c = el('div', 'card notice-card');
   c.appendChild(el('div', 'kicker', 'Не рассчитывается'));
@@ -731,26 +803,9 @@ function renderStubs() {
 
 const reasoned = document.getElementById('reasoned');
 const reasonedError = document.getElementById('reasoned-error');
-attachDateMask(reasoned, (input) => {
-  const raw = input.value.trim();
-  if (raw === '') {
-    delete state.inputs.reasoned_decision_date;
-    reasonedError.textContent = '';
-    input.classList.remove('invalid');
-    render();
-    return;
-  }
-  const iso = ruToISO(raw);
-  if (!iso) {
-    reasonedError.textContent = 'Неверная дата. Формат ДД.ММ.ГГГГ.';
-    input.classList.add('invalid');
-    return;
-  }
-  reasonedError.textContent = '';
-  input.classList.remove('invalid');
-  state.inputs.reasoned_decision_date = iso;
-  render();
-});
+attachDateMask(reasoned, (input, parsed) =>
+  commitDateInput('reasoned_decision_date', input, reasonedError, parsed),
+);
 
 const downloadBtn = document.getElementById('download-ics');
 if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
