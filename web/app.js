@@ -465,7 +465,7 @@ function renderEvent(card, opts = {}) {
     );
   }
   if (card.details) box.appendChild(renderDetails(card.details));
-  if (opts.assumptionInvite) box.appendChild(opts.assumptionInvite);
+  if (opts.assumptionNote) box.appendChild(el('div', 'note', opts.assumptionNote));
   return box;
 }
 
@@ -501,7 +501,7 @@ function renderIncompleteNode(node) {
   const box = el('div', 'invite');
   box.appendChild(el('h2', null, node.title));
   box.appendChild(el('p', 'reason', node.reason));
-  for (const m of node.missing_inputs) box.appendChild(renderInviteField(m.id).wrap);
+  for (const m of node.missing_inputs) box.appendChild(inviteFieldOrPointer(m.id));
   if (!node.missing_inputs.length) {
     box.appendChild(el('p', 'hint', 'Данных для расчёта пока недостаточно.'));
   }
@@ -607,30 +607,12 @@ function render() {
       if (id === 'entry_into_force' && card.kind === 'event') {
         const opts = {};
         if (notAppealedAssumption) {
-          const appealExpired = expiredFields.has('appeal_filed_date');
-          const invite = el('div', 'note');
-          invite.appendChild(
-            el(
-              'div',
-              null,
-              'Расчёт исходит из предположения, что апелляционная жалоба не подавалась.',
-            ),
-          );
-          const prompt = el('div', 'prompt');
-          prompt.appendChild(
-            el(
-              'label',
-              null,
-              appealExpired
-                ? 'Жалоба уже подана? Укажите дату — расчёт пойдёт от апелляционного определения.'
-                : 'Жалоба подавалась? Укажите дату подачи:',
-            ),
-          );
-          prompt.appendChild(renderInviteField('appeal_filed_date').wrap);
-          invite.appendChild(prompt);
-          opts.assumptionInvite = invite;
+          opts.assumptionNote =
+            'Расчёт исходит из предположения, что апелляционная жалоба не подавалась.';
         }
-        root.appendChild(renderEvent(card, opts));
+        const eventEl = renderEvent(card, opts);
+        appendFollowUpFields(eventEl, id, card);
+        root.appendChild(eventEl);
       } else if (card.kind === 'notice') {
         root.appendChild(renderNoticeCard(card));
       } else if (card.kind === 'event') {
@@ -654,12 +636,11 @@ function render() {
           box.appendChild(
             el('div', null, 'Замечания уже поданы? Укажите дату — уточнится срок их рассмотрения.'),
           );
-          box.appendChild(renderInviteField('protocol_remarks_filed_date').wrap);
+          box.appendChild(inviteFieldOrPointer('protocol_remarks_filed_date'));
           termEl.appendChild(box);
         }
         // После срока кассации в КСОЮ — приглашение ввести дату определения КСОЮ,
         // которое открывает узел кассации в ВС (condition: ksoyu_ruling_date).
-        if (id === 'cassation_ksoyu') termEl.appendChild(renderKsoyuRulingInvite());
         // Мировой судья: явка участника — влияет на длительность срока (3/15).
         if (id === 'mirovoy_reasoned_request') {
           const box = el('div', 'note');
@@ -706,6 +687,7 @@ function render() {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
       if (redField) incEl.appendChild(renderRedactionField(redField));
+      appendFollowUpFields(incEl, id, inc);
       root.appendChild(incEl);
     }
   }
@@ -724,46 +706,95 @@ function render() {
 
 // Необязательные поля-уточнения, привязанные к конкретной карточке: ввод даты
 // меняет расчёт соседних узлов (упрощённое производство, глава 21.1).
+// Необязательные поля-уточнения, привязанные к карточке.
+//
+// Правило размещения: поле стоит у того узла, о документе которого идёт речь,
+// а не у срока, на который оно влияет. Дата подачи апелляционной жалобы меняет
+// момент вступления решения в силу — значит, её место у вступления в силу, а не
+// в карточке кассации, куда она попадала как «недостающие данные».
+//
+// Каждый узел перечисляет свои поля; `when` откладывает вопрос до момента,
+// когда он осмыслен.
 const FOLLOW_UP_FIELDS = {
-  simplified_reasoned_request: {
-    field: 'simplified_reasoned_request_date',
-    prompt: 'Заявление уже подано? Укажите дату — появится срок изготовления решения.',
+  entry_into_force: {
+    prompt: () => {
+      // Когда дата подачи уже введена, спрашивать «жалоба подана?» поздно —
+      // блок становится просто набором дат по апелляции.
+      if (state.inputs.appeal_filed_date) return 'Данные об апелляционном обжаловании.';
+      return expiredFields.has('appeal_filed_date')
+        ? 'Жалоба уже подана? Укажите дату — расчёт пойдёт от апелляционного определения.'
+        : 'Апелляционная жалоба подана? Укажите дату — от неё зависит момент вступления решения в силу.';
+    },
+    fields: [
+      { id: 'appeal_filed_date' },
+      // Мотивированное апелляционное определение — тот же документ, что и само
+      // определение выше: спрашиваем их рядом, а не в карточке кассации.
+      { id: 'appeal_ruling_reasoned_date', when: () => Boolean(state.inputs.appeal_filed_date) },
+    ],
   },
-  simplified_appeal: {
-    field: 'simplified_reasoned_date',
+  cassation_ksoyu: {
+    prompt: 'Определение КСОЮ уже вынесено? Укажите дату — появится срок кассации в ВС РФ.',
+    fields: [
+      { id: 'ksoyu_ruling_date' },
+      // Мотивированное определение КСОЮ — про тот же документ, что и строка выше.
+      { id: 'ksoyu_ruling_reasoned_date', when: () => Boolean(state.inputs.ksoyu_ruling_date) },
+    ],
+  },
+  simplified_reasoned_request: {
+    prompt: 'Заявление уже подано? Укажите дату — появится срок изготовления решения.',
+    fields: [{ id: 'simplified_reasoned_request_date' }],
+  },
+  simplified_reasoned_making: {
     prompt: 'Мотивированное решение составлено? Укажите дату — срок на апелляцию будет считаться от неё.',
+    fields: [{ id: 'simplified_reasoned_date' }],
   },
   simplified_entry_into_force: {
-    field: 'simplified_appeal_filed_date',
     prompt: 'Апелляционная жалоба подана? Укажите дату (ч. 7 ст. 232.4).',
-    extraField: 'simplified_appeal_ruling_date',
-    extraWhen: () => Boolean(state.inputs.simplified_appeal_filed_date),
+    fields: [
+      { id: 'simplified_appeal_filed_date' },
+      {
+        id: 'simplified_appeal_ruling_date',
+        when: () => Boolean(state.inputs.simplified_appeal_filed_date),
+      },
+    ],
   },
   default_judgment_cancellation_request: {
-    field: 'default_judgment_cancellation_request_date',
     prompt: 'Заявление об отмене подано? Укажите дату.',
-    // Исход заявления спрашиваем только после того, как оно подано.
-    extraField: 'default_judgment_cancellation_date',
-    extraWhen: () => Boolean(state.inputs.default_judgment_cancellation_request_date),
-  },
-  default_judgment_appeal: {
-    field: 'default_judgment_refusal_date',
-    prompt: 'Определение об отказе в отмене вынесено? Укажите дату.',
+    fields: [
+      { id: 'default_judgment_cancellation_request_date' },
+      // Определение по заявлению — про тот же документ, поэтому спрашиваем здесь,
+      // а не в карточке апелляционного срока, на который оно влияет. Без условия:
+      // у ответчика месячный срок считается именно от него, и это самый частый
+      // известный факт.
+      { id: 'default_judgment_refusal_date' },
+      // Удовлетворение — редкий исход, спрашиваем после того, как заявление подано.
+      {
+        id: 'default_judgment_cancellation_date',
+        when: () => Boolean(state.inputs.default_judgment_cancellation_request_date),
+      },
+    ],
   },
   default_judgment_entry_into_force: {
-    field: 'default_judgment_appeal_filed_date',
     prompt: 'Заочное решение обжаловано в апелляции? Укажите дату подачи жалобы (ч. 1 ст. 244).',
-    extraField: 'default_judgment_appeal_ruling_date',
-    extraWhen: () => Boolean(state.inputs.default_judgment_appeal_filed_date),
+    fields: [
+      { id: 'default_judgment_appeal_filed_date' },
+      {
+        id: 'default_judgment_appeal_ruling_date',
+        when: () => Boolean(state.inputs.default_judgment_appeal_filed_date),
+      },
+    ],
   },
   mirovoy_reasoned_request: {
-    field: 'mirovoy_request_date',
     prompt: 'Заявление уже подано? Укажите дату — появится срок составления решения.',
+    fields: [{ id: 'mirovoy_request_date' }],
+  },
+  mirovoy_reasoned_making: {
+    prompt: 'Мотивированное решение составлено? Укажите дату — срок на апелляцию будет считаться от неё.',
+    fields: [{ id: 'mirovoy_reasoned_date' }],
   },
   mirovoy_appeal: {
-    field: 'mirovoy_reasoned_date',
-    prompt: 'Мотивированное решение составлено? Укажите дату — срок на апелляцию будет считаться от неё.',
-    extraField: 'mirovoy_appeal_ruling_reasoned_date',
+    prompt: 'Дело прошло апелляцию в районном суде? Укажите дату мотивированного определения.',
+    fields: [{ id: 'mirovoy_appeal_ruling_reasoned_date' }],
   },
 };
 
@@ -773,14 +804,13 @@ function appendFollowUpFields(cardEl, id, card) {
   // В состоянии not_applicable узла нет вовсе — уточняющие поля к нему ничего
   // не меняют, спрашивать не о чем.
   if (card && card.status === 'not_applicable') return;
+
+  const fields = spec.fields.filter((f) => !f.when || f.when());
+  if (!fields.length) return;
+
   const box = el('div', 'note');
-  box.appendChild(el('div', null, spec.prompt));
-  box.appendChild(renderInviteField(spec.field).wrap);
-  // Второе поле показываем только когда оно уже осмысленно (напр. дату
-  // определения апелляции спрашиваем лишь после ввода даты подачи жалобы).
-  if (spec.extraField && (!spec.extraWhen || spec.extraWhen())) {
-    box.appendChild(renderInviteField(spec.extraField).wrap);
-  }
+  box.appendChild(el('div', null, typeof spec.prompt === 'function' ? spec.prompt() : spec.prompt));
+  for (const f of fields) box.appendChild(inviteFieldOrPointer(f.id));
   cardEl.appendChild(box);
 }
 
@@ -828,15 +858,28 @@ const REDACTION_FIELD = {
   mirovoy_cassation: 'cassation_filed_date',
 };
 
-// Один и тот же input может относиться к нескольким узлам (cassation_filed_date
-// — и к кассации общего порядка, и к кассации по делам мировых судей). Поле
-// рисуем один раз за проход, иначе получатся два элемента с одинаковым id.
+// Один и тот же input может относиться к нескольким узлам: cassation_filed_date
+// — и к кассации общего порядка, и к кассации по делам мировых судей; дата
+// подачи апелляционной жалобы нужна и вступлению в силу, и кассации как
+// недостающие данные. Поле рисуем один раз за проход — иначе получатся два
+// элемента с одинаковым id (так уже ломалась карточка президиума областного
+// суда). Первым его забирает тот узел, который идёт выше по экрану.
 const renderedFields = new Set();
 
 function fieldAlreadyRendered(id) {
   if (renderedFields.has(id)) return true;
   renderedFields.add(id);
   return false;
+}
+
+// Поле для узла: либо само поле, либо ссылка на то место, где оно уже показано.
+function inviteFieldOrPointer(id) {
+  if (fieldAlreadyRendered(id)) {
+    // Узел, забравший поле, не всегда «предыдущий срок» — это может быть и
+    // строка вступления в силу, поэтому формулировка нейтральная.
+    return el('p', 'hint', `Поле «${INPUT_LABELS[id]}» — выше на этой странице.`);
+  }
+  return renderInviteField(id).wrap;
 }
 
 // Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
@@ -864,15 +907,6 @@ function renderRedactionField(inputId) {
 
 // Ввод даты определения КСОЮ открывает узел кассации в ВС РФ (ст. 390.3).
 // Дату мотивированного определения запрашивает уже сам узел ВС (новая редакция).
-function renderKsoyuRulingInvite() {
-  const box = el('div', 'note');
-  box.appendChild(
-    el('div', null, 'Определение КСОЮ уже вынесено? Укажите дату — появится срок кассации в ВС РФ.'),
-  );
-  box.appendChild(renderInviteField('ksoyu_ruling_date').wrap);
-  return box;
-}
-
 function stubCard(s) {
   const box = el('div', 'stub');
   box.appendChild(el('h3', null, s.title));
@@ -984,7 +1018,7 @@ function renderSituationFields(situation, primaryFilled) {
     );
   }
   const box = el('div', 'invite');
-  for (const id of situation.fields) box.appendChild(renderInviteField(id).wrap);
+  for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
   root.appendChild(box);
 }
 
