@@ -199,14 +199,7 @@ function buildAppealCard(inputs) {
     }
   }
 
-  // Проверка «уже подали?»: подача позже дедлайна — срок пропущен (ст. 112 ГПК).
-  if (inputs.appeal_filed_date != null) {
-    const filed = toISO(inputs.appeal_filed_date);
-    if (filed > calc.deadline) {
-      card.status = 'missed';
-      card.overdue = { days: daysBetween(calc.deadline, filed), norm: 'ст. 112 ГПК РФ' };
-    }
-  }
+  // Проверка «уже подали?» — общая для всех узлов, см. markExpired ниже.
 
   return { card, calc };
 }
@@ -700,7 +693,7 @@ function independentNodes(source, today = null) {
 // срок по календарю больше не «висит»: подано вовремя или с пропуском —
 // разбирается по факту (статус 'missed'), а не по текущей дате. Узел, которого
 // в карте нет, подтвердить нечем — для него достаточно сравнения с датой.
-const ACTION_FACT_INPUT = {
+export const ACTION_FACT_INPUT = {
   appeal_general: 'appeal_filed_date',
   cassation_ksoyu: 'cassation_filed_date',
   cassation_vs: 'vs_cassation_filed_date',
@@ -716,21 +709,53 @@ const ACTION_FACT_INPUT = {
   mirovoy_cassation: 'cassation_filed_date',
 };
 
+// Узлы, у которых подтверждающий факт — это именно дата подачи заявителем.
+// Только для них поздняя дата означает пропуск срока со ст. 112 в подсказке.
+//
+// Остальные подтверждаются датой другого рода: у сроков суда (изготовление
+// мотивированного решения) поздняя дата — нарушение судом, а не пропуск
+// заявителя, и восстановление по ст. 112 к ней неприменимо; у апелляции по делу
+// мирового судьи известна только дата апелляционного определения, а не дата
+// подачи жалобы.
+const MISSED_FROM_FILING = new Set([
+  'appeal_general',
+  'cassation_ksoyu',
+  'cassation_vs',
+  'protocol_remarks',
+  'simplified_reasoned_request',
+  'simplified_appeal',
+  'default_judgment_cancellation_request',
+  'default_judgment_appeal',
+  'mirovoy_reasoned_request',
+  'mirovoy_cassation',
+]);
+
 /**
- * Помечает рассчитанные сроки, дедлайн которых уже прошёл, а факта подачи нет.
- * Меняет карточки на месте: пометка зависит только от текущей даты и ничего в
- * расчёте не трогает.
+ * Помечает рассчитанные сроки: пропущенные (есть дата подачи, и она позже
+ * дедлайна) и истёкшие (даты подачи нет, дедлайн в прошлом). Меняет карточки на
+ * месте: обе пометки зависят от введённых фактов и текущей даты, расчёт не
+ * трогают.
  * @param {object[]} cards
  * @param {object} inputs
  * @param {string|null} today — 'YYYY-MM-DD'; без неё пометки нет.
  */
 function markExpired(cards, inputs, today) {
-  if (today == null) return cards;
   for (const card of cards) {
     if (card.kind !== 'term' || card.status !== 'computed' || !card.deadline) continue;
     const factInput = ACTION_FACT_INPUT[card.id];
-    if (factInput && inputs?.[factInput] != null) continue;
-    if (card.deadline >= today) continue; // ч. 3 ст. 108 — истекает в 24:00
+    const fact = factInput ? toISO(inputs?.[factInput]) : null;
+
+    if (fact != null) {
+      // Факт есть — дальше судим по нему, а не по календарю. Пропуск
+      // устанавливается только там, где этот факт и есть дата подачи.
+      if (MISSED_FROM_FILING.has(card.id) && fact > card.deadline) {
+        card.status = 'missed';
+        card.overdue = { days: daysBetween(card.deadline, fact), norm: 'ст. 112 ГПК РФ' };
+      }
+      continue;
+    }
+
+    if (today == null || card.deadline >= today) continue; // ч. 3 ст. 108 — 24:00
     card.status = 'expired';
     card.expired = { days: daysBetween(card.deadline, today) };
   }
