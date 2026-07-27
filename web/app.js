@@ -306,9 +306,17 @@ function renderTermCard(card, opts = {}) {
           el(
             'div',
             null,
-            `Срок отложения истекал ${isoToRu(w.allowed_deadline)}, ` +
-              `решение изготовлено ${isoToRu(w.actual_date)}.`,
+            `${w.dates_label ?? 'Срок отложения истекал'} ` +
+              `${isoToRu(w.allowed_deadline)}, решение изготовлено ` +
+              `${isoToRu(w.actual_date)}.`,
           ),
+        );
+      }
+      // Величина расхождения — в тех же единицах, в каких задан порог.
+      if (w.overdue_working_days) {
+        const n = w.overdue_working_days;
+        box.appendChild(
+          el('div', null, `Расхождение — ${n} рабочих ${pluralDays(n)} сверх срока.`),
         );
       }
       c.appendChild(box);
