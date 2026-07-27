@@ -635,6 +635,17 @@ const DEFAULT_JUDGMENT_CANCELLED_NOTE =
   'производство по делу возобновляется — срока апелляционного обжалования не ' +
   'возникает.';
 
+// Основание, по которому при удовлетворении заявления срок не исчисляется
+// вовсе. Ч. 2 ст. 237 отсчитывает месяц от определения об ОТКАЗЕ в
+// удовлетворении заявления: при удовлетворении такого определения нет, а само
+// заочное решение отменено.
+const DEFAULT_JUDGMENT_CANCELLED_REASON =
+  'Ч. 2 ст. 237 отсчитывает месячный срок от определения об отказе в ' +
+  'удовлетворении заявления об отмене. При удовлетворении заявления такого ' +
+  'определения нет: заочное решение отменено, рассмотрение дела возобновляется ' +
+  'по существу (ч. 1 ст. 241 ГПК РФ) — срока апелляционного обжалования ' +
+  'заочного решения не возникает.';
+
 export const DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
   id: 'default_judgment_cancellation_request',
   title: 'Заявление об отмене заочного решения',
@@ -820,6 +831,7 @@ export function computeDefaultJudgment(inputs) {
 
   const requestFiled = toISO(inputs.default_judgment_cancellation_request_date);
   const refusal = toISO(inputs.default_judgment_refusal_date);
+  const cancelled = toISO(inputs.default_judgment_cancellation_date);
   const subject = DEFAULT_JUDGMENT_SUBJECTS.includes(inputs.default_judgment_subject)
     ? inputs.default_judgment_subject
     : 'defendant'; // по умолчанию — ответчик (ч. 1 ст. 237)
@@ -835,7 +847,17 @@ export function computeDefaultJudgment(inputs) {
 
   let appeal = null;
   let appealBlocked = null;
-  if (mode.anchor_kind === 'refusal') {
+  let appealNotApplicable = null;
+  if (cancelled != null) {
+    // Заявление об отмене удовлетворено — срока апелляционного обжалования
+    // заочного решения не возникает, и это не «не хватает данных», а отсутствие
+    // самого срока. Дату не показываем.
+    appealNotApplicable = {
+      norm: mode.norm.primary,
+      message: 'Не исчисляется — заочное решение отменено',
+      reason: DEFAULT_JUDGMENT_CANCELLED_REASON,
+    };
+  } else if (mode.anchor_kind === 'refusal') {
     if (refusal != null) {
       appeal = computeSimpleTerm(DEFAULT_JUDGMENT_APPEAL, refusal, {
         norm: mode.norm,
@@ -863,7 +885,7 @@ export function computeDefaultJudgment(inputs) {
   }
 
   const entry = resolveDefaultJudgmentEntry({
-    cancelled: toISO(inputs.default_judgment_cancellation_date),
+    cancelled,
     appealFiled: toISO(inputs.default_judgment_appeal_filed_date),
     appealRuling: toISO(inputs.default_judgment_appeal_ruling_date),
     requestFiled,
@@ -876,6 +898,7 @@ export function computeDefaultJudgment(inputs) {
     cancellation_request: request,
     appeal,
     appeal_blocked: appealBlocked,
+    appeal_not_applicable: appealNotApplicable,
     entry_into_force: { norm: DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
   };
 }

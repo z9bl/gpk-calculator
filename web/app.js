@@ -258,6 +258,12 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(
       el('div', 'miss', `Срок пропущен на ${days} ${pluralDays(days)}. Восстановление — ${card.overdue.norm}.`),
     );
+  } else if (card.status === 'not_applicable') {
+    // Срока не возникает вовсе — вместо даты прочерк и причина, как у события
+    // вступления в силу в том же состоянии.
+    c.appendChild(el('div', 'deadline', '—'));
+    if (card.message) c.appendChild(el('div', 'warn', card.message));
+    c.appendChild(el('div', 'norm', card.norm));
   } else {
     c.appendChild(el('div', 'deadline', isoToRu(card.deadline)));
     c.appendChild(el('div', 'norm', card.norm));
@@ -518,7 +524,7 @@ function render() {
         root.appendChild(renderNoticeCard(card));
       } else if (card.kind === 'event') {
         const eventEl = renderEventCard(card);
-        appendFollowUpFields(eventEl, id);
+        appendFollowUpFields(eventEl, id, card);
         root.appendChild(eventEl);
       } else {
         const opts = {};
@@ -575,7 +581,7 @@ function render() {
         }
         // Заглушки рядом с узлом (напр. предъявление ИЛ).
         if (card.stubs) termEl.appendChild(renderRelatedStubs(card.stubs));
-        appendFollowUpFields(termEl, id);
+        appendFollowUpFields(termEl, id, card);
         root.appendChild(termEl);
       }
       continue;
@@ -641,9 +647,12 @@ const FOLLOW_UP_FIELDS = {
   },
 };
 
-function appendFollowUpFields(cardEl, id) {
+function appendFollowUpFields(cardEl, id, card) {
   const spec = FOLLOW_UP_FIELDS[id];
   if (!spec) return;
+  // В состоянии not_applicable узла нет вовсе — уточняющие поля к нему ничего
+  // не меняют, спрашивать не о чем.
+  if (card && card.status === 'not_applicable') return;
   const box = el('div', 'note');
   box.appendChild(el('div', null, spec.prompt));
   box.appendChild(renderInviteField(spec.field).wrap);

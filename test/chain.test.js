@@ -956,3 +956,27 @@ test('исчерпание: кассация мировых несёт пред�
   assert.equal(appealed.cassation.anchor_kind, 'appeal_reasoned');
   assert.equal(appealed.cassation.exhaustion_warning, undefined);
 });
+
+test('ст. 237: при удовлетворении заявления апелляционный срок не исчисляется', () => {
+  const d = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_cancellation_request_date: '2026-01-09',
+    default_judgment_cancellation_date: '2026-01-20',
+  });
+  assert.equal(d.appeal, null, 'срока нет — считать нечего');
+  assert.equal(d.appeal_blocked, null, 'это не «не хватает данных»');
+  assert.ok(d.appeal_not_applicable);
+  assert.match(d.appeal_not_applicable.message, /отменено/);
+  assert.match(d.appeal_not_applicable.reason, /ч\. 1 ст\. 241/);
+  assert.match(d.appeal_not_applicable.reason, /определения об отказе/);
+
+  // Введённая дата определения об отказе состояния не меняет: удовлетворение и
+  // отказ взаимоисключающи, приоритет у отмены решения.
+  const withRefusal = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_refusal_date: '2026-02-10',
+    default_judgment_cancellation_date: '2026-01-20',
+  });
+  assert.equal(withRefusal.appeal, null);
+  assert.ok(withRefusal.appeal_not_applicable);
+});

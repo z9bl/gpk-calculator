@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildView } from '../src/views.js';
+import { icsTermsFromView } from '../src/ics.js';
 
 const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция → 11.04.2025
 
@@ -644,4 +645,61 @@ test('исчерпание: в ветви appealed предупреждения 
     { today: '2026-07-01' },
   );
   assert.equal(byId(presidium.cards, 'mirovoy_cassation').exhaustion_warning, undefined);
+});
+
+test('заочное: при удовлетворении заявления апелляционная карточка без даты', () => {
+  const v = buildView(
+    {
+      default_judgment_service_date: '2025-12-22',
+      default_judgment_refusal_date: '2026-02-10',
+      default_judgment_cancellation_request_date: '2026-01-09',
+      default_judgment_cancellation_date: '2026-01-20',
+    },
+    { today: '2026-03-01' },
+  );
+
+  const appeal = byId(v.cards, 'default_judgment_appeal');
+  assert.ok(appeal, 'карточка остаётся — исчезать ей незачем');
+  assert.equal(appeal.status, 'not_applicable');
+  assert.equal(appeal.deadline, null);
+  assert.match(appeal.message, /отменено/);
+  assert.match(appeal.details.logic, /ч\. 1 ст\. 241/);
+  // В incomplete узел не уходит: это не нехватка данных.
+  assert.ok(!ids(v.incomplete).includes('default_judgment_appeal'));
+  // И в .ics не попадает — экспортировать нечего.
+  assert.ok(!icsTermsFromView(v).some((t) => /Апелляционная жалоба \(заочное/.test(t.title)));
+});
+
+// Структурная проверка: ни один узел не должен показывать дату, когда
+// вышестоящее событие в состоянии not_applicable. Проверяем по списку карточек,
+// а не перечислением, — иначе следующий добавленный узел снова выпадет молча.
+test('not_applicable: ни один нижестоящий узел не показывает дату', () => {
+  const v = buildView(
+    {
+      default_judgment_service_date: '2025-12-22',
+      default_judgment_refusal_date: '2026-02-10',
+      default_judgment_cancellation_request_date: '2026-01-09',
+      default_judgment_cancellation_date: '2026-01-20',
+      default_judgment_appeal_filed_date: '2026-03-02',
+      default_judgment_appeal_ruling_date: '2026-06-15',
+    },
+    { today: '2026-07-01' },
+  );
+
+  const notApplicable = v.cards.filter((c) => c.status === 'not_applicable');
+  assert.deepEqual(
+    notApplicable.map((c) => c.id).sort(),
+    ['default_judgment_appeal', 'default_judgment_entry_into_force'],
+  );
+  for (const card of notApplicable) {
+    assert.equal(card.deadline ?? null, null, `${card.id}: дата при not_applicable`);
+    assert.equal(card.date ?? null, null, `${card.id}: дата при not_applicable`);
+  }
+
+  // Единственный узел ветви, сохраняющий дату, — срок на подачу самого
+  // заявления об отмене: он вышестоящий и к этому моменту уже исчерпан.
+  const dated = v.cards
+    .filter((c) => c.id.startsWith('default_judgment') && (c.deadline || c.date))
+    .map((c) => c.id);
+  assert.deepEqual(dated, ['default_judgment_cancellation_request']);
 });

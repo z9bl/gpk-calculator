@@ -359,6 +359,19 @@ function defaultJudgmentCards(dj) {
     };
     attachCalendarWarning(card);
     cards.push(card);
+  } else if (dj.appeal_not_applicable) {
+    // Заявление об отмене удовлетворено: срока нет вовсе. Карточка остаётся,
+    // но без даты — как событие вступления в силу в том же состоянии.
+    cards.push({
+      id: 'default_judgment_appeal',
+      kind: 'term',
+      title: 'Апелляционная жалоба (заочное решение)',
+      status: 'not_applicable',
+      deadline: null,
+      norm: dj.appeal_not_applicable.norm,
+      message: dj.appeal_not_applicable.message,
+      details: { collapsed: true, logic: dj.appeal_not_applicable.reason },
+    });
   } else if (dj.appeal_blocked) {
     incomplete.push(
       incompleteNode(
