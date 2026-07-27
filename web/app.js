@@ -3,6 +3,7 @@
 
 import { buildView } from '../src/views.js';
 import { buildICS, icsTermsFromView } from '../src/ics.js';
+import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
 
@@ -117,23 +118,7 @@ function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function isoToRu(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
-}
-
-// 'ДД.ММ.ГГГГ' → 'YYYY-MM-DD' | null (с проверкой реальности даты).
-function ruToISO(str) {
-  const m = String(str).trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!m) return null;
-  const d = +m[1], mo = +m[2], y = +m[3];
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
-    return null; // напр. 31.02.2025
-  }
-  return `${y}-${pad(mo)}-${pad(d)}`;
-}
+// isoToRu/ruToISO живут в src/date-field.js — они нужны и тестам.
 
 function pluralDays(n) {
   const t = n % 10, h = n % 100;
@@ -154,27 +139,21 @@ function pluralDays(n) {
 // кликнул, уничтожалось бы вместе с фокусом. Вставку мышью и автозаполнение
 // input покрывает сам.
 function attachDateMask(input, onCommit) {
-  const handle = () => {
-    const digits = input.value.replace(/\D/g, '').slice(0, 8);
-    let out = digits;
-    if (digits.length > 4) out = `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
-    else if (digits.length > 2) out = `${digits.slice(0, 2)}.${digits.slice(2)}`;
-    input.value = out;
-    onCommit(input, { raw: out, iso: ruToISO(out), complete: digits.length === 8 });
-  };
-  input.addEventListener('input', handle);
+  input.addEventListener('input', (event) => {
+    const before = input.value;
+    const next = applyDateEdit(before, input.selectionStart ?? before.length, event.inputType ?? '');
+    if (next.value !== before) {
+      input.value = next.value;
+      input.setSelectionRange(next.caret, next.caret);
+    }
+    onCommit(input, { raw: next.value, iso: ruToISO(next.value) });
+  });
 }
 
 // Сырой текст полей дат. Расчёт идёт по каждому вводу, а render() пересобирает
 // поля заново — недобранная дата в state.inputs не попадает, поэтому её нужно
 // хранить отдельно, иначе перерисовка стирала бы набранное на полпути.
 const rawDates = new Map();
-
-// Ошибку показываем только для набранной целиком, но несуществующей даты
-// (например 31.02.2025). Пока дата неполная, поле просто пустует по смыслу.
-function dateFieldError(raw) {
-  return raw.length === 10 && ruToISO(raw) == null ? 'Неверная дата. Формат ДД.ММ.ГГГГ.' : '';
-}
 
 // Текст, который должно показывать поле: сырой ввод, если он есть, иначе —
 // значение из state.
@@ -186,12 +165,12 @@ function dateFieldValue(id) {
 
 // Общая фиксация ввода даты: в state попадает только полная существующая дата,
 // всё остальное — как отсутствие значения.
-function commitDateInput(id, input, errorEl, { raw, iso, complete }) {
+function commitDateInput(id, input, errorEl, { raw, iso }) {
   if (raw === '') rawDates.delete(id);
   else rawDates.set(id, raw);
-  const invalid = complete && iso == null;
-  errorEl.textContent = invalid ? 'Неверная дата. Формат ДД.ММ.ГГГГ.' : '';
-  input.classList.toggle('invalid', invalid);
+  const error = dateFieldError(raw);
+  errorEl.textContent = error;
+  input.classList.toggle('invalid', error !== '');
   if (iso == null) delete state.inputs[id];
   else state.inputs[id] = iso;
   render();
