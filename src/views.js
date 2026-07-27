@@ -48,8 +48,8 @@ const ENFORCEMENT_STUBS = [
     norm: 'ст. 22 ФЗ № 229-ФЗ',
   },
 ];
-import { computeDeadline } from './engine.js';
-import { toISODate, calendarNote } from './calendar.js';
+import { computeDeadline, addDays } from './engine.js';
+import { toISODate, calendarNote, isWorkingDay } from './calendar.js';
 
 // Названия input (п. 4.1 SPEC.md) для списка «что ещё можно уточнить».
 const INPUT_LABELS = {
@@ -106,6 +106,19 @@ function daysBetween(aIso, bIso) {
   const [ay, am, ad] = aIso.split('-').map(Number);
   const [by, bm, bd] = bIso.split('-').map(Number);
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000);
+}
+
+// Насколько фактическая дата вышла за последний допустимый день — в рабочих
+// днях. Порог задан в рабочих днях, поэтому и расхождение считаем в них: по
+// календарным новогодние каникулы раздували бы цифру втрое.
+function workingDaysAfter(allowedISO, actualISO) {
+  let count = 0;
+  let cursor = allowedISO;
+  while (cursor < actualISO) {
+    cursor = toISODate(addDays(cursor, 1));
+    if (isWorkingDay(cursor)) count += 1;
+  }
+  return count;
 }
 
 // Недостающие input из списка ids → [{id, label}].
@@ -308,6 +321,45 @@ function simplifiedCards(simplified) {
     simplified.appeal.anchor_kind === 'reasoned'
       ? 'Мотивированное решение составлено — отсчёт со дня принятия решения в окончательной форме.'
       : 'Мотивированное решение не составлялось — отсчёт со дня принятия решения.';
+
+  // Предупреждение: мотивированное решение составлено позже срока по ч. 4
+  // ст. 232.4 (10 рабочих дней со дня поступления заявления либо со дня подачи
+  // апелляционной жалобы). По образцу валидации ч. 2 ст. 199 в общем порядке:
+  // warn_not_block — расчёт апелляционного срока не меняем, он идёт от
+  // фактической даты составления.
+  //
+  // Без срока изготовления (не введён ни один запускающий факт) сравнивать не с
+  // чем — предупреждения нет.
+  if (
+    simplified.reasoned_making &&
+    simplified.appeal.anchor_kind === 'reasoned' &&
+    simplified.appeal.anchor > simplified.reasoned_making.deadline
+  ) {
+    const allowed = simplified.reasoned_making.deadline;
+    const actual = simplified.appeal.anchor;
+    const trigger =
+      simplified.reasoned_making.trigger === 'appeal_filed'
+        ? 'дня подачи апелляционной жалобы'
+        : 'дня поступления заявления о составлении мотивированного решения';
+    appeal.warnings = [
+      {
+        code: 'simplified_reasoned_over_delay',
+        threshold_days: simplified.reasoned_making.duration.value,
+        threshold_unit: 'working_day',
+        allowed_deadline: allowed,
+        actual_date: actual,
+        // Здесь это срок изготовления решения, а не отложения его составления:
+        // подпись к датам своя, иначе она читалась бы как про ч. 2 ст. 199.
+        dates_label: 'Срок изготовления истекал',
+        overdue_working_days: workingDaysAfter(allowed, actual),
+        text:
+          'Мотивированное решение составлено позже срока — ' +
+          `${simplified.reasoned_making.duration.value} рабочих дней со ${trigger} ` +
+          `(${simplified.reasoned_making.norm.primary}). Срок апелляционного ` +
+          'обжалования считается от фактической даты составления.',
+      },
+    ];
+  }
   cards.push(appeal);
 
   const entry = simplified.entry_into_force;

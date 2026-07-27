@@ -757,3 +757,68 @@ test('истёкший срок: без текущей даты пометки �
     appeal_ruling_reasoned_date: '2025-06-02' });
   assert.equal(byId(v.cards, 'appeal_general').status, 'computed');
 });
+
+// --- Проверка фактической даты составления решения (ч. 4 ст. 232.4) ---------
+
+// Реальное дело 02-9411/2024 Люблинского районного суда: резолютивная часть
+// 16.12.2024, апелляционная жалоба 19.12.2024, срок изготовления истекал
+// 13.01.2025, мотивированное решение изготовлено 27.02.2025.
+const LUBLINSKY = {
+  simplified_resolution_date: '2024-12-16',
+  simplified_appeal_filed_date: '2024-12-19',
+};
+
+test('упрощённое: решение составлено позже срока по ч. 4 ст. 232.4 — предупреждение', () => {
+  const v = buildView(
+    { ...LUBLINSKY, simplified_reasoned_date: '2025-02-27' },
+    { today: '2025-03-01' },
+  );
+
+  // Срок изготовления — десять рабочих дней с 19.12.2024 (дата подачи жалобы).
+  assert.equal(byId(v.cards, 'simplified_reasoned_making').deadline, '2025-01-13');
+
+  const appeal = byId(v.cards, 'simplified_appeal');
+  assert.ok(appeal.warnings, 'предупреждение должно быть на карточке апелляции');
+  assert.equal(appeal.warnings.length, 1);
+  const w = appeal.warnings[0];
+  assert.equal(w.code, 'simplified_reasoned_over_delay');
+  assert.equal(w.threshold_days, 10);
+  assert.equal(w.threshold_unit, 'working_day');
+  assert.equal(w.allowed_deadline, '2025-01-13');
+  assert.equal(w.actual_date, '2025-02-27');
+  assert.equal(w.overdue_working_days, 33);
+  assert.match(w.text, /ч\. 4 ст\. 232\.4/);
+  assert.match(w.text, /дня подачи апелляционной жалобы/);
+
+  // warn_not_block: расчёт апелляционного срока не меняется — он идёт от
+  // фактической даты составления, как и в общем порядке.
+  assert.equal(appeal.status, 'computed');
+  assert.equal(appeal.deadline, '2025-03-20');
+});
+
+test('упрощённое: решение составлено в срок — предупреждения нет', () => {
+  // Раньше последнего допустимого дня.
+  const early = buildView(
+    { ...LUBLINSKY, simplified_reasoned_date: '2024-12-27' },
+    { today: '2025-01-15' },
+  );
+  assert.equal(byId(early.cards, 'simplified_appeal').warnings, undefined);
+
+  // Ровно в последний допустимый день — срок соблюдён, сравнение строгое.
+  const onTime = buildView(
+    { ...LUBLINSKY, simplified_reasoned_date: '2025-01-13' },
+    { today: '2025-01-20' },
+  );
+  assert.equal(byId(onTime.cards, 'simplified_reasoned_making').deadline, '2025-01-13');
+  assert.equal(byId(onTime.cards, 'simplified_appeal').warnings, undefined);
+});
+
+test('упрощённое: без запускающего факта сравнивать не с чем', () => {
+  // Ни заявления, ни жалобы — срока изготовления нет, предупреждения тоже.
+  const v = buildView(
+    { simplified_resolution_date: '2024-12-16', simplified_reasoned_date: '2025-02-27' },
+    { today: '2025-03-01' },
+  );
+  assert.ok(!ids(v.cards).includes('simplified_reasoned_making'));
+  assert.equal(byId(v.cards, 'simplified_appeal').warnings, undefined);
+});
