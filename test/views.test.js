@@ -703,3 +703,57 @@ test('not_applicable: ни один нижестоящий узел не пок�
     .map((c) => c.id);
   assert.deepEqual(dated, ['default_judgment_cancellation_request']);
 });
+
+// --- Индикация истёкших сроков ----------------------------------------------
+
+test('истёкший срок: дедлайн в прошлом без даты подачи', () => {
+  // Апелляция от 11.03.2025 → 11.04.2025; смотрим из 20.04.2025.
+  const v = buildView(BASE, { today: '2025-04-20' });
+  const appeal = byId(v.cards, 'appeal_general');
+  assert.equal(appeal.status, 'expired');
+  assert.equal(appeal.deadline, '2025-04-11');
+  assert.equal(appeal.expired.days, 9);
+  // Это не «пропущен»: факт подачи не установлен.
+  assert.equal(appeal.overdue, undefined);
+});
+
+test('истёкший срок: дедлайн в будущем — пометки нет', () => {
+  const v = buildView(BASE, { today: '2025-04-01' });
+  const appeal = byId(v.cards, 'appeal_general');
+  assert.equal(appeal.status, 'computed');
+  assert.equal(appeal.expired, undefined);
+});
+
+test('истёкший срок: дедлайн сегодня — срок не истёк (ч. 3 ст. 108)', () => {
+  // Срок истекает в 24:00 последнего дня, поэтому сегодняшний дедлайн живой.
+  const today = buildView(BASE, { today: '2025-04-11' });
+  assert.equal(byId(today.cards, 'appeal_general').status, 'computed');
+  // А назавтра — уже истёк, ровно на один день.
+  const tomorrow = buildView(BASE, { today: '2025-04-12' });
+  const appeal = byId(tomorrow.cards, 'appeal_general');
+  assert.equal(appeal.status, 'expired');
+  assert.equal(appeal.expired.days, 1);
+});
+
+test('истёкший срок: введённая дата подачи отменяет пометку', () => {
+  // Подано вовремя — статус остаётся computed, хотя дедлайн давно прошёл.
+  const inTime = buildView(
+    { ...BASE, appeal_filed_date: '2025-04-05' },
+    { today: '2025-12-01' },
+  );
+  assert.equal(byId(inTime.cards, 'appeal_general').status, 'computed');
+
+  // Подано позже дедлайна — это уже установленный факт пропуска, не «истёк».
+  const late = buildView({ ...BASE, appeal_filed_date: '2025-04-20' }, { today: '2025-12-01' });
+  const appeal = byId(late.cards, 'appeal_general');
+  assert.equal(appeal.status, 'missed');
+  assert.equal(appeal.overdue.days, 9);
+  assert.equal(appeal.expired, undefined);
+});
+
+test('истёкший срок: без текущей даты пометки нет', () => {
+  // today передаётся параметром; без него о истечении судить не из чего.
+  const v = buildView({ ...BASE, appeal_filed_date: '2025-04-05', appeal_ruling_date: '2025-06-02',
+    appeal_ruling_reasoned_date: '2025-06-02' });
+  assert.equal(byId(v.cards, 'appeal_general').status, 'computed');
+});
