@@ -652,13 +652,94 @@ test('заочное: месячный срок с переносом после
   assert.equal(d.appeal.shifted, true);
 });
 
-test('заочное: вступление в силу не рассчитывается (ст. 244 не загружена)', () => {
-  const d = computeDefaultJudgment(DJ);
-  assert.equal(d.entry_into_force.computed, false);
-  assert.match(d.entry_into_force.norm, /ст\. 244/);
-  assert.match(d.entry_into_force.reason, /нет/);
-  // по аналогии с ч. 1 ст. 209 не достраиваем
-  assert.equal(d.entry_into_force.date, undefined);
+// --- Вступление заочного решения в силу (ч. 1 ст. 244) ---------------------
+
+test('ст. 244, ветвь 1: не обжаловано — по истечении срока по ч. 2 ст. 237', () => {
+  // Иные лица, заявление об отмене не подавалось: срок апелляции считается по
+  // истечении срока подачи заявления, поэтому дата известна сразу.
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_subject: 'other_persons' });
+  const e = d.entry_into_force;
+  assert.equal(e.branch, 'not_appealed');
+  assert.equal(e.resolved, true);
+  assert.match(e.norm, /ч\. 1 ст\. 244/);
+  assert.equal(d.appeal.deadline, '2026-02-12');
+  assert.equal(e.date, '2026-02-13'); // на следующий день по истечении срока
+  assert.match(e.logic, /ч\. 2 ст\. 237/);
+});
+
+test('ст. 244, ветвь 1: у ответчика и иных лиц срок обжалования разный', () => {
+  const others = computeDefaultJudgment({ ...DJ, default_judgment_subject: 'other_persons' });
+  // Иные лица: месяц по истечении срока подачи заявления об отмене.
+  assert.equal(others.appeal.deadline, '2026-02-12');
+  assert.equal(others.entry_into_force.date, '2026-02-13');
+
+  // Ответчик: срок считается от определения об отказе (абз. 1 ч. 2 ст. 237).
+  // Пока её нет — считать не от чего, дату не выдумываем.
+  const defendantBlocked = computeDefaultJudgment({ ...DJ, default_judgment_subject: 'defendant' });
+  assert.equal(defendantBlocked.entry_into_force.branch, 'not_appealed');
+  assert.equal(defendantBlocked.entry_into_force.resolved, false);
+  assert.equal(defendantBlocked.entry_into_force.date, null);
+  assert.deepEqual(defendantBlocked.entry_into_force.missing_inputs, [
+    'default_judgment_refusal_date',
+  ]);
+});
+
+test('ст. 244, ветвь 2: заявление подано, отказано, апелляции не было', () => {
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_refusal_date: '2026-02-10' });
+  const e = d.entry_into_force;
+  assert.equal(e.branch, 'refused_not_appealed');
+  assert.equal(e.resolved, true);
+  assert.equal(d.appeal.deadline, '2026-03-10');
+  assert.equal(e.date, '2026-03-11');
+  assert.match(e.logic, /отказано/);
+});
+
+test('ст. 244, ветвь 3: обжаловано в апелляции — с датой определения и без', () => {
+  const withoutRuling = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_refusal_date: '2026-02-10',
+    default_judgment_appeal_filed_date: '2026-03-02',
+  });
+  const w = withoutRuling.entry_into_force;
+  assert.equal(w.branch, 'appealed');
+  assert.equal(w.resolved, false);
+  assert.equal(w.date, null);
+  assert.deepEqual(w.missing_inputs, ['default_judgment_appeal_ruling_date']);
+  assert.match(w.logic, /если оно не отменено/);
+
+  const withRuling = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_refusal_date: '2026-02-10',
+    default_judgment_appeal_filed_date: '2026-03-02',
+    default_judgment_appeal_ruling_date: '2026-06-15',
+  });
+  const r = withRuling.entry_into_force;
+  assert.equal(r.branch, 'appealed');
+  assert.equal(r.resolved, true);
+  assert.equal(r.date, '2026-06-15');
+});
+
+test('ст. 244: заявление об отмене удовлетворено — вступления в силу не наступает', () => {
+  const d = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_cancellation_request_date: '2026-01-09',
+    default_judgment_cancellation_date: '2026-01-20',
+  });
+  const e = d.entry_into_force;
+  assert.equal(e.branch, 'cancellation_granted');
+  assert.equal(e.applicable, false);
+  assert.equal(e.resolved, false);
+  assert.equal(e.date, null);
+  assert.match(e.message, /отменено/);
+  // Отмена перебивает и ветвь апелляции — состояние, а не расчёт даты.
+  const alsoAppealed = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_cancellation_date: '2026-01-20',
+    default_judgment_appeal_filed_date: '2026-03-02',
+    default_judgment_appeal_ruling_date: '2026-06-15',
+  });
+  assert.equal(alsoAppealed.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(alsoAppealed.entry_into_force.date, null);
 });
 
 // --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199) -------------

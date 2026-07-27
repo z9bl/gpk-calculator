@@ -625,8 +625,8 @@ export function computeSimplified(inputs) {
 // ст. 107). Апелляционные сроки — месячные. Точка отсчёта апелляции зависит от
 // субъекта (ответчик / иные лица) и от того, подавал ли ответчик заявление.
 //
-// Вступление заочного решения в силу НЕ считается: ст. 244 ГПК в проект не
-// загружена, достраивать по аналогии с ч. 1 ст. 209 нельзя (раздел 9 SPEC).
+// Вступление в силу — своё событие по ч. 1 ст. 244 с тремя ветвями. Общее
+// правило ч. 1 ст. 209 к заочному решению не применяется.
 
 export const DEFAULT_JUDGMENT_SUBJECTS = ['defendant', 'other_persons'];
 
@@ -719,6 +719,96 @@ const DEFAULT_JUDGMENT_APPEAL_MODES = {
   },
 };
 
+export const DEFAULT_JUDGMENT_ENTRY_NORM = 'ч. 1 ст. 244 ГПК РФ';
+
+// Событие вступления заочного решения в силу — ч. 1 ст. 244, три ветви. От
+// текущей даты не зависит: ветвь определяется введёнными фактами.
+//
+// Отдельным состоянием стоит удовлетворение заявления об отмене: решение
+// отменяется, рассмотрение дела возобновляется — вступления в силу не
+// наступает, считать нечего.
+function resolveDefaultJudgmentEntry(facts) {
+  const { cancelled, appealFiled, appealRuling, requestFiled, refusal, appealDeadline } = facts;
+
+  if (cancelled != null) {
+    return {
+      branch: 'cancellation_granted',
+      resolved: false,
+      applicable: false,
+      date: null,
+      message: 'Не наступает — заочное решение отменено',
+      logic:
+        'Заявление об отмене заочного решения удовлетворено, решение отменено и ' +
+        'рассмотрение дела по существу возобновляется. Правило ч. 1 ст. 244 о ' +
+        'вступлении заочного решения в законную силу к отменённому решению не ' +
+        'применяется — даты вступления в силу не возникает.',
+    };
+  }
+
+  // Ветвь 3: решение обжаловано в апелляции — вступает в силу после
+  // рассмотрения жалобы судом апелляционной инстанции, если не отменено.
+  // Дата известна → событие разрешено; не введена → показываем норму и правило
+  // без даты (как в ч. 7 ст. 232.4), а не выдуманную дату.
+  if (appealFiled != null) {
+    const base = {
+      branch: 'appealed',
+      applicable: true,
+      logic:
+        'Заочное решение обжаловано в апелляционном порядке — вступает в законную ' +
+        'силу после рассмотрения жалобы судом апелляционной инстанции, если оно не ' +
+        'отменено. Если апелляционная инстанция решение отменит, вступления в силу ' +
+        'не наступит.',
+    };
+    if (appealRuling != null) return { ...base, resolved: true, date: appealRuling };
+    return {
+      ...base,
+      resolved: false,
+      date: null,
+      message: 'Вступит в силу после рассмотрения апелляционной жалобы, если не будет отменено',
+      missing_inputs: ['default_judgment_appeal_ruling_date'],
+      note: 'Укажите дату определения апелляционной инстанции — тогда дата будет рассчитана.',
+    };
+  }
+
+  // Ветви 1 и 2 дают одну и ту же дату — по истечении срока обжалования по
+  // ч. 2 ст. 237. Различаются составом фактов и точкой отсчёта самого срока,
+  // которая уже учтена в нём (для ответчика и для иных лиц она разная).
+  const base =
+    requestFiled != null || refusal != null
+      ? {
+          branch: 'refused_not_appealed',
+          applicable: true,
+          logic:
+            'Заявление об отмене заочного решения подано, в его удовлетворении ' +
+            'отказано, апелляционная жалоба не подавалась — решение вступает в ' +
+            'законную силу по истечении срока апелляционного обжалования.',
+        }
+      : {
+          branch: 'not_appealed',
+          applicable: true,
+          logic:
+            'Заочное решение не обжаловано — вступает в законную силу по истечении ' +
+            'срока обжалования, предусмотренного ч. 2 ст. 237 ГПК РФ.',
+        };
+
+  // Срока может не быть: для ответчика он считается от определения об отказе
+  // (абз. 1 ч. 2 ст. 237), и без этой даты рассчитать его не от чего.
+  if (appealDeadline == null) {
+    return {
+      ...base,
+      resolved: false,
+      date: null,
+      message: 'Вступит в силу по истечении срока апелляционного обжалования',
+      missing_inputs: ['default_judgment_refusal_date'],
+      note:
+        'Срок обжалования по абз. 1 ч. 2 ст. 237 считается со дня определения об ' +
+        'отказе в отмене заочного решения — нужна его дата.',
+    };
+  }
+
+  return { ...base, resolved: true, date: toISO(addDays(appealDeadline, 1)) };
+}
+
 /**
  * Заочное решение (ст. 237 ГПК). Независимая ветка по своим inputs.
  * @param {object} inputs
@@ -772,21 +862,21 @@ export function computeDefaultJudgment(inputs) {
     });
   }
 
+  const entry = resolveDefaultJudgmentEntry({
+    cancelled: toISO(inputs.default_judgment_cancellation_date),
+    appealFiled: toISO(inputs.default_judgment_appeal_filed_date),
+    appealRuling: toISO(inputs.default_judgment_appeal_ruling_date),
+    requestFiled,
+    refusal,
+    appealDeadline: appeal ? appeal.deadline : null,
+  });
+
   return {
     subject,
     cancellation_request: request,
     appeal,
     appeal_blocked: appealBlocked,
-    // Вступление в силу сознательно не рассчитывается — см. комментарий выше.
-    entry_into_force: {
-      computed: false,
-      norm: 'ст. 244 ГПК РФ',
-      message: 'Вступление заочного решения в силу не рассчитывается',
-      reason:
-        'Момент вступления заочного решения в законную силу определяется ст. 244 ' +
-        'ГПК РФ, текста которой в проекте нет. Достраивать его по аналогии с ' +
-        'ч. 1 ст. 209 нельзя — правило иное.',
-    },
+    entry_into_force: { norm: DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
   };
 }
 
