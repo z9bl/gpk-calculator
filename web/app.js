@@ -4,6 +4,7 @@
 import { buildView } from '../src/views.js';
 import { buildICS, icsTermsFromView } from '../src/ics.js';
 import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
+import { SITUATIONS, DEFAULT_SITUATION, situationById } from '../src/situations.js';
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
 
@@ -81,32 +82,13 @@ const GENERAL_CHAIN_NODES = new Set([
   'enforcement_presentation',
 ]);
 
-const CHAIN_ORDER = [
-  'appeal_general',
-  'entry_into_force',
-  'cassation_ksoyu',
-  'cassation_vs',
-  'enforcement_presentation',
-  'protocol_remarks',
-  'protocol_remarks_review',
-  'private_complaint',
-  'simplified_reasoned_request',
-  'simplified_reasoned_making',
-  'simplified_appeal',
-  'simplified_entry_into_force',
-  'default_judgment_cancellation_request',
-  'default_judgment_appeal',
-  'default_judgment_entry_into_force',
-  'mirovoy_reasoned_request',
-  'mirovoy_reasoned_making',
-  'mirovoy_appeal',
-  'mirovoy_cassation',
-  'supervision',
-];
+// Порядок узлов внутри экрана задаётся выбранной ситуацией (src/situations.js):
+// раньше здесь лежал единый CHAIN_ORDER на все ветви сразу.
+
 
 // --- Состояние --------------------------------------------------------------
 
-const state = { inputs: {} };
+const state = { inputs: {}, situation: DEFAULT_SITUATION };
 const today = todayISO();
 
 // --- Даты: формат ДД.ММ.ГГГГ ↔ ISO ------------------------------------------
@@ -472,20 +454,28 @@ function restoreFocus(snapshot) {
 function render() {
   const focus = captureFocus();
   renderedFields.clear();
+  const situation = situationById(state.situation);
+  const visible = new Set(situation.nodes);
+
+  // Расчёт от выбора ситуации не зависит: buildView по-прежнему считает все
+  // ветви, переключатель лишь решает, что показать и что выгрузить.
   const view = buildView(state.inputs, { today });
-  currentIcsTerms = icsTermsFromView(view);
+  currentIcsTerms = icsTermsFromView({
+    cards: view.cards.filter((c) => visible.has(c.id)),
+  });
   updateDownloadButton();
 
-  renderOtherTerms();
+  renderSituationSwitch(situation);
+  renderPrimaryField(situation);
+  renderSituationFields(situation);
 
   const root = document.getElementById('results');
   root.textContent = '';
 
-  // Без даты мотивированного решения цепочка общего порядка не считается, но
-  // независимые узлы (рабочие дни, упрощённое производство) — считаются, и
-  // рисуются тем же кодом ниже, чтобы не расходиться в поведении.
+  // Без даты мотивированного решения цепочка общего порядка не считается.
+  // Приглашение показываем только там, где эта дата и спрашивается.
   const chainAvailable = Boolean(state.inputs.reasoned_decision_date);
-  if (!chainAvailable) {
+  if (!chainAvailable && situation.primary_field) {
     root.appendChild(
       el('p', 'empty', 'Введите дату мотивированного решения — появятся сроки цепочки обжалования.'),
     );
@@ -500,7 +490,7 @@ function render() {
   const notAppealedAssumption =
     !state.inputs.appeal_filed_date && entry && entry.status === 'resolved';
 
-  for (const id of CHAIN_ORDER) {
+  for (const id of situation.nodes) {
     const card = cardById(id);
     if (card) {
       if (id === 'entry_into_force' && card.kind === 'event') {
@@ -598,6 +588,15 @@ function render() {
       if (redField) incEl.appendChild(renderRedactionField(redField));
       root.appendChild(incEl);
     }
+  }
+
+  // Ветвь выбрана, но данных ещё нет — на экране не должно быть пусто без
+  // объяснения. У общей ветви приглашение уже показано выше.
+  if (!root.childElementCount && !situation.primary_field) {
+    const first = situation.fields[0];
+    root.appendChild(
+      el('p', 'empty', `Заполните исходные данные — ${(INPUT_LABELS[first] ?? '').toLowerCase()}.`),
+    );
   }
 
   restoreFocus(focus);
@@ -770,29 +769,89 @@ function renderRelatedStubs(stubs) {
 // Замечания на протокол и частная жалоба не зависят от цепочки обжалования —
 // у каждого свой триггер-input. Поля всегда видимы; узлы появляются в
 // результатах после ввода даты.
-const OTHER_TERM_FIELDS = [
-  'protocol_signed_date',
-  'interim_ruling_date',
-  'simplified_resolution_date',
-  'default_judgment_service_date',
-  'mirovoy_resolution_date',
-  'vs_ruling_date',
-];
 
-function renderOtherTerms() {
-  const root = document.getElementById('other-terms');
+// Переключатель ситуации — всегда виден, наверху формы. Радиокнопки в
+// <fieldset>: с клавиатуры это стрелки, а не Tab по пяти кнопкам.
+function renderSituationSwitch(current) {
+  const root = document.getElementById('situation');
+  if (root.dataset.rendered === 'yes') {
+    // Разметка статична — перерисовывать нечего, только отметить выбранное.
+    for (const input of root.querySelectorAll('input[type=radio]')) {
+      input.checked = input.value === current.id;
+      input.closest('label').classList.toggle('active', input.value === current.id);
+    }
+    return;
+  }
   root.textContent = '';
-  root.appendChild(el('h2', null, 'Другие сроки'));
+  const fs = el('fieldset', 'situations');
+  fs.appendChild(el('legend', null, 'Какая у вас ситуация'));
+  const row = el('div', 'situation-row');
+  for (const s of SITUATIONS) {
+    const label = el('label', s.id === current.id ? 'situation active' : 'situation');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = 'situation';
+    input.value = s.id;
+    input.checked = s.id === current.id;
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      // Введённые данные живут в state.inputs и rawDates и переключение их не
+      // трогает: скрытая ветвь при возврате показывает те же значения.
+      state.situation = input.value;
+      render();
+    });
+    label.appendChild(input);
+    label.appendChild(el('span', null, s.label));
+    row.appendChild(label);
+  }
+  fs.appendChild(row);
+  root.appendChild(fs);
+  root.dataset.rendered = 'yes';
+}
+
+// Поле даты мотивированного решения — статическое, в разметке страницы: маска
+// к нему привязана один раз при инициализации. Прячем его вне общей ветви,
+// значение при этом сохраняется.
+function renderPrimaryField(situation) {
+  const box = document.querySelector('section.primary');
+  box.hidden = !situation.primary_field;
+}
+
+// Поля ввода выбранной ситуации.
+//
+// У общей ветви исходное поле статическое и стоит наверху, а её `vs_ruling_date`
+// — уточнение, ему место под карточками. У остальных ветвей поле в `fields` и
+// есть исходные данные: оно должно стоять над карточками, иначе пользователь
+// попадает на пустой экран и не видит, куда вводить.
+function renderSituationFields(situation) {
+  const top = document.getElementById('situation-inputs');
+  const bottom = document.getElementById('other-terms');
+  const root = situation.primary_field ? bottom : top;
+  const other = situation.primary_field ? top : bottom;
+
+  other.textContent = '';
+  other.hidden = true;
+  root.textContent = '';
+  if (!situation.fields.length) {
+    root.hidden = true;
+    return;
+  }
+  root.hidden = false;
   root.appendChild(
-    el(
-      'p',
-      null,
-      'Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) — считаются независимо от ' +
-        'цепочки обжалования. Заполните нужную дату.',
-    ),
+    el('h2', null, situation.primary_field ? 'Дополнительные даты' : 'Исходные данные'),
   );
+  if (situation.id === 'separate') {
+    root.appendChild(
+      el(
+        'p',
+        null,
+        'Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) — считаются независимо от ' +
+          'цепочки обжалования. Заполните нужную дату.',
+      ),
+    );
+  }
   const box = el('div', 'invite');
-  for (const id of OTHER_TERM_FIELDS) box.appendChild(renderInviteField(id).wrap);
+  for (const id of situation.fields) box.appendChild(renderInviteField(id).wrap);
   root.appendChild(box);
 }
 
