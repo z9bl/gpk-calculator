@@ -1,7 +1,7 @@
 // Интерфейс (раздел 8, задача 4б SPEC.md). Поверх buildView, без изменения
 // логики: приложение только читает даты, вызывает buildView и рисует результат.
 
-import { buildView } from '../src/views.js';
+import { buildView, ACTION_FACT_INPUT } from '../src/views.js';
 import { buildICS, icsTermsFromView } from '../src/ics.js';
 import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
 import { SITUATIONS, DEFAULT_SITUATION, situationById } from '../src/situations.js';
@@ -72,6 +72,17 @@ const INPUT_HINTS = {
   mirovoy_appeal_ruling_reasoned_date:
     'Если дело прошло апелляцию в районном суде — от неё считается кассационный срок',
 };
+
+// Подписи полей для истёкшего срока. Пока срок идёт, уточнение гипотетическое
+// («если жалоба подавалась»); когда срок прошёл, оно уже про факт — по старому
+// делу это основной способ восстановить картину, и спрашивать надо прямо.
+const INPUT_HINTS_EXPIRED = {
+  appeal_filed_date: 'Дата фактической подачи — расчёт пойдёт от апелляционного определения',
+  protocol_remarks_filed_date: 'Дата фактической подачи — от неё считается срок рассмотрения',
+};
+
+// Поля, чей срок уже истёк: заполняется в render() по статусам карточек.
+const expiredFields = new Set();
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
 const GENERAL_CHAIN_NODES = new Set([
@@ -378,7 +389,13 @@ function renderInfoTermCard(card) {
   c.appendChild(head);
 
   const line = el('div', 'info-line');
-  line.appendChild(el('span', 'info-date', card.deadline ? isoToRu(card.deadline) : '—'));
+  line.appendChild(
+    el(
+      'span',
+      card.status === 'expired' ? 'info-date expired' : 'info-date',
+      card.deadline ? isoToRu(card.deadline) : '—',
+    ),
+  );
   line.appendChild(el('span', 'norm', card.norm));
   c.appendChild(line);
 
@@ -444,7 +461,8 @@ function renderInviteField(id) {
   input.autocomplete = 'off';
   input.value = dateFieldValue(id);
   wrap.appendChild(input);
-  if (INPUT_HINTS[id]) wrap.appendChild(el('p', 'hint', INPUT_HINTS[id]));
+  const hint = (expiredFields.has(id) && INPUT_HINTS_EXPIRED[id]) || INPUT_HINTS[id];
+  if (hint) wrap.appendChild(el('p', 'hint', hint));
   const err = el('p', 'field-error');
   // Поле пересоздаётся при каждой перерисовке, поэтому состояние ошибки
   // восстанавливаем из сырого текста, а не держим в самом элементе.
@@ -521,6 +539,16 @@ function render() {
   // Расчёт от выбора ситуации не зависит: buildView по-прежнему считает все
   // ветви, переключатель лишь решает, что показать и что выгрузить.
   const view = buildView(state.inputs, { today });
+
+  // Какие поля относятся к истёкшим срокам — от этого зависит формулировка их
+  // подписей и приглашений.
+  expiredFields.clear();
+  for (const card of view.cards) {
+    if (card.status !== 'expired') continue;
+    const field = ACTION_FACT_INPUT[card.id];
+    if (field) expiredFields.add(field);
+  }
+
   currentIcsTerms = icsTermsFromView({
     cards: view.cards.filter((c) => visible.has(c.id)),
   });
@@ -557,6 +585,7 @@ function render() {
       if (id === 'entry_into_force' && card.kind === 'event') {
         const opts = {};
         if (notAppealedAssumption) {
+          const appealExpired = expiredFields.has('appeal_filed_date');
           const invite = el('div', 'note');
           invite.appendChild(
             el(
@@ -566,7 +595,15 @@ function render() {
             ),
           );
           const prompt = el('div', 'prompt');
-          prompt.appendChild(el('label', null, 'Жалоба подавалась? Укажите дату подачи:'));
+          prompt.appendChild(
+            el(
+              'label',
+              null,
+              appealExpired
+                ? 'Жалоба уже подана? Укажите дату — расчёт пойдёт от апелляционного определения.'
+                : 'Жалоба подавалась? Укажите дату подачи:',
+            ),
+          );
           prompt.appendChild(renderInviteField('appeal_filed_date').wrap);
           invite.appendChild(prompt);
           opts.assumptionInvite = invite;

@@ -822,3 +822,48 @@ test('упрощённое: без запускающего факта срав�
   assert.ok(!ids(v.cards).includes('simplified_reasoned_making'));
   assert.equal(byId(v.cards, 'simplified_appeal').warnings, undefined);
 });
+
+test('пропуск устанавливается у всех узлов с датой подачи, не только у апелляции', () => {
+  // Кассация подана 15.01.2026 при дедлайне 14.07.2025 — пропуск установлен.
+  const v = buildView(
+    { ...BASE, cassation_filed_date: '2026-01-15' },
+    { today: '2026-03-01' },
+  );
+  const cass = byId(v.cards, 'cassation_ksoyu');
+  assert.equal(cass.status, 'missed');
+  assert.equal(cass.deadline, '2025-07-14');
+  assert.equal(cass.overdue.days, 185);
+  assert.match(cass.overdue.norm, /ст\. 112/);
+  assert.equal(cass.expired, undefined, 'пропуск установлен — это не «истёк»');
+});
+
+test('срок суда поздней датой не помечается как пропущенный', () => {
+  // Мотивированное решение изготовлено 27.02.2025 при сроке до 13.01.2025.
+  // Это нарушение судом (предупреждение по ч. 4 ст. 232.4), а не пропуск
+  // заявителя: восстановление по ст. 112 к сроку суда неприменимо.
+  const v = buildView(
+    {
+      simplified_resolution_date: '2024-12-16',
+      simplified_appeal_filed_date: '2024-12-19',
+      simplified_reasoned_date: '2025-02-27',
+    },
+    { today: '2025-03-01' },
+  );
+  const making = byId(v.cards, 'simplified_reasoned_making');
+  assert.equal(making.status, 'computed');
+  assert.equal(making.overdue, undefined);
+  // Само нарушение показано предупреждением на карточке апелляции.
+  assert.ok(byId(v.cards, 'simplified_appeal').warnings);
+});
+
+test('апелляция мирового: дата апелляционного определения не считается подачей', () => {
+  // mirovoy_appeal подтверждается датой апелляционного определения районного
+  // суда — она всегда позже дедлайна и пропуском не является.
+  const v = buildView(
+    { mirovoy_resolution_date: '2026-01-15', mirovoy_appeal_ruling_reasoned_date: '2026-03-01' },
+    { today: '2026-07-01' },
+  );
+  const appeal = byId(v.cards, 'mirovoy_appeal');
+  assert.equal(appeal.status, 'computed');
+  assert.equal(appeal.overdue, undefined);
+});
