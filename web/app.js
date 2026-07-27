@@ -467,7 +467,7 @@ function render() {
 
   renderSituationSwitch(situation);
   renderPrimaryField(situation);
-  renderSituationFields(situation);
+  renderSituationFields(situation, Boolean(state.inputs[situation.primary_field]));
 
   const root = document.getElementById('results');
   root.textContent = '';
@@ -823,7 +823,14 @@ function renderPrimaryField(situation) {
 // — уточнение, ему место под карточками. У остальных ветвей поле в `fields` и
 // есть исходные данные: оно должно стоять над карточками, иначе пользователь
 // попадает на пустой экран и не видит, куда вводить.
-function renderSituationFields(situation) {
+//
+// Блок уточняющих дат показывается только после заполнения основного поля
+// ветви. На пустой форме общего порядка дата определения коллегии ВС — это
+// четыре инстанции вперёд, и на первом экране она только сбивает с толку.
+//
+// Исключение — уже введённое значение: иначе, очистив основное поле, можно
+// остаться с карточкой надзора на экране и без поля, которым её правят.
+function renderSituationFields(situation, primaryFilled) {
   const top = document.getElementById('situation-inputs');
   const bottom = document.getElementById('other-terms');
   const root = situation.primary_field ? bottom : top;
@@ -832,7 +839,8 @@ function renderSituationFields(situation) {
   other.textContent = '';
   other.hidden = true;
   root.textContent = '';
-  if (!situation.fields.length) {
+  const hasOwnValue = situation.fields.some((id) => state.inputs[id] != null);
+  if (!situation.fields.length || (situation.primary_field && !primaryFilled && !hasOwnValue)) {
     root.hidden = true;
     return;
   }

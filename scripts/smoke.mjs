@@ -68,15 +68,16 @@ if ((await page.locator('.fatal').count()) > 0) {
   problems.push('.fatal показан — приложение не инициализировалось');
 }
 if ((await page.locator('#reasoned').count()) === 0) problems.push('нет поля #reasoned');
-// Признак того, что render() отработал: секция «Другие сроки» с полями-триггерами
-// независимых ветвей. Заглушки для этого больше не годятся — все ветви раскрыты.
-if ((await page.locator('#other-terms input').count()) < 1) {
-  problems.push('секция «Другие сроки» не отрисована');
+// Признак того, что render() отработал: переключатель ситуации. Он рисуется
+// кодом приложения и виден всегда — в отличие от блока уточняющих дат, который
+// теперь появляется только после заполнения основного поля.
+if ((await page.locator('#situation input[type=radio]').count()) < 5) {
+  problems.push('переключатель ситуации не отрисован');
 }
 
-// Ввод даты должен дать карточки без новых ошибок.
+// Ввод даты должен дать карточки без новых ошибок. fill() сам шлёт input —
+// именно на него приложение и реагирует (слушателя change нет).
 await page.fill('#reasoned', '11.03.2024');
-await page.dispatchEvent('#reasoned', 'change');
 await page.waitForTimeout(200);
 if ((await page.locator('#results .card').count()) < 1) {
   problems.push('после ввода даты карточки не появились');

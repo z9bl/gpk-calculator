@@ -11,8 +11,9 @@ export const SITUATIONS = [
   {
     id: 'general',
     label: 'Решение суда в общем порядке',
-    // Поле даты мотивированного решения — статическое, в разметке страницы.
-    primary_field: true,
+    // Основное поле ветви — статическое, в разметке страницы. Хранится по id:
+    // от его заполненности зависит показ блока уточняющих дат.
+    primary_field: 'reasoned_decision_date',
     fields: ['vs_ruling_date'],
     nodes: [
       'appeal_general',
