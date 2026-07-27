@@ -139,6 +139,39 @@
         background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line);
         font-size: 14px;
       }
+      /* Уровень 2 — срок суда: без рамки-акцента и без крупной даты. */
+      .card.info-card {
+        padding: 12px 14px; background: #fbfcfd; border-style: dashed;
+      }
+      .info-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+      .info-title { font-size: 14px; font-weight: 600; color: var(--muted); }
+      .info-head .badge { margin-left: 0; }
+      .info-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+      .info-date { font-size: 16px; font-weight: 600; }
+      .info-line .norm { margin-top: 0; font-size: 13px; }
+      .info-card .hint { font-size: 12px; }
+      .info-card details.more > summary { font-size: 13px; }
+
+      /* Уровень 3 — событие: строка текста, без карточки. */
+      .event-line {
+        margin: 0 0 14px; padding: 10px 4px 10px 14px;
+        border-left: 3px solid var(--line);
+      }
+      .event-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .event-text { font-size: 16px; font-weight: 600; }
+      .event-text.done { color: var(--ok); }
+      .event-head .norm { margin-top: 0; font-size: 13px; }
+
+      /* Предупреждение в одну строку; подробности по клику. */
+      details.warn.collapsible { padding: 8px 12px; }
+      details.warn.collapsible > summary {
+        cursor: pointer; font-size: 14px; font-weight: 600; list-style-position: outside;
+      }
+      details.warn.collapsible > summary::marker { color: var(--warn-ink); }
+      details.warn.collapsible .warn-body { margin-top: 8px; }
+      details.warn.collapsible .warn-body > div + div { margin-top: 6px; }
+      details.warn.collapsible .hint { color: inherit; opacity: .85; }
+
       .alt {
         margin-top: 12px; padding: 12px; border-radius: 8px;
         background: #f7f9fc; border: 1px solid var(--line); font-size: 14px;
