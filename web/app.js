@@ -197,6 +197,10 @@ function renderDetails(details) {
 }
 
 function renderTermCard(card, opts = {}) {
+  // Три уровня различаются по признакам модели, а не по спискам узлов:
+  // informational: true — срок суда, kind: 'event' — событие (см. renderEvent).
+  if (card.informational) return renderInfoTermCard(card);
+
   const c = el('div', 'card');
   c.appendChild(el('div', 'kicker', 'Срок'));
   const h = el('h2', null, card.title);
@@ -259,11 +263,10 @@ function renderTermCard(card, opts = {}) {
 
   if (card.warnings) {
     for (const w of card.warnings) {
-      const box = el('div', 'warn');
-      box.appendChild(el('div', null, w.text));
+      const details = [el('div', null, w.text)];
       // Структурные даты предупреждения форматируем здесь: views отдаёт ISO.
       if (w.allowed_deadline && w.actual_date) {
-        box.appendChild(
+        details.push(
           el(
             'div',
             null,
@@ -276,15 +279,21 @@ function renderTermCard(card, opts = {}) {
       // Величина расхождения — в тех же единицах, в каких задан порог.
       if (w.overdue_working_days) {
         const n = w.overdue_working_days;
-        box.appendChild(
+        details.push(
           el('div', null, `Расхождение — ${n} рабочих ${pluralDays(n)} сверх срока.`),
         );
       }
-      c.appendChild(box);
+      c.appendChild(collapsedWarning('Суд нарушил срок изготовления решения', details));
     }
   }
 
-  if (card.calendar_warning) c.appendChild(el('div', 'warn', card.calendar_warning.text));
+  if (card.calendar_warning) {
+    c.appendChild(
+      collapsedWarning('Календарь на этот год ещё не окончательный', [
+        el('div', null, card.calendar_warning.text),
+      ]),
+    );
+  }
 
   if (card.exhaustion_warning) c.appendChild(renderExhaustionWarning(card.exhaustion_warning));
 
@@ -296,28 +305,45 @@ function renderTermCard(card, opts = {}) {
   return c;
 }
 
-// Исчерпание способов обжалования: акт в апелляции не обжаловался.
-// Расчёт остаётся — он верен для актов, не подлежащих апелляционному обжалованию.
-function renderExhaustionWarning(w) {
-  const box = el('div', 'warn');
-  box.appendChild(el('div', null, w.text));
-  box.appendChild(el('div', 'hint', w.calculation_note));
-  box.appendChild(el('div', 'hint', `${w.norm} · ${w.clarification}`));
+// Предупреждение в одну строку; полный текст раскрывается по клику.
+//
+// Раньше жёлтый блок занимал больше места, чем сама дата, и вытеснял её из
+// первого экрана. Свёрнутый вид оставляет суть, развёрнутый — все подробности.
+// Нативный <details>: раскрытие по клику работает без нашего кода (раздел 9).
+function collapsedWarning(summaryText, detailNodes, cls = 'warn') {
+  const box = el('details', `${cls} collapsible`);
+  const head = el('summary', null, summaryText);
+  box.appendChild(head);
+  const body = el('div', 'warn-body');
+  for (const node of detailNodes) if (node) body.appendChild(node);
+  box.appendChild(body);
   return box;
 }
 
+// Исчерпание способов обжалования: акт в апелляции не обжаловался.
+// Расчёт остаётся — он верен для актов, не подлежащих апелляционному обжалованию.
+function renderExhaustionWarning(w) {
+  return collapsedWarning('Требуется исчерпание способов обжалования', [
+    el('div', null, w.text),
+    el('div', 'hint', w.calculation_note),
+    el('div', 'hint', `${w.norm} · ${w.clarification}`),
+  ]);
+}
+
 function renderBoundaryWarning(bw) {
-  const box = el('div', 'warn');
-  box.appendChild(
-    el(
-      'div',
-      null,
-      `По прежней редакции срок истёк ${isoToRu(bw.prev_redaction_deadline)}; ` +
-        `по действующей (с ${isoToRu(bw.cutoff)}) истекает ${isoToRu(bw.current_deadline)}.`,
-    ),
+  return collapsedWarning(
+    `Редакции нормы дают разные даты: ${isoToRu(bw.prev_redaction_deadline)} и ` +
+      `${isoToRu(bw.current_deadline)}`,
+    [
+      el(
+        'div',
+        null,
+        `По прежней редакции срок истёк ${isoToRu(bw.prev_redaction_deadline)}; ` +
+          `по действующей (с ${isoToRu(bw.cutoff)}) истекает ${isoToRu(bw.current_deadline)}.`,
+      ),
+      el('div', null, bw.reason),
+    ],
   );
-  box.appendChild(el('div', null, bw.reason));
-  return box;
 }
 
 function renderAlternative(card) {
@@ -341,32 +367,67 @@ function renderAlternative(card) {
   return box;
 }
 
-function renderEventCard(card, opts = {}) {
-  const c = el('div', 'card');
-  c.appendChild(el('div', 'kicker', 'Событие'));
-  c.appendChild(el('h2', null, card.title));
+// Уровень 2 — срок суда (informational: true). Тот же состав данных, но без
+// крупной даты и рамки: его не надо успевать соблюсти, он справочный.
+function renderInfoTermCard(card) {
+  const c = el('div', 'card info-card');
+  const head = el('div', 'info-head');
+  const title = el('span', 'info-title', card.title);
+  head.appendChild(title);
+  head.appendChild(el('span', 'badge info', 'справочно'));
+  c.appendChild(head);
 
-  if (card.status !== 'resolved') {
-    // Ветвь может дать нижнюю границу («не ранее …») либо только правило —
-    // тогда вместо даты прочерк, а формулировка идёт отдельной строкой.
-    // Состояние not_applicable — событие не наступает вовсе (решение отменено).
-    if (card.not_earlier_than) {
-      c.appendChild(el('div', 'deadline', `не ранее ${isoToRu(card.not_earlier_than)}`));
-    } else {
-      c.appendChild(el('div', 'deadline', '—'));
-      if (card.message) {
-        c.appendChild(el('div', card.status === 'not_applicable' ? 'warn' : 'hint', card.message));
-      }
-    }
-  } else {
-    c.appendChild(el('div', 'deadline', isoToRu(card.date)));
+  const line = el('div', 'info-line');
+  line.appendChild(el('span', 'info-date', card.deadline ? isoToRu(card.deadline) : '—'));
+  line.appendChild(el('span', 'norm', card.norm));
+  c.appendChild(line);
+
+  if (card.status === 'expired' && card.expired) {
+    const n = card.expired.days;
+    c.appendChild(el('div', 'hint', `Срок истёк ${n} ${pluralDays(n)} назад.`));
   }
-  c.appendChild(el('div', 'norm', card.norm));
-
-  if (opts.assumptionInvite) c.appendChild(opts.assumptionInvite);
-  if (card.note) c.appendChild(el('div', 'warn', card.note));
+  if (card.first_working_day) {
+    c.appendChild(el('div', 'hint', `Отсчёт рабочих дней с ${isoToRu(card.first_working_day)}`));
+  }
+  if (card.note) c.appendChild(el('div', 'hint', card.note));
+  if (card.calendar_warning) {
+    c.appendChild(
+      collapsedWarning('Календарь на этот год ещё не окончательный', [
+        el('div', null, card.calendar_warning.text),
+      ]),
+    );
+  }
   if (card.details) c.appendChild(renderDetails(card.details));
   return c;
+}
+
+// Уровень 3 — событие. Строкой текста, без карточки: вступление в силу не
+// дедлайн, успевать к нему нечего. Поля-уточнения, привязанные к событию,
+// остаются под строкой — иначе ветвь стала бы недоступной для ввода.
+function renderEvent(card, opts = {}) {
+  const box = el('div', 'event-line');
+
+  let text;
+  if (card.status === 'resolved') text = `Вступило в силу ${isoToRu(card.date)}`;
+  else if (card.not_earlier_than) text = `Вступит в силу не ранее ${isoToRu(card.not_earlier_than)}`;
+  else text = card.message ?? 'Дата вступления в силу пока не определена';
+
+  const head = el('div', 'event-head');
+  head.appendChild(el('span', card.status === 'resolved' ? 'event-text done' : 'event-text', text));
+  head.appendChild(el('span', 'norm', card.norm));
+  box.appendChild(head);
+
+  if (card.note) box.appendChild(el('div', 'hint', card.note));
+  if (card.calendar_warning) {
+    box.appendChild(
+      collapsedWarning('Календарь на этот год ещё не окончательный', [
+        el('div', null, card.calendar_warning.text),
+      ]),
+    );
+  }
+  if (card.details) box.appendChild(renderDetails(card.details));
+  if (opts.assumptionInvite) box.appendChild(opts.assumptionInvite);
+  return box;
 }
 
 // Поле-приглашение уточнить (одно из недостающих input).
@@ -510,11 +571,11 @@ function render() {
           invite.appendChild(prompt);
           opts.assumptionInvite = invite;
         }
-        root.appendChild(renderEventCard(card, opts));
+        root.appendChild(renderEvent(card, opts));
       } else if (card.kind === 'notice') {
         root.appendChild(renderNoticeCard(card));
       } else if (card.kind === 'event') {
-        const eventEl = renderEventCard(card);
+        const eventEl = renderEvent(card);
         appendFollowUpFields(eventEl, id, card);
         root.appendChild(eventEl);
       } else {
