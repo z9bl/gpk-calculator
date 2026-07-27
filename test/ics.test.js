@@ -11,6 +11,8 @@ import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } f
 
 const NOW = '2025-01-01T00:00:00Z'; // фиксируем DTSTAMP для детерминизма
 
+const byId = (nodes, id) => nodes.find((n) => n.id === id);
+
 const APPEAL = {
   title: 'Апелляционная жалоба',
   deadline: '2025-06-16',
@@ -296,7 +298,15 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_resolution_date: '2025-07-06',
   mirovoy_request_date: '2025-07-07',
   mirovoy_reasoned_date: '2025-07-15',
+  // Мотивированное апелляционное определение районного суда: открывает узел
+  // кассации по делам мировых судей, не требуя, чтобы срок апелляции истёк.
+  mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
 };
+
+// Дата расчёта для проверок полноты экспорта — раньше всех дедлайнов набора.
+// Истёкшие сроки в .ics не выгружаются (это отдельная проверка ниже), и если
+// вести проверку полноты от поздней даты, отсев по истечении скрывал бы узлы.
+const BEFORE_ALL_DEADLINES = '2025-07-01';
 
 test('реестр сроков собран из chain.js и покрывает все узлы с ics: true', () => {
   const withIcs = Object.values(TERM_REGISTRY).filter((t) => t.ics === true);
@@ -309,7 +319,7 @@ test('реестр сроков собран из chain.js и покрывает
 });
 
 test('каждый узел с ics: true попадает в скачиваемый файл', () => {
-  const view = buildView(ALL_BRANCHES_INPUTS, { today: '2026-01-15' });
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
   const terms = icsTermsFromView(view); // ровно тот путь, что у кнопки «Скачать»
   const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
 
@@ -341,7 +351,7 @@ test('каждый узел с ics: true попадает в скачиваем�
 });
 
 test('узлы с ics: false в файл не попадают', () => {
-  const view = buildView(ALL_BRANCHES_INPUTS, { today: '2026-01-15' });
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
   const exportedIds = new Set(
     icsTermsFromView(view).map((t) => view.cards.find((c) => c.title === t.title)?.id),
   );
@@ -376,4 +386,37 @@ test('надзор уходит в .ics с напоминаниями трёхм
   const ics = buildICS(terms, { referenceDate: '2026-07-26', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${sup.deadline.replace(/-/g, '')}`));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4); // 30/14/7/3
+});
+
+// --- Истёкшие сроки и отсечение прошлых напоминаний --------------------------
+
+test('истёкший срок в .ics не выгружается', () => {
+  const inputs = { reasoned_decision_date: '2025-03-11' }; // апелляция → 11.04.2025
+
+  // До дедлайна срок экспортируется.
+  const live = buildView(inputs, { today: '2025-04-01' });
+  assert.equal(byId(live.cards, 'appeal_general').status, 'computed');
+  const liveIcs = buildICS(icsTermsFromView(live), { referenceDate: '2025-04-01', now: NOW });
+  assert.ok(liveIcs.includes('DTSTART;VALUE=DATE:20250411'));
+
+  // После — не экспортируется вовсе: напоминать не о чем.
+  const expired = buildView(inputs, { today: '2025-04-20' });
+  assert.equal(byId(expired.cards, 'appeal_general').status, 'expired');
+  const terms = icsTermsFromView(expired);
+  assert.ok(!terms.some((t) => /Апелляционная жалоба/.test(t.title)));
+  const expiredIcs = buildICS(terms, { referenceDate: '2025-04-20', now: NOW });
+  assert.ok(!expiredIcs.includes('DTSTART;VALUE=DATE:20250411'));
+});
+
+test('все напоминания отсечены, но срок не истёк — событие остаётся в файле', () => {
+  // Апелляция 11.04.2025, напоминания за 14/7/3 дня → 28.03, 04.04, 08.04.
+  // Смотрим из 10.04: все напоминания в прошлом, а сам срок ещё идёт.
+  const view = buildView({ reasoned_decision_date: '2025-03-11' }, { today: '2025-04-10' });
+  const card = byId(view.cards, 'appeal_general');
+  assert.equal(card.status, 'computed', 'срок ещё не истёк');
+
+  const ics = buildICS(icsTermsFromView(view), { referenceDate: '2025-04-10', now: NOW });
+  assert.ok(ics.includes('DTSTART;VALUE=DATE:20250411'), 'событие должно остаться');
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 0, 'все напоминания отсечены');
 });

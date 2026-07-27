@@ -258,6 +258,20 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(
       el('div', 'miss', `Срок пропущен на ${days} ${pluralDays(days)}. Восстановление — ${card.overdue.norm}.`),
     );
+  } else if (card.status === 'expired') {
+    // Дедлайн прошёл, а даты подачи нет: факт пропуска не установлен, известно
+    // только, что срок истёк. Формулировка поэтому мягче, чем у 'missed'.
+    c.appendChild(el('div', 'deadline expired', isoToRu(card.deadline)));
+    c.appendChild(el('div', 'norm', card.norm));
+    const days = card.expired.days; // строгое сравнение — всегда не меньше 1
+    c.appendChild(
+      el(
+        'div',
+        'expired-note',
+        `Срок истёк ${days} ${pluralDays(days)} назад. Дата подачи не введена — ` +
+          'пропуск не подтверждён.',
+      ),
+    );
   } else if (card.status === 'not_applicable') {
     // Срока не возникает вовсе — вместо даты прочерк и причина, как у события
     // вступления в силу в том же состоянии.

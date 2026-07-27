@@ -58,6 +58,10 @@ export function icsTermsFromView(view) {
   for (const card of (view && view.cards) || []) {
     const meta = TERM_REGISTRY[card.id];
     if (!meta || meta.ics !== true || !card.deadline) continue;
+    // Истёкшие сроки не выгружаем: напоминать не о чем. Это не то же, что
+    // отсечение прошлых напоминаний по referenceDate — там срок ещё идёт, и
+    // событие в файле остаётся, просто без части будильников.
+    if (card.status === 'expired') continue;
     out.push({
       title: card.title,
       deadline: card.deadline,

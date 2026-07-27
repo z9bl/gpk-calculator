@@ -635,6 +635,56 @@ function independentNodes(source, today = null) {
   return { cards, incomplete };
 }
 
+// --- Истёкшие сроки ---------------------------------------------------------
+//
+// Срок истекает в 24:00 последнего дня (ч. 3 ст. 108), поэтому дедлайн «сегодня»
+// ещё не истёк — сравнение строгое.
+//
+// Отличать от статуса 'missed': тот появляется, когда введена дата фактической
+// подачи и она позже дедлайна — там установлен факт пропуска. Здесь факта нет,
+// известно только, что срок прошёл.
+//
+// Узел → input, которым подтверждается совершение действия. Если он введён,
+// срок по календарю больше не «висит»: подано вовремя или с пропуском —
+// разбирается по факту (статус 'missed'), а не по текущей дате. Узел, которого
+// в карте нет, подтвердить нечем — для него достаточно сравнения с датой.
+const ACTION_FACT_INPUT = {
+  appeal_general: 'appeal_filed_date',
+  cassation_ksoyu: 'cassation_filed_date',
+  cassation_vs: 'vs_cassation_filed_date',
+  protocol_remarks: 'protocol_remarks_filed_date',
+  simplified_reasoned_request: 'simplified_reasoned_request_date',
+  simplified_reasoned_making: 'simplified_reasoned_date',
+  simplified_appeal: 'simplified_appeal_filed_date',
+  default_judgment_cancellation_request: 'default_judgment_cancellation_request_date',
+  default_judgment_appeal: 'default_judgment_appeal_filed_date',
+  mirovoy_reasoned_request: 'mirovoy_request_date',
+  mirovoy_reasoned_making: 'mirovoy_reasoned_date',
+  mirovoy_appeal: 'mirovoy_appeal_ruling_reasoned_date',
+  mirovoy_cassation: 'cassation_filed_date',
+};
+
+/**
+ * Помечает рассчитанные сроки, дедлайн которых уже прошёл, а факта подачи нет.
+ * Меняет карточки на месте: пометка зависит только от текущей даты и ничего в
+ * расчёте не трогает.
+ * @param {object[]} cards
+ * @param {object} inputs
+ * @param {string|null} today — 'YYYY-MM-DD'; без неё пометки нет.
+ */
+function markExpired(cards, inputs, today) {
+  if (today == null) return cards;
+  for (const card of cards) {
+    if (card.kind !== 'term' || card.status !== 'computed' || !card.deadline) continue;
+    const factInput = ACTION_FACT_INPUT[card.id];
+    if (factInput && inputs?.[factInput] != null) continue;
+    if (card.deadline >= today) continue; // ч. 3 ст. 108 — истекает в 24:00
+    card.status = 'expired';
+    card.expired = { days: daysBetween(card.deadline, today) };
+  }
+  return cards;
+}
+
 // --- Публичная сборка -------------------------------------------------------
 
 /**
@@ -659,7 +709,7 @@ export function buildView(inputs, options = {}) {
     // рабочих днях от неё не зависят — показываем их и здесь.
     const independent = independentNodes(inputs ?? {}, today);
     return {
-      cards: independent.cards,
+      cards: markExpired(independent.cards, inputs ?? {}, today),
       incomplete: [
         incompleteNode(
           'appeal_general',
@@ -679,5 +729,5 @@ export function buildView(inputs, options = {}) {
   const { cards: downCards, incomplete } = buildDownstream(inputs, today);
   cards.push(...downCards);
 
-  return { cards, incomplete, stubs };
+  return { cards: markExpired(cards, inputs, today), incomplete, stubs };
 }
