@@ -16,7 +16,7 @@ function monthTerm(value, offsetStart = 1, weekendShift = true) {
   };
 }
 
-test('1. Пример п. 12 ПП ВС № 17: 02.06.2021 + 3 месяца → 02.09.2021', () => {
+test('1. Пример п. 12 ПП ВС РФ от 22.06.2021 № 17: 02.06.2021 + 3 месяца → 02.09.2021', () => {
   const r = computeDeadline(monthTerm(3), '2021-06-02');
   // offset_start (ч. 3 ст. 107) + расчёт месяца дают 02.09, а НЕ 03.09.
   assert.equal(r.raw_deadline, '2021-09-02');

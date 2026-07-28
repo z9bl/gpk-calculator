@@ -7,6 +7,19 @@
 
 const GOOGLE_RENDER = 'https://calendar.google.com/calendar/render';
 
+// Что означает дата на карточке. Без подписи «13.08.2026» читается неоднозначно:
+// как дата вступления в силу или как начало течения срока.
+export const DEADLINE_CAPTION = 'последний день подачи';       // срок заявителя
+export const DEADLINE_CAPTION_COURT = 'последний день';        // срок суда
+
+/**
+ * Название события в календаре. В календаре видно только название, поэтому
+ * пояснение уходит в него: «Апелляционная жалоба — последний день подачи».
+ */
+export function calendarEventTitle(title) {
+  return `${title} — ${DEADLINE_CAPTION}`;
+}
+
 function compact(iso) {
   return iso.replace(/-/g, ''); // YYYY-MM-DD → YYYYMMDD
 }

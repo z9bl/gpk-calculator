@@ -12,6 +12,7 @@
 
 import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from './calendar.js';
 import { addMonths } from './engine.js';
+import { calendarEventTitle } from './export-links.js';
 import {
   APPEAL_GENERAL,
   CASSATION_KSOYU,
@@ -229,7 +230,7 @@ function eventLines(term, index, stamp, referenceDate, token) {
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${compact(term.deadline)}`,
     `DTEND;VALUE=DATE:${compact(addDaysISO(term.deadline, 1))}`, // конец исключающий
-    `SUMMARY:${esc(term.title)}`,
+    `SUMMARY:${esc(calendarEventTitle(term.title))}`,
     `DESCRIPTION:${esc(`Норма: ${term.norm}`)}`,
     'TRANSP:TRANSPARENT',
   ];
