@@ -55,21 +55,32 @@ export const TERM_REGISTRY = Object.fromEntries(
  * @returns {Array<object>} сроки для buildICS.
  */
 export function icsTermsFromView(view) {
+  return exportableCards(view).map(({ card, meta }) => ({
+    title: card.title,
+    deadline: card.deadline,
+    norm: card.norm,
+    ics: true,
+    duration: card.duration || meta.duration,
+  }));
+}
+
+/**
+ * Карточки, которые имеет смысл переносить в календарь. Общий отбор для всех
+ * способов переноса — .ics, ссылки в Google Календарь и текстового списка,
+ * чтобы они не расходились между собой.
+ * @param {{cards: object[]}} view
+ * @returns {Array<{card: object, meta: object}>}
+ */
+export function exportableCards(view) {
   const out = [];
   for (const card of (view && view.cards) || []) {
     const meta = TERM_REGISTRY[card.id];
     if (!meta || meta.ics !== true || !card.deadline) continue;
-    // Истёкшие сроки не выгружаем: напоминать не о чем. Это не то же, что
-    // отсечение прошлых напоминаний по referenceDate — там срок ещё идёт, и
-    // событие в файле остаётся, просто без части будильников.
-    if (card.status === 'expired') continue;
-    out.push({
-      title: card.title,
-      deadline: card.deadline,
-      norm: card.norm,
-      ics: true,
-      duration: card.duration || meta.duration,
-    });
+    // Истёкшие и пропущенные сроки не переносим: напоминать не о чем. Это не то
+    // же, что отсечение прошлых напоминаний по referenceDate — там срок ещё
+    // идёт, и событие в файле остаётся, просто без части будильников.
+    if (card.status === 'expired' || card.status === 'missed') continue;
+    out.push({ card, meta });
   }
   return out;
 }

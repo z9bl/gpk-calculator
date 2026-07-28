@@ -2,7 +2,8 @@
 // логики: приложение только читает даты, вызывает buildView и рисует результат.
 
 import { buildView, ACTION_FACT_INPUT } from '../src/views.js';
-import { buildICS, icsTermsFromView } from '../src/ics.js';
+import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
+import { googleCalendarUrl, termsAsText } from '../src/export-links.js';
 import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
 import { SITUATIONS, DEFAULT_SITUATION, situationById } from '../src/situations.js';
 
@@ -98,6 +99,9 @@ const INPUT_HINTS_EXPIRED = {
 
 // Поля, чей срок уже истёк: заполняется в render() по статусам карточек.
 const expiredFields = new Set();
+
+// Узлы, которые имеет смысл переносить в календарь: тот же отбор, что у .ics.
+const exportableIds = new Set();
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
 const GENERAL_CHAIN_NODES = new Set([
@@ -335,7 +339,18 @@ function renderTermCard(card, opts = {}) {
   if (card.alternative) c.appendChild(renderAlternative(card));
 
   if (card.details) c.appendChild(renderDetails(card.details));
+  if (exportableIds.has(card.id)) c.appendChild(googleCalendarLink(card));
   return c;
+}
+
+// Ссылка на предзаполненную форму события в Google Календаре — по одной на срок.
+// Открывается в новой вкладке: расчёт на странице должен остаться на месте.
+function googleCalendarLink(card) {
+  const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
+  a.href = googleCalendarUrl({ title: card.title, deadline: card.deadline, norm: card.norm });
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
 }
 
 // Предупреждение в одну строку; полный текст раскрывается по клику.
@@ -513,9 +528,76 @@ function renderIncompleteNode(node) {
 let currentIcsTerms = []; // рассчитанные сроки с ics:true для кнопки «Скачать»
 
 
-function updateDownloadButton() {
-  const btn = document.getElementById('download-ics');
-  if (btn) btn.disabled = currentIcsTerms.length === 0;
+function updateExportButtons() {
+  const empty = currentIcsTerms.length === 0;
+  for (const id of ['download-ics', 'copy-terms', 'print-terms']) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = empty;
+  }
+}
+
+// Текстовый список в буфер обмена. clipboard.writeText есть не везде (и требует
+// защищённого соединения), поэтому при отказе — запасной путь через выделение
+// временного поля.
+async function copyTerms() {
+  if (currentIcsTerms.length === 0) return;
+  const text = termsAsText(currentIcsTerms, {
+    today,
+    situation: situationById(state.situation).label,
+  });
+
+  let ok = true;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    ok = copyViaSelection(text);
+  }
+  showCopyStatus(ok ? 'Скопировано' : 'Не удалось скопировать');
+}
+
+function copyViaSelection(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
+let copyStatusTimer = null;
+function showCopyStatus(message) {
+  const box = document.getElementById('copy-status');
+  if (!box) return;
+  box.textContent = message;
+  clearTimeout(copyStatusTimer);
+  copyStatusTimer = setTimeout(() => {
+    box.textContent = '';
+  }, 3000);
+}
+
+// Печатная версия: заголовок с датой расчёта — остальное убирает CSS печати.
+function printTerms() {
+  if (currentIcsTerms.length === 0) return;
+  window.print();
+}
+
+function renderPrintHeader(situation) {
+  const box = document.getElementById('print-header');
+  if (!box) return;
+  box.textContent = '';
+  box.appendChild(el('div', 'print-title', 'Процессуальные сроки по ГПК РФ'));
+  box.appendChild(
+    el('div', 'print-meta', `${situation.label} · расчёт от ${isoToRu(today)}`),
+  );
 }
 
 const ICS_FILENAME = 'gpk-sroki.ics';
@@ -597,10 +679,12 @@ function render() {
     if (field) expiredFields.add(field);
   }
 
-  currentIcsTerms = icsTermsFromView({
-    cards: view.cards.filter((c) => visible.has(c.id)),
-  });
-  updateDownloadButton();
+  const visibleCards = view.cards.filter((c) => visible.has(c.id));
+  currentIcsTerms = icsTermsFromView({ cards: visibleCards });
+  exportableIds.clear();
+  for (const { card } of exportableCards({ cards: visibleCards })) exportableIds.add(card.id);
+  updateExportButtons();
+  renderPrintHeader(situation);
 
   renderSituationSwitch(situation);
   renderPrimaryField(situation);
@@ -1071,6 +1155,10 @@ attachDateMask(reasoned, (input, parsed) =>
 
 const downloadBtn = document.getElementById('download-ics');
 if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
+const copyBtn = document.getElementById('copy-terms');
+if (copyBtn) copyBtn.addEventListener('click', copyTerms);
+const printBtn = document.getElementById('print-terms');
+if (printBtn) printBtn.addEventListener('click', printTerms);
 
 renderStubs();
 render();

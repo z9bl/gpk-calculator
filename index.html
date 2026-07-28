@@ -57,15 +57,34 @@
 
       .empty { color: var(--muted); font-size: 15px; padding: 8px 2px; }
 
-      .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-      #download-ics {
+      .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+      .toolbar button {
         font: inherit; font-weight: 600; font-size: 14px;
         color: #fff; background: var(--accent); border: none;
         padding: 9px 16px; border-radius: 8px; cursor: pointer;
       }
-      #download-ics:hover:not(:disabled) { background: #1a52a6; }
-      #download-ics:disabled { background: #c3ccd8; cursor: not-allowed; }
+      .toolbar button:hover:not(:disabled) { background: #1a52a6; }
+      .toolbar button:disabled { background: #c3ccd8; cursor: not-allowed; }
+      .copy-status { color: var(--ok); font-size: 13px; font-weight: 600; }
+
+      /* Файл .ics — запасной способ: на iOS система его почти не принимает. */
+      .toolbar-secondary { margin: 0 0 18px; }
+      .link-button {
+        font: inherit; font-size: 13px; color: var(--accent);
+        background: none; border: none; padding: 0; cursor: pointer;
+        text-decoration: underline;
+      }
+      .link-button:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
       .toolbar-hint { color: var(--muted); font-size: 13px; }
+
+      /* Ссылка «в Google Календарь» у каждого рассчитанного срока. */
+      .to-calendar {
+        display: inline-block; margin-top: 10px;
+        font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600;
+      }
+      .to-calendar:hover { text-decoration: underline; }
+
+      .print-only { display: none; }
 
       .situation-switch { margin-bottom: 16px; }
       .situations { border: none; margin: 0; padding: 0; }
@@ -219,6 +238,46 @@
                padding: 14px; border-radius: 10px; font-size: 14px; }
       .fatal-detail { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
                font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+      /* Печать: только перечень сроков — заголовок с датой расчёта, названия,
+         даты и нормы. Ввод, переключатели, кнопки и уточнения не печатаются. */
+      @media print {
+        body { background: #fff; color: #000; font-size: 12pt; }
+        .wrap { max-width: none; padding: 0; }
+        header h1,
+        header p,
+        .related-stubs,
+        .situation-switch,
+        section.primary,
+        .toolbar,
+        .toolbar-secondary,
+        #situation-inputs,
+        #other-terms,
+        #stubs,
+        .note,
+        .invite,
+        .to-calendar,
+        details.more,
+        .empty { display: none !important; }
+
+        .print-only { display: block; }
+        #print-header { margin: 0 0 16px; }
+        #print-header .print-title { font-size: 14pt; font-weight: 700; }
+        #print-header .print-meta { color: #444; font-size: 11pt; }
+
+        .card, .event-line {
+          border: none; border-bottom: 1px solid #999; border-radius: 0;
+          padding: 8px 0; margin: 0; background: #fff;
+          break-inside: avoid; page-break-inside: avoid;
+        }
+        .card .kicker { display: none; }
+        .deadline { font-size: 14pt; }
+        .deadline.expired, .deadline.missed { color: #000; }
+        .norm { color: #333; }
+        details.warn.collapsible { border: none; background: #fff; padding: 0; color: #000; }
+        details.warn.collapsible > summary { list-style: none; font-weight: 400; }
+        .badge { border: 1px solid #999; background: #fff !important; color: #000 !important; }
+      }
     </style>
 
     <script type="importmap">
@@ -250,10 +309,17 @@
 
       <section class="other-terms" id="situation-inputs"></section>
 
-      <div class="toolbar">
-        <button id="download-ics" type="button" disabled>Скачать .ics</button>
-        <span class="toolbar-hint">Экспортируются рассчитанные сроки выбранной ситуации с напоминаниями.</span>
+      <div class="toolbar" id="toolbar">
+        <button id="copy-terms" type="button" disabled>Скопировать сроки</button>
+        <button id="print-terms" type="button" disabled>Распечатать</button>
+        <span class="copy-status" id="copy-status" role="status" aria-live="polite"></span>
       </div>
+      <p class="toolbar-secondary">
+        <button id="download-ics" type="button" class="link-button" disabled>Скачать .ics</button>
+        <span class="toolbar-hint">— файл для Outlook и других календарей</span>
+      </p>
+
+      <div class="print-only" id="print-header"></div>
 
       <main id="results">
         <p class="empty">Введите дату мотивированного решения — появятся рассчитанные сроки.</p>
