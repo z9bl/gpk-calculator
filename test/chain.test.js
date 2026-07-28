@@ -119,7 +119,7 @@ test('5b. alternative_calculation: reasoned > ruling → обе даты, prefer
   // Основная дата — по закону, от мотивированного определения (10.06 + 3 мес).
   assert.equal(r.cassation.anchor, '2025-06-10');
   assert.equal(r.cassation.deadline, '2025-09-10');
-  // Альтернатива — по п. 12 ПП ВС № 17, от даты принятия (02.06 + 3 мес).
+  // Альтернатива — по п. 12 ПП ВС РФ от 22.06.2021 № 17, от даты принятия (02.06 + 3 мес).
   assert.ok(r.cassation.alternative);
   assert.equal(r.cassation.alternative.anchor, '2025-06-02');
   assert.equal(r.cassation.alternative.deadline, '2025-09-02');
@@ -180,7 +180,7 @@ test('новая редакция: подача после 01.09.2024 → отс
   assert.equal(r.cassation.version_id, 'from_135fz');
   assert.equal(r.cassation.anchor, '2024-06-10'); // мотивированное определение
   assert.equal(r.cassation.deadline, '2024-09-10');
-  assert.ok(r.cassation.alternative); // конфликт с ПП ВС № 17 существует
+  assert.ok(r.cassation.alternative); // конфликт с ПП ВС РФ от 22.06.2021 № 17 существует
   assert.equal(r.cassation.alternative.deadline, '2024-09-02');
 });
 
@@ -471,7 +471,7 @@ test('независимые сроки считаются без даты мо�
 });
 
 // --- Упрощённое производство (глава 21.1 ГПК) --------------------------------
-// Все сроки в рабочих днях (п. 16–17 ПП ВС № 16). Резолютивная часть подписана
+// Все сроки в рабочих днях (п. 16–17 ПП ВС РФ от 22.06.2021 № 16). Резолютивная часть подписана
 // 22.12.2025 — сроки пересекают январские каникулы.
 
 const SIMPL = { simplified_resolution_date: '2025-12-22' };

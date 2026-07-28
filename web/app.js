@@ -3,7 +3,13 @@
 
 import { buildView, ACTION_FACT_INPUT } from '../src/views.js';
 import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
-import { googleCalendarUrl, termsAsText } from '../src/export-links.js';
+import {
+  googleCalendarUrl,
+  termsAsText,
+  calendarEventTitle,
+  DEADLINE_CAPTION,
+  DEADLINE_CAPTION_COURT,
+} from '../src/export-links.js';
 import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
 import { SITUATIONS, DEFAULT_SITUATION, situationById } from '../src/situations.js';
 
@@ -82,7 +88,7 @@ const INPUT_HINTS = {
     'После подачи заявления у мирового судьи есть 10 рабочих дней на составление решения ' +
     '(ч. 5 ст. 199)',
   mirovoy_reasoned_date:
-    'Если решение составлено, срок на апелляцию считается от этой даты (п. 17 ПП ВС № 16)',
+    'Если решение составлено, срок на апелляцию считается от этой даты (п. 17 ПП ВС РФ от 22.06.2021 № 16)',
   vs_ruling_date: 'Надзор в Президиум ВС — 3 месяца (ч. 2 ст. 391.2). Не путать с определением КСОЮ',
   mirovoy_appeal_ruling_reasoned_date:
     'Если дело прошло апелляцию в районном суде — от неё считается кассационный срок',
@@ -253,6 +259,12 @@ function renderTermCard(card, opts = {}) {
   }
   c.appendChild(h);
 
+  // Что означает дата: без подписи «13.08.2026» читается неоднозначно — как
+  // дата вступления в силу или как начало течения срока.
+  if (card.status !== 'not_applicable') {
+    c.appendChild(el('div', 'deadline-caption', DEADLINE_CAPTION));
+  }
+
   if (card.status === 'missed') {
     c.appendChild(el('div', 'deadline missed', isoToRu(card.deadline)));
     c.appendChild(el('div', 'norm', card.norm));
@@ -347,7 +359,11 @@ function renderTermCard(card, opts = {}) {
 // Открывается в новой вкладке: расчёт на странице должен остаться на месте.
 function googleCalendarLink(card) {
   const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
-  a.href = googleCalendarUrl({ title: card.title, deadline: card.deadline, norm: card.norm });
+  a.href = googleCalendarUrl({
+    title: calendarEventTitle(card.title),
+    deadline: card.deadline,
+    norm: card.norm,
+  });
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
   return a;
@@ -426,6 +442,7 @@ function renderInfoTermCard(card) {
   c.appendChild(head);
 
   const line = el('div', 'info-line');
+  line.appendChild(el('span', 'deadline-caption inline', `${DEADLINE_CAPTION_COURT}:`));
   line.appendChild(
     el(
       'span',
@@ -470,6 +487,14 @@ function renderEvent(card, opts = {}) {
   head.appendChild(el('span', card.status === 'resolved' ? 'event-text done' : 'event-text', text));
   head.appendChild(el('span', 'norm', card.norm));
   box.appendChild(head);
+
+  // Дата события читается иначе, чем дедлайн: это не «успеть до», а момент,
+  // с которого постановление действует.
+  if (card.status === 'resolved') {
+    box.appendChild(
+      el('div', 'hint', 'С этой даты постановление считается вступившим в законную силу.'),
+    );
+  }
 
   if (card.note) box.appendChild(el('div', 'hint', card.note));
   if (card.calendar_warning) {

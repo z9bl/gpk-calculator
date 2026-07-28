@@ -66,6 +66,14 @@
       .toolbar button:hover:not(:disabled) { background: #1a52a6; }
       .toolbar button:disabled { background: #c3ccd8; cursor: not-allowed; }
       .copy-status { color: var(--ok); font-size: 13px; font-weight: 600; }
+      .toolbar-note { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+
+      /* Что означает дата на карточке — над самой датой. */
+      .deadline-caption {
+        font-size: 12px; letter-spacing: .02em; text-transform: uppercase;
+        color: var(--muted); margin-top: 6px;
+      }
+      .deadline-caption.inline { margin-top: 0; text-transform: none; letter-spacing: 0; }
 
       /* Файл .ics — запасной способ: на iOS система его почти не принимает. */
       .toolbar-secondary { margin: 0 0 18px; }
@@ -250,6 +258,7 @@
         .situation-switch,
         section.primary,
         .toolbar,
+        .toolbar-note,
         .toolbar-secondary,
         #situation-inputs,
         #other-terms,
@@ -314,6 +323,9 @@
         <button id="print-terms" type="button" disabled>Распечатать</button>
         <span class="copy-status" id="copy-status" role="status" aria-live="polite"></span>
       </div>
+      <p class="toolbar-note">
+        Перенос в календарь ставит сроки с напоминаниями заранее — чтобы не пропустить дату.
+      </p>
       <p class="toolbar-secondary">
         <button id="download-ics" type="button" class="link-button" disabled>Скачать .ics</button>
         <span class="toolbar-hint">— файл для Outlook и других календарей</span>

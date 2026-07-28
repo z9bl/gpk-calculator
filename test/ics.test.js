@@ -82,7 +82,9 @@ test('4. Файл проходит валидацию формата', () => {
 
   // Событие на весь день в дату дедлайна; норма в описании.
   assert.ok(lines.includes('DTSTART;VALUE=DATE:20250616'));
-  assert.ok(lines.includes('SUMMARY:Апелляционная жалоба'));
+  // В названии события — пояснение, что означает дата: в календаре видно
+  // только название.
+  assert.ok(lines.includes('SUMMARY:Апелляционная жалоба — последний день подачи'));
   assert.ok(lines.some((l) => l.startsWith('DESCRIPTION:Норма: ч. 1 ст. 321')));
 });
 
@@ -509,4 +511,20 @@ test('UID различаются у двух выгрузок с одинако�
     buildICS([APPEAL, { ...APPEAL, title: 'Другой срок' }], { referenceDate: '2025-05-01', now: NOW }),
   );
   assert.equal(new Set(many).size, many.length);
+});
+
+test('в названии события указано, что дата — последний день подачи', () => {
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
+  const terms = icsTermsFromView(view);
+  const ics = buildICS(terms, { referenceDate: BEFORE_ALL_DEADLINES, now: NOW });
+  const unfolded = ics.replace(/\r\n /g, '');
+
+  const summaries = [...unfolded.matchAll(/^SUMMARY:(.+)$/gm)].map((m) => m[1]);
+  assert.equal(summaries.length, terms.length);
+  for (const s of summaries) {
+    assert.ok(s.endsWith(' — последний день подачи'), `без пояснения: ${s}`);
+  }
+  // Сам список сроков остаётся с чистыми названиями — пояснение только в
+  // названии события календаря, где кроме него ничего не видно.
+  for (const t of terms) assert.ok(!t.title.includes('последний день'));
 });
