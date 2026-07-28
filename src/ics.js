@@ -2,12 +2,13 @@
 //
 // Экспортируются только сроки с ics: true. Событие — на весь день в дату
 // дедлайна; в нём название срока, дата и норма (в описании). Напоминания —
-// по правилам раздела 8: 1 месяц → за 14/7/3 дня; 3 месяца → за 30/14/7/3 дня;
-// 3 года (предъявление ИЛ) → за 3 месяца/1 месяц/7 дней. Смещения в месяцах
-// вычитаются календарно с клампингом на последний день месяца (как addMonths
-// движка, в обратную сторону); смещение в 7 дней — календарных, не рабочих.
-// Дата напоминания на нерабочий день сдвигается НАЗАД, к предыдущему рабочему
-// (через календарный модуль). Напоминание раньше даты расчёта не создаётся.
+// по правилам раздела 8, не больше двух на событие и от ближайшего к дедлайну
+// к более раннему (календари обрезают список молча, см. reminderOffsets).
+// Смещения в месяцах вычитаются календарно с клампингом на последний день
+// месяца (как addMonths движка, в обратную сторону); смещения в днях —
+// календарные, кроме сроков в рабочих днях. Дата напоминания на нерабочий день
+// сдвигается НАЗАД, к предыдущему рабочему (через календарный модуль).
+// Напоминание раньше даты расчёта не создаётся.
 
 import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from './calendar.js';
 import { addMonths } from './engine.js';
@@ -75,27 +76,29 @@ export function icsTermsFromView(view) {
 
 // Правила напоминаний (раздел 8 SPEC.md) по длительности срока: смещения до
 // дедлайна, каждое со своей единицей (день — календарный, месяц — с клампингом).
+//
+// Не больше двух на событие: календари обрезают список молча и отбрасывают
+// именно последние — ближайшие к дедлайну и самые нужные (iOS показывает два,
+// Outlook одно, проверено на устройствах). Поэтому смещения перечислены от
+// ближайшего к дедлайну к более раннему: если календарь оставит одно, останется
+// то, которое важнее.
 function reminderOffsets(duration) {
   if (duration && duration.unit === 'month' && duration.value === 1) {
     return [
-      { unit: 'day', value: 14 },
-      { unit: 'day', value: 7 },
       { unit: 'day', value: 3 },
+      { unit: 'day', value: 7 },
     ];
   }
   if (duration && duration.unit === 'month' && duration.value === 3) {
     return [
-      { unit: 'day', value: 30 },
-      { unit: 'day', value: 14 },
-      { unit: 'day', value: 7 },
       { unit: 'day', value: 3 },
+      { unit: 'day', value: 14 },
     ];
   }
   if (duration && duration.unit === 'year' && duration.value === 3) {
     return [
-      { unit: 'month', value: 3 },
-      { unit: 'month', value: 1 },
       { unit: 'day', value: 7 },
+      { unit: 'month', value: 1 },
     ];
   }
   // Сроки в рабочих днях: смещения тоже в рабочих днях — календарное смещение
@@ -105,16 +108,15 @@ function reminderOffsets(duration) {
       case 3: // заявление мировому судье при явке (п. 1 ч. 4 ст. 199)
         return [{ unit: 'working_day', value: 1 }];
       case 5: // замечания на протокол, заявление по упрощённому производству
-        return [{ unit: 'working_day', value: 2 }];
       case 7: // заявление об отмене заочного решения (ч. 1 ст. 237)
         return [
-          { unit: 'working_day', value: 3 },
           { unit: 'working_day', value: 1 },
+          { unit: 'working_day', value: 2 },
         ];
       case 15: // частная жалоба, апелляция по упрощённому, заявление без явки
         return [
-          { unit: 'working_day', value: 7 },
           { unit: 'working_day', value: 3 },
+          { unit: 'working_day', value: 7 },
         ];
       default:
         return [];
@@ -200,10 +202,19 @@ function reminderDates(term, referenceDate) {
   return [...new Set(out)]; // после сдвига даты могут совпасть
 }
 
-function eventLines(term, index, stamp, referenceDate) {
+// Метка выгрузки для UID. Без неё UID складывался из даты и порядкового номера,
+// и расчёты по разным делам с совпадающими датами перезаписывали друг друга в
+// календаре: два файла с апелляцией на одну дату давали одно событие.
+function exportToken() {
+  const rnd = globalThis.crypto?.randomUUID?.();
+  if (rnd) return rnd.replace(/-/g, '').slice(0, 12);
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function eventLines(term, index, stamp, referenceDate, token) {
   const lines = [
     'BEGIN:VEVENT',
-    `UID:${compact(term.deadline)}-${index}@gpk-calculator`,
+    `UID:${compact(term.deadline)}-${index}-${token}@gpk-calculator`,
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${compact(term.deadline)}`,
     `DTEND;VALUE=DATE:${compact(addDaysISO(term.deadline, 1))}`, // конец исключающий
@@ -246,8 +257,9 @@ export function buildICS(terms, options = {}) {
   ];
 
   const exported = (terms || []).filter((t) => t && t.ics === true);
+  const token = exportToken(); // одна метка на выгрузку — события файла связаны
   exported.forEach((term, i) => {
-    lines.push(...eventLines(term, i, stamp, referenceDate));
+    lines.push(...eventLines(term, i, stamp, referenceDate, token));
   });
 
   lines.push('END:VCALENDAR');
