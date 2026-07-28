@@ -93,22 +93,22 @@ test('1. Сроки с ics: false в файл не попадают', () => {
 });
 
 test('2. Напоминание, выпавшее на нерабочий день, сдвинуто назад', () => {
-  // deadline 16.06.2025, срок 1 мес → напоминания за 14/7/3 дня: 02.06, 09.06, 13.06.
+  // deadline 16.06.2025, срок 1 мес → напоминания за 3 и 7 дней: 13.06 и 09.06.
   // 13.06.2025 — нерабочий (перенос 08.03→13.06), 12.06 — праздник → сдвиг к 11.06.
   const ics = buildICS([APPEAL], { referenceDate: '2025-05-01', now: NOW });
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250611T090000Z'), 'сдвинуто на 11.06 (пятница→среда рабочий)');
   assert.ok(!ics.includes('20250613T090000Z'), 'исходная нерабочая дата не должна остаться');
-  // рабочие напоминания не сдвигаются
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250602T090000Z'));
+  // рабочее напоминание не сдвигается
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250609T090000Z'));
 });
 
 test('3. Напоминание раньше даты расчёта не создаётся', () => {
-  // Дата расчёта 05.06.2025: напоминание за 14 дней (02.06) — в прошлом, отсекается.
-  const ics = buildICS([APPEAL], { referenceDate: '2025-06-05', now: NOW });
-  assert.ok(!ics.includes('20250602T090000Z'), 'напоминание до даты расчёта не создаётся');
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250609T090000Z'), 'более позднее — остаётся');
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250611T090000Z'));
+  // Дата расчёта 10.06.2025: напоминание за 7 дней (09.06) — в прошлом, отсекается;
+  // за 3 дня (13.06 → 11.06 после сдвига с нерабочего) — остаётся.
+  const ics = buildICS([APPEAL], { referenceDate: '2025-06-10', now: NOW });
+  assert.ok(!ics.includes('20250609T090000Z'), 'напоминание до даты расчёта не создаётся');
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20250611T090000Z'), 'более позднее — остаётся');
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 1);
 });
 
 test('интеграция: computeChain → icsTermsFromChain → buildICS (обжаловано)', () => {
@@ -170,24 +170,24 @@ const IL_TERM = {
   duration: { value: 3, unit: 'year' },
 };
 
-test('1. срок в годах: все три напоминания создаются на верных датах', () => {
+test('1. срок в годах: оба напоминания создаются на верных датах', () => {
   const ics = buildICS([IL_TERM], { referenceDate: '2025-01-01', now: NOW });
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280410T090000Z')); // 3 мес
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280609T090000Z')); // 1 мес, сдвинут с 10.06 (сб)
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280703T090000Z')); // 7 дней
-  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 3);
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20280609T090000Z')); // 1 мес, сдвинут с 10.06 (сб)
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
 });
 
-test('2. смещение в месяцах клампится: 31.05.2027 - 3 мес = 28.02.2027 (в феврале нет 31 числа)', () => {
-  // Клампинг, независимо от переноса выходного (та же логика, что addMonths).
+test('2. смещение в месяцах клампится на последний день короткого месяца', () => {
+  // Сама механика клампинга (та же логика, что addMonths), на несколько месяцев.
   assert.equal(toISODate(addMonths('2027-05-31', -3)), '2027-02-28');
+  assert.equal(toISODate(addMonths('2027-05-31', -1)), '2027-04-30');
 
-  // 28.02.2027 — воскресенье, поэтому итоговый триггер сдвинут назад на
-  // рабочий день (26.02.2027, пятница; 27.02 — суббота).
+  // Правило годового срока — за месяц до дедлайна: 31.05.2027 − 1 мес = 30.04.2027
+  // (в апреле нет 31 числа), это пятница — сдвигать не нужно.
   const term = { ...IL_TERM, deadline: '2027-05-31' };
   const ics = buildICS([term], { referenceDate: '2025-01-01', now: NOW });
-  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20270226T090000Z'));
-  assert.ok(!ics.includes('20270228T090000Z'), 'нерабочая дата 28.02 не должна остаться');
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20270430T090000Z'));
+  assert.ok(!ics.includes('20270531T090000Z'), 'напоминание не совпадает с дедлайном');
 });
 
 test('3. напоминание, выпавшее на нерабочий день, сдвинуто назад', () => {
@@ -230,10 +230,11 @@ const COMPLAINT_TERM = {
   duration: { value: 15, unit: 'working_day' },
 };
 
-test('для 5-дневного срока создаётся ровно одно напоминание (за 2 рабочих дня)', () => {
+test('для 5-дневного срока создаются два напоминания: за 1 и за 2 рабочих дня', () => {
   const ics = buildICS([REMARKS_TERM], { referenceDate: '2025-12-29', now: NOW });
-  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 1);
-  // 14.01 → 13.01 (1) → 12.01 (2)
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
+  // 14.01 → 13.01 (1 рабочий день) → 12.01 (2 рабочих дня)
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260113T090000Z'));
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260112T090000Z'));
 });
 
@@ -246,8 +247,9 @@ test('срок, пересекающий январские каникулы: н
   const triggers = [...ics.matchAll(/TRIGGER;VALUE=DATE-TIME:(\d{4})(\d{2})(\d{2})T/g)].map(
     (m) => `${m[1]}-${m[2]}-${m[3]}`,
   );
-  // 15.01 − 7 рабочих = 25.12.2025 (через каникулы); 15.01 − 3 рабочих = 12.01.2026.
-  assert.deepEqual(triggers, ['2025-12-25', '2026-01-12']);
+  // 15.01 − 3 рабочих = 12.01.2026; 15.01 − 7 рабочих = 25.12.2025 (через каникулы).
+  // Порядок в файле — от ближайшего к дедлайну к более раннему.
+  assert.deepEqual(triggers, ['2026-01-12', '2025-12-25']);
 
   for (const t of triggers) {
     assert.ok(t >= referenceDate, `напоминание ${t} не раньше даты расчёта`);
@@ -376,7 +378,7 @@ test('длительность берётся из карточки: 15 рабо
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
 });
 
-test('надзор уходит в .ics с напоминаниями трёхмесячного срока (30/14/7/3)', () => {
+test('надзор уходит в .ics с напоминаниями трёхмесячного срока (за 3 и 14 дней)', () => {
   const view = buildView({ vs_ruling_date: '2027-09-01' }, { today: '2026-07-26' });
   const terms = icsTermsFromView(view);
   const sup = terms.find((t) => t.title.includes('Надзорная'));
@@ -385,7 +387,7 @@ test('надзор уходит в .ics с напоминаниями трёхм
 
   const ics = buildICS(terms, { referenceDate: '2026-07-26', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${sup.deadline.replace(/-/g, '')}`));
-  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4); // 30/14/7/3
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
 });
 
 // --- Истёкшие сроки и отсечение прошлых напоминаний --------------------------
@@ -457,4 +459,54 @@ test('свёртка строк не разрывает символ попол�
   for (const title of titles) {
     assert.ok(unfolded.includes(`SUMMARY:${title}`), `после развёртки потерян SUMMARY: ${title}`);
   }
+});
+
+// --- Ограничение числа напоминаний и уникальность UID ------------------------
+
+test('на событие не больше двух напоминаний', () => {
+  // Календари обрезают список молча (iOS показывает два, Outlook одно), поэтому
+  // правил не должно быть больше двух ни у одной длительности.
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
+  const ics = buildICS(icsTermsFromView(view), { referenceDate: BEFORE_ALL_DEADLINES, now: NOW });
+
+  const events = ics.split('BEGIN:VEVENT').slice(1);
+  assert.ok(events.length >= 10, `в наборе ${events.length} событий — маловато для проверки`);
+  for (const ev of events) {
+    const alarms = (ev.match(/BEGIN:VALARM/g) || []).length;
+    const summary = (ev.match(/SUMMARY:(.*)/) || ['', '?'])[1];
+    assert.ok(alarms <= 2, `${summary}: ${alarms} напоминаний, допустимо не больше двух`);
+  }
+});
+
+test('первое напоминание ближе к дедлайну, чем второе', () => {
+  // Если календарь оставит только одно, останется то, которое важнее.
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
+  const ics = buildICS(icsTermsFromView(view), { referenceDate: BEFORE_ALL_DEADLINES, now: NOW });
+
+  let checked = 0;
+  for (const ev of ics.split('BEGIN:VEVENT').slice(1)) {
+    const triggers = [...ev.matchAll(/TRIGGER;VALUE=DATE-TIME:(\d{8})T/g)].map((m) => m[1]);
+    if (triggers.length < 2) continue;
+    const summary = (ev.match(/SUMMARY:(.*)/) || ['', '?'])[1];
+    assert.ok(triggers[0] > triggers[1], `${summary}: порядок напоминаний ${triggers.join(' → ')}`);
+    checked += 1;
+  }
+  assert.ok(checked >= 5, `проверено ${checked} событий с двумя напоминаниями — маловато`);
+});
+
+test('UID различаются у двух выгрузок с одинаковыми данными', () => {
+  // Иначе расчёты по разным делам с совпадающими датами перезаписывают друг
+  // друга в календаре: два файла с апелляцией на одну дату дают одно событие.
+  const uidsOf = (ics) => (ics.match(/^UID:.+$/gm) || []);
+  const first = uidsOf(buildICS([APPEAL], { referenceDate: '2025-05-01', now: NOW }));
+  const second = uidsOf(buildICS([APPEAL], { referenceDate: '2025-05-01', now: NOW }));
+
+  assert.equal(first.length, 1);
+  assert.equal(second.length, 1);
+  assert.notEqual(first[0], second[0], 'UID двух выгрузок совпали');
+  // При этом внутри одной выгрузки UID остаются уникальными между событиями.
+  const many = uidsOf(
+    buildICS([APPEAL, { ...APPEAL, title: 'Другой срок' }], { referenceDate: '2025-05-01', now: NOW }),
+  );
+  assert.equal(new Set(many).size, many.length);
 });
