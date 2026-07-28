@@ -518,18 +518,44 @@ function updateDownloadButton() {
   if (btn) btn.disabled = currentIcsTerms.length === 0;
 }
 
-function downloadICS() {
+const ICS_FILENAME = 'gpk-sroki.ics';
+
+// Тип с charset — для скачивания файлом; для File в «Поделиться» параметр
+// убираем: часть реализаций canShare не распознаёт тип с параметрами.
+const ICS_TYPE_DOWNLOAD = 'text/calendar;charset=utf-8';
+const ICS_TYPE_FILE = 'text/calendar';
+
+async function downloadICS() {
   if (currentIcsTerms.length === 0) return;
   const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+
+  // iOS Safari не выполняет атрибут download у blob:-ссылки: она открывает
+  // содержимое предпросмотром, и добавить события в календарь оттуда нельзя —
+  // тип файла при этом ни при чём. Системный лист «Поделиться» такую
+  // возможность даёт: Календарь в нём есть.
+  const file = new File([ics], ICS_FILENAME, { type: ICS_TYPE_FILE });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (err) {
+      // Пользователь закрыл лист — это не сбой, скачивать вдогонку не нужно.
+      if (err && err.name === 'AbortError') return;
+      // Остальное (лист недоступен, отказ платформы) — уходим на скачивание.
+    }
+  }
+
+  const blob = new Blob([ics], { type: ICS_TYPE_DOWNLOAD });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'gpk-sroki.ics';
+  a.download = ICS_FILENAME;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Освобождать ссылку в том же кадре нельзя: Safari успевает прервать
+  // начатое скачивание. Пара сотен байт подождут.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 // --- Главный рендер ---------------------------------------------------------
