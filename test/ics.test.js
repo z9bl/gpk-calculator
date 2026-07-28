@@ -420,3 +420,41 @@ test('все напоминания отсечены, но срок не ист�
   assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 0, 'все напоминания отсечены');
 });
+
+// --- Пригодность файла для календарей (iOS в том числе) ---------------------
+
+test('файл соответствует обязательным требованиям RFC 5545', () => {
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
+  const ics = buildICS(icsTermsFromView(view), { referenceDate: BEFORE_ALL_DEADLINES, now: NOW });
+
+  // Одиночных LF быть не должно — только CRLF, и файл завершается переводом.
+  assert.equal(/(?<!\r)\n/.test(ics), false, 'встретился LF без CR');
+  assert.ok(ics.endsWith('\r\n'), 'файл должен заканчиваться CRLF');
+
+  const lines = ics.split('\r\n');
+  assert.equal(lines[0], 'BEGIN:VCALENDAR');
+  assert.ok(lines.includes('VERSION:2.0'));
+  assert.ok(lines.some((l) => l.startsWith('PRODID:')));
+
+  const events = (ics.match(/BEGIN:VEVENT/g) || []).length;
+  const uids = ics.match(/^UID:.+$/gm) || [];
+  assert.equal(uids.length, events, 'UID нужен каждому событию');
+  assert.equal(new Set(uids).size, uids.length, 'UID должны быть уникальны');
+  assert.equal((ics.match(/^DTSTAMP:/gm) || []).length, events, 'DTSTAMP нужен каждому событию');
+});
+
+test('свёртка строк не разрывает символ пополам', () => {
+  // Кириллица занимает два октета: свёртка по октетам может рассечь символ, и
+  // тогда файл перестанет быть валидным UTF-8 для разборщика календаря.
+  const view = buildView(ALL_BRANCHES_INPUTS, { today: BEFORE_ALL_DEADLINES });
+  const ics = buildICS(icsTermsFromView(view), { referenceDate: BEFORE_ALL_DEADLINES, now: NOW });
+
+  // Развернём свёртку и сверим с исходными значениями: если бы символ рвался,
+  // на его месте оказались бы замещающие символы.
+  assert.equal(ics.includes('�'), false, 'появился замещающий символ');
+  const unfolded = ics.replace(/\r\n /g, '');
+  const titles = icsTermsFromView(view).map((t) => t.title);
+  for (const title of titles) {
+    assert.ok(unfolded.includes(`SUMMARY:${title}`), `после развёртки потерян SUMMARY: ${title}`);
+  }
+});
