@@ -20,6 +20,47 @@ export function calendarEventTitle(title) {
   return `${title} — ${DEADLINE_CAPTION}`;
 }
 
+function lowerFirst(text) {
+  return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
+// Одна строка сводки — для копирования и печати. Формат явно называет, что за
+// дата: у сроков заявителя «последний день подачи», у сроков суда «последний
+// день», у событий «вступает в силу». Иначе «13.08.2026 — …» читается
+// неоднозначно (последний день? начало течения? вступление в силу?).
+function summaryLine(entry) {
+  const norm = entry.norm ? ` (${entry.norm})` : '';
+  if (entry.kind === 'event') {
+    return `${entry.title} — вступает в силу ${ruDate(entry.deadline)}${norm}`;
+  }
+  const caption = entry.kind === 'court' ? DEADLINE_CAPTION_COURT : DEADLINE_CAPTION;
+  return `${entry.title} — ${caption}: ${ruDate(entry.deadline)}${norm}`;
+}
+
+/**
+ * Строки сводки по сроку/событию (без заголовка). Общий формат для копирования
+ * и печати — чтобы они не расходились между собой.
+ * @param {Array<{title, deadline, norm?, kind?: 'applicant'|'court'|'event'}>} entries
+ * @returns {string[]}
+ */
+export function caseSummaryLines(entries) {
+  return (entries || []).map(summaryLine);
+}
+
+/**
+ * Заголовок сводки: «Сроки по делу (решение суда в общем порядке). Расчёт от
+ * 28.07.2026». Название ветви — с маленькой буквы, как часть фразы.
+ * @param {{today?: string, situation?: string}} [options]
+ * @returns {string}
+ */
+export function caseSummaryHeader(options = {}) {
+  let head = 'Сроки по делу';
+  if (options.situation) head += ` (${lowerFirst(options.situation)})`;
+  if (options.today) head += `. Расчёт от ${ruDate(options.today)}`;
+  else head += '.';
+  return head;
+}
+
 function compact(iso) {
   return iso.replace(/-/g, ''); // YYYY-MM-DD → YYYYMMDD
 }
@@ -58,23 +99,30 @@ export function googleCalendarUrl(term) {
 }
 
 /**
- * Текстовый список сроков для буфера обмена.
+ * Текстовая сводка для буфера обмена: заголовок, пустая строка и по строке на
+ * срок/событие. Формат намеренно простой — одинаково читается в заметках,
+ * письме и ячейке таблицы; разметка или выравнивание пробелами там мешают.
  *
- * Формат намеренно простой: заголовок с датой расчёта и по строке на срок —
- * дата, название, норма. Такое одинаково читается в заметках, письме и ячейке
- * таблицы; разметка или выравнивание пробелами там только мешают.
- *
- * @param {Array<{title: string, deadline: string, norm?: string}>} terms
+ * @param {Array<{title, deadline, norm?, kind?: 'applicant'|'court'|'event'}>} entries
  * @param {{today?: string, situation?: string}} [options]
  * @returns {string}
  */
-export function termsAsText(terms, options = {}) {
-  const head = ['Процессуальные сроки по ГПК РФ'];
-  if (options.situation) head.push(options.situation);
-  if (options.today) head.push(`расчёт от ${ruDate(options.today)}`);
+export function termsAsText(entries, options = {}) {
+  return [caseSummaryHeader(options), '', ...caseSummaryLines(entries)].join('\n');
+}
 
-  const lines = (terms || []).map((t) =>
-    t.norm ? `${ruDate(t.deadline)} — ${t.title} (${t.norm})` : `${ruDate(t.deadline)} — ${t.title}`,
-  );
-  return [head.join(' · '), '', ...lines].join('\n');
+// Русское описание правила напоминаний для срока данной длительности — для
+// пояснения под ссылкой в Google Календарь. Держим синхронно с reminderOffsets
+// в ics.js: те же длительности, те же смещения.
+export function reminderRulePhrase(duration) {
+  const d = duration || {};
+  if (d.unit === 'month' && d.value === 1) return 'за 3 и 7 дней';
+  if (d.unit === 'month' && d.value === 3) return 'за 3 и 14 дней';
+  if (d.unit === 'year' && d.value === 3) return 'за 7 дней и 1 месяц';
+  if (d.unit === 'working_day') {
+    if (d.value === 3) return 'за 1 рабочий день';
+    if (d.value === 5 || d.value === 7) return 'за 1 и 2 рабочих дня';
+    if (d.value === 15) return 'за 3 и 7 рабочих дней';
+  }
+  return '';
 }
