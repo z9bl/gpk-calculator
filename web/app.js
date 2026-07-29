@@ -417,11 +417,12 @@ function collapsedWarning(summaryText, detailNodes, cls = 'warn') {
 // Исчерпание способов обжалования: акт в апелляции не обжаловался.
 // Расчёт остаётся — он верен для актов, не подлежащих апелляционному обжалованию.
 function renderExhaustionWarning(w) {
-  return collapsedWarning('Требуется исчерпание способов обжалования', [
-    el('div', null, w.text),
-    el('div', 'hint', w.calculation_note),
-    el('div', 'hint', `${w.norm} · ${w.clarification}`),
-  ]);
+  // calculation_note и clarification есть не у каждого предупреждения (у заочного
+  // ответчика их нет) — не выводим пустую строку и «· undefined».
+  const rows = [el('div', null, w.text)];
+  if (w.calculation_note) rows.push(el('div', 'hint', w.calculation_note));
+  rows.push(el('div', 'hint', w.clarification ? `${w.norm} · ${w.clarification}` : w.norm));
+  return collapsedWarning('Требуется исчерпание способов обжалования', rows);
 }
 
 function renderBoundaryWarning(bw) {
