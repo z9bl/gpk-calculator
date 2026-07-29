@@ -7,6 +7,7 @@ import {
   googleCalendarUrl,
   termsAsText,
   caseSummaryLines,
+  caseSummaryItems,
   caseSummaryHeader,
   reminderRulePhrase,
   calendarEventTitle,
@@ -582,12 +583,22 @@ function summaryEntries(cards) {
   const entries = [];
   for (const card of cards) {
     if (card.kind === 'term' && card.deadline) {
-      entries.push({
+      const entry = {
         title: card.title,
         deadline: card.deadline,
         norm: card.norm,
         kind: card.informational ? 'court' : 'applicant',
-      });
+      };
+      // Спорный срок (раздел 6): в сводку идут обе даты и рекомендация — иначе
+      // на распечатке пропадёт более ранняя, безопасная дата.
+      if (card.alternative) {
+        entry.alternative = {
+          deadline: card.alternative.deadline,
+          norm: card.alternative.norm,
+          recommendation: card.alternative.recommendation,
+        };
+      }
+      entries.push(entry);
     } else if (card.kind === 'event' && card.status === 'resolved' && card.date) {
       entries.push({ title: card.title, deadline: card.date, norm: card.norm, kind: 'event' });
     }
@@ -673,9 +684,26 @@ function renderPrintList(situation) {
   const list = document.getElementById('print-list');
   if (!list) return;
   list.textContent = '';
-  for (const line of caseSummaryLines(currentSummary)) {
-    list.appendChild(el('div', 'print-row', line));
+  for (const item of caseSummaryItems(currentSummary)) {
+    list.appendChild(printItem(item));
   }
+}
+
+// Один пункт печати: название, крупная дата, мелкая серая норма под ней (пункт
+// иерархии). У спорного срока — две пары «дата + норма» и строка рекомендации.
+function printItem(item) {
+  const box = el('div', 'print-item');
+  const title = item.caption ? `${item.title} · ${item.caption}` : item.title;
+  box.appendChild(el('div', 'print-item-title', title));
+  const rows = item.alternative ? item.rows : [{ date: item.date, norm: item.norm }];
+  for (const r of rows) {
+    box.appendChild(el('div', 'print-date', r.date));
+    if (r.norm) box.appendChild(el('div', 'print-norm', r.norm));
+  }
+  if (item.alternative && item.recommendation) {
+    box.appendChild(el('div', 'print-reco', item.recommendation));
+  }
+  return box;
 }
 
 const ICS_FILENAME = 'gpk-sroki.ics';
