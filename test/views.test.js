@@ -385,7 +385,14 @@ test('упрощённое производство: три карточки б�
     'simplified_reasoned_request',
     'simplified_appeal',
     'simplified_entry_into_force',
+    'simplified_cassation_ksoyu',
+    'simplified_enforcement_presentation',
   ]);
+
+  // Кассация в КСОЮ: не обжаловалось → предупреждение об исчерпании (3.7).
+  const cass = byId(v.cards, 'simplified_cassation_ksoyu');
+  assert.match(cass.norm, /ст\. 376\.1/);
+  assert.ok(cass.exhaustion_warning, 'предупреждение об исчерпании для упрощённого');
   const appeal = byId(v.cards, 'simplified_appeal');
   assert.equal(appeal.unit, 'working_day');
   assert.equal(appeal.deadline, '2026-01-22');
@@ -396,6 +403,11 @@ test('упрощённое производство: три карточки б�
   assert.equal(entry.status, 'resolved');
   assert.match(entry.norm, /232\.4/);
   assert.match(entry.norm, /ч\. 5/);
+
+  // Предъявление ИЛ — три года со дня вступления в силу (событие разрешено).
+  const enf = byId(v.cards, 'simplified_enforcement_presentation');
+  assert.equal(enf.deadline, '2029-01-23'); // 2026-01-23 (дата события) + 3 года
+  assert.match(enf.norm, /ст\. 21 ФЗ .*229-ФЗ/);
 });
 
 test('упрощённое: срок изготовления появляется после заявления, помечен справочным', () => {
@@ -430,7 +442,14 @@ test('заочное решение: карточки, выбор субъект
     'default_judgment_cancellation_request',
     'default_judgment_appeal',
     'default_judgment_entry_into_force',
+    'default_judgment_cassation_ksoyu',
+    'default_judgment_enforcement_presentation',
   ]);
+
+  // Кассация в КСОЮ: у заочного предупреждение об исчерпании отложено (3.7).
+  const cass = byId(v.cards, 'default_judgment_cassation_ksoyu');
+  assert.match(cass.norm, /ст\. 376\.1/);
+  assert.equal(cass.exhaustion_warning, undefined, 'у заочного предупреждение отложено');
 
   const request = byId(v.cards, 'default_judgment_cancellation_request');
   assert.equal(request.unit, 'working_day');
@@ -447,6 +466,11 @@ test('заочное решение: карточки, выбор субъект
   assert.equal(entry.branch, 'refused_not_appealed');
   assert.match(entry.norm, /ч\. 1 ст\. 244/);
   assert.equal(entry.date, '2026-03-11');
+
+  // Предъявление ИЛ — три года со дня вступления заочного решения в силу.
+  const enf = byId(v.cards, 'default_judgment_enforcement_presentation');
+  assert.equal(enf.deadline, '2029-03-12'); // 2026-03-11 + 3 года = вс 11.03.2029 → пн 12.03
+  assert.match(enf.norm, /ст\. 21 ФЗ .*229-ФЗ/);
 });
 
 test('заочное решение: карточка ст. 244 в трёх ветвях и при отмене решения', () => {
