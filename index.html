@@ -97,6 +97,21 @@
 
       .print-only { display: none; }
 
+      /* Плавное появление блоков: разворот по высоте через grid-template-rows.
+         Анимируется одноразовым keyframes только на впервые показанном блоке —
+         на уже показанных класса нет, поэтому перерисовка их не дёргает. */
+      .reveal { display: grid; grid-template-rows: 1fr; }
+      .reveal > .reveal-inner { min-height: 0; }
+      .reveal.reveal-in { animation: reveal-in 190ms ease; }
+      .reveal.reveal-in > .reveal-inner { overflow: hidden; }
+      @keyframes reveal-in {
+        from { grid-template-rows: 0fr; opacity: 0; }
+        to   { grid-template-rows: 1fr; opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .reveal.reveal-in { animation: none; }
+      }
+
       .situation-switch { margin-bottom: 16px; }
       .situations { border: none; margin: 0; padding: 0; }
       .situations legend {
