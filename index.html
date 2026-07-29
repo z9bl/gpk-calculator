@@ -287,10 +287,17 @@
         .print-only { display: block; }
         #print-header { margin: 0 0 14px; }
         #print-header .print-title { font-size: 14pt; font-weight: 700; }
-        #print-list .print-row {
-          padding: 6px 0; border-bottom: 1px solid #ccc; font-size: 12pt;
+        /* Иерархия: дата крупная и жирная, норма мельче и серым строкой ниже. */
+        #print-list .print-item {
+          padding: 8px 0; border-bottom: 1px solid #ccc;
           break-inside: avoid; page-break-inside: avoid;
         }
+        .print-item-title { font-size: 11pt; color: #333; }
+        .print-item .print-date {
+          font-size: 15pt; font-weight: 700; line-height: 1.15; margin-top: 2px;
+        }
+        .print-item .print-norm { font-size: 10pt; color: #555; margin-bottom: 4px; }
+        .print-item .print-reco { font-size: 11pt; font-style: italic; margin-top: 2px; }
       }
     </style>
 

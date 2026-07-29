@@ -24,27 +24,73 @@ function lowerFirst(text) {
   return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }
 
-// Одна строка сводки — для копирования и печати. Формат явно называет, что за
-// дата: у сроков заявителя «последний день подачи», у сроков суда «последний
-// день», у событий «вступает в силу». Иначе «13.08.2026 — …» читается
-// неоднозначно (последний день? начало течения? вступление в силу?).
-function summaryLine(entry) {
-  const norm = entry.norm ? ` (${entry.norm})` : '';
-  if (entry.kind === 'event') {
-    return `${entry.title} — вступает в силу ${ruDate(entry.deadline)}${norm}`;
-  }
-  const caption = entry.kind === 'court' ? DEADLINE_CAPTION_COURT : DEADLINE_CAPTION;
-  return `${entry.title} — ${caption}: ${ruDate(entry.deadline)}${norm}`;
+// Норма — коротко: без скобочного пояснения (редакция, глава и т.п.). Для
+// «ч. 1 ст. 321 ГПК РФ» отбрасывать нечего; у кассации «(ред. ФЗ № 135-ФЗ …)»
+// уходит. Обоснования и «по закону» в подписи не выводим.
+function shortNorm(norm) {
+  return norm ? norm.split('(')[0].trim() : '';
+}
+
+// Что за дата у срока: у заявителя «последний день подачи», у суда «последний
+// день», у события — ничего (само название «Вступление … в силу» говорит).
+function captionFor(kind) {
+  if (kind === 'court') return DEADLINE_CAPTION_COURT;
+  if (kind === 'event') return null;
+  return DEADLINE_CAPTION;
 }
 
 /**
- * Строки сводки по сроку/событию (без заголовка). Общий формат для копирования
- * и печати — чтобы они не расходились между собой.
- * @param {Array<{title, deadline, norm?, kind?: 'applicant'|'court'|'event'}>} entries
+ * Структура сводки — общий источник для копирования и печати, чтобы форматы не
+ * расходились. Каждый пункт: название, характер даты (caption), одна или две
+ * строки «дата + норма» и, у спорного срока, рекомендация.
+ *
+ * Спорный срок (alternative_calculation, раздел 6): показываем ДВЕ даты — по
+ * закону и по разъяснению Пленума — и рекомендацию. Без этого юрист, работающий
+ * по распечатке, пропустил бы более раннюю (безопасную) дату.
+ *
+ * @param {Array<{title, deadline, norm?, kind?, alternative?}>} entries
+ * @returns {Array<object>}
+ */
+export function caseSummaryItems(entries) {
+  return (entries || []).map((e) => {
+    const caption = captionFor(e.kind);
+    if (e.alternative) {
+      return {
+        title: e.title,
+        caption,
+        alternative: true,
+        rows: [
+          { date: ruDate(e.deadline), norm: shortNorm(e.norm) }, // по закону
+          { date: ruDate(e.alternative.deadline), norm: shortNorm(e.alternative.norm) }, // Пленум
+        ],
+        recommendation: (e.alternative.recommendation || '').replace(/\.$/, ''),
+      };
+    }
+    return { title: e.title, caption, alternative: false, date: ruDate(e.deadline), norm: shortNorm(e.norm) };
+  });
+}
+
+/**
+ * Строки сводки для копирования (простой текст). Дата идёт первой и не теряется
+ * в строке. Спорный срок разворачивается в четыре строки: название, дата по
+ * закону, дата по Пленуму, рекомендация.
+ * @param {Array<object>} entries
  * @returns {string[]}
  */
 export function caseSummaryLines(entries) {
-  return (entries || []).map(summaryLine);
+  const lines = [];
+  for (const item of caseSummaryItems(entries)) {
+    if (item.alternative) {
+      lines.push(item.caption ? `${item.title} (${item.caption})` : item.title);
+      for (const r of item.rows) lines.push(`${r.norm} — ${r.date}`);
+      if (item.recommendation) lines.push(item.recommendation);
+    } else {
+      const cap = item.caption ? `, ${item.caption}` : '';
+      const norm = item.norm ? ` (${item.norm})` : '';
+      lines.push(`${item.date} — ${item.title}${cap}${norm}`);
+    }
+  }
+  return lines;
 }
 
 /**
