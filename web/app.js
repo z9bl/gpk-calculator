@@ -494,16 +494,29 @@ function renderInfoTermCard(card) {
   return c;
 }
 
+// Подлежащее к сообщению-состоянию события. Сообщения вида «Вступит в силу …»
+// приходят без подлежащего — подставляем его, чтобы строка читалась сама по
+// себе. Сообщения с собственным подлежащим («…заочное решение отменено») не
+// трогаем.
+function withSubject(subject, message) {
+  return message.startsWith('Вступит ') ? message.replace(/^Вступит /, `${subject} вступит `) : message;
+}
+
 // Уровень 3 — событие. Строкой текста, без карточки: вступление в силу не
 // дедлайн, успевать к нему нечего. Поля-уточнения, привязанные к событию,
 // остаются под строкой — иначе ветвь стала бы недоступной для ввода.
 function renderEvent(card, opts = {}) {
   const box = el('div', 'event-line');
 
+  // Подлежащее в строке обязательно: событие рендерится без карточки, и в отрыве
+  // от заголовка (выделение, копирование) «Вступит в силу …» непонятно — что
+  // именно. Ставим явно «Решение суда …»/«Заочное решение …» во всех состояниях.
+  const subject = card.subject || 'Решение суда';
   let text;
-  if (card.status === 'resolved') text = `Вступило в силу ${isoToRu(card.date)}`;
-  else if (card.not_earlier_than) text = `Вступит в силу не ранее ${isoToRu(card.not_earlier_than)}`;
-  else text = card.message ?? 'Дата вступления в силу пока не определена';
+  if (card.status === 'resolved') text = `${subject} вступило в силу ${isoToRu(card.date)}`;
+  else if (card.not_earlier_than) text = `${subject} вступит в силу не ранее ${isoToRu(card.not_earlier_than)}`;
+  else if (card.message) text = withSubject(subject, card.message);
+  else text = 'Дата вступления в силу пока не определена';
 
   const head = el('div', 'event-head');
   head.appendChild(el('span', card.status === 'resolved' ? 'event-text done' : 'event-text', text));

@@ -12,6 +12,11 @@ const GOOGLE_RENDER = 'https://calendar.google.com/calendar/render';
 export const DEADLINE_CAPTION = 'последний день подачи';       // срок заявителя
 export const DEADLINE_CAPTION_COURT = 'последний день';        // срок суда
 
+// Пояснение к спорному сроку в копировании: две строки ниже — одна и та же дата
+// в двух прочтениях, а не два разных события. Смысл тот же, что на экране и в
+// печати («Спорный срок: норма и разъяснение Пленума расходятся»).
+export const ALTERNATIVE_CONFLICT_NOTE = 'Норма и разъяснение Пленума расходятся в дате:';
+
 /**
  * Название события в календаре. В календаре видно только название, поэтому
  * пояснение уходит в него: «Апелляционная жалоба — последний день подачи».
@@ -82,6 +87,7 @@ export function caseSummaryLines(entries) {
   for (const item of caseSummaryItems(entries)) {
     if (item.alternative) {
       lines.push(item.caption ? `${item.title} (${item.caption})` : item.title);
+      lines.push(ALTERNATIVE_CONFLICT_NOTE); // одна дата в двух прочтениях, не два события
       for (const r of item.rows) lines.push(`${r.norm} — ${r.date}`);
       if (item.recommendation) lines.push(item.recommendation);
     } else {
