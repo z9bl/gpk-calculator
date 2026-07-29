@@ -738,8 +738,28 @@ function restoreFocus(snapshot) {
   if (snapshot.start != null) next.setSelectionRange(snapshot.start, snapshot.end);
 }
 
+// Плавное появление блоков. render() пересобирает DOM целиком, поэтому «новизну»
+// блока храним между перерисовками по устойчивому ключу: разворачиваем по высоте
+// только тот блок, ключа которого не было в прошлой отрисовке. Уже показанные
+// пересобираются без анимации, поэтому фокус и каретка во вводе не сбиваются —
+// анимируется соседний блок, а не тот, куда печатают. Блок, чей ключ исчез, при
+// повторном появлении развернётся снова.
+const revealedKeys = new Set();
+let revealSeen = new Set();
+
+function reveal(key, node) {
+  revealSeen.add(key);
+  const wrap = el('div', 'reveal');
+  if (!revealedKeys.has(key)) wrap.classList.add('reveal-in');
+  const inner = el('div', 'reveal-inner');
+  inner.appendChild(node);
+  wrap.appendChild(inner);
+  return wrap;
+}
+
 function render() {
   const focus = captureFocus();
+  revealSeen = new Set();
   renderedFields.clear();
   const situation = situationById(state.situation);
   const visible = new Set(situation.nodes);
@@ -881,7 +901,7 @@ function render() {
       const redField = REDACTION_FIELD[id];
       if (redField) incEl.appendChild(renderRedactionField(redField));
       appendFollowUpFields(incEl, id, inc);
-      root.appendChild(incEl);
+      root.appendChild(reveal(`inc:${id}`, incEl));
     }
   }
 
@@ -893,6 +913,10 @@ function render() {
       el('p', 'empty', `Укажите ${askFor(first)} — появятся сроки.`),
     );
   }
+
+  // Какие блоки показаны сейчас — то и «уже развёрнуто» для следующей отрисовки.
+  revealedKeys.clear();
+  for (const k of revealSeen) revealedKeys.add(k);
 
   restoreFocus(focus);
 }
@@ -1003,8 +1027,10 @@ function appendFollowUpFields(cardEl, id, card) {
 
   const box = el('div', 'note');
   box.appendChild(el('div', null, typeof spec.prompt === 'function' ? spec.prompt() : spec.prompt));
-  for (const f of fields) box.appendChild(inviteFieldOrPointer(f.id));
-  cardEl.appendChild(box);
+  // Каждое поле — со своим ключом: когда следующее поле появляется в уже
+  // открытом блоке, разворачивается только оно, а не весь блок с полем в фокусе.
+  for (const f of fields) box.appendChild(reveal(`ff:${f.id}`, inviteFieldOrPointer(f.id)));
+  cardEl.appendChild(reveal(`ffbox:${id}`, box));
 }
 
 // Карточка-пометка: расчёт сознательно не выполняется (нет текста нормы).
@@ -1212,7 +1238,7 @@ function renderSituationFields(situation, primaryFilled) {
   }
   const box = el('div', 'invite');
   for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
-  root.appendChild(box);
+  root.appendChild(reveal(`sitfields:${situation.id}`, box));
 }
 
 // --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------
