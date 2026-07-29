@@ -716,6 +716,11 @@ function printItem(item) {
   const box = el('div', 'print-item');
   const title = item.caption ? `${item.title} · ${item.caption}` : item.title;
   box.appendChild(el('div', 'print-item-title', title));
+  // Спорный срок: вводная строка перед парой дат — они относятся к одному
+  // сроку, а не к двум событиям. Стиль подписи нормы (мелко, не жирным).
+  if (item.alternative && item.conflictNote) {
+    box.appendChild(el('div', 'print-conflict', item.conflictNote));
+  }
   const rows = item.alternative ? item.rows : [{ date: item.date, norm: item.norm }];
   for (const r of rows) {
     box.appendChild(el('div', 'print-date', r.date));

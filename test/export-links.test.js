@@ -133,14 +133,40 @@ test('спорный срок: копирование — две даты и р�
     'Рекомендуем ориентироваться на более раннюю дату',
   ]);
 
-  // Структура для печати: две строки «дата + норма» и рекомендация.
+  // Структура для печати: вводная строка (без двоеточия), две пары «дата +
+  // норма» и рекомендация.
   const [item] = caseSummaryItems([entry]);
   assert.equal(item.alternative, true);
+  assert.equal(item.conflictNote, 'Норма и разъяснение Пленума расходятся в дате');
   assert.deepEqual(item.rows, [
     { date: '13.08.2026', norm: 'ч. 1 ст. 390.3 ГПК РФ' },
     { date: '10.08.2026', norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17' },
   ]);
   assert.equal(item.recommendation, 'Рекомендуем ориентироваться на более раннюю дату');
+});
+
+test('спорный срок: печать — вводная строка есть, у обычного срока нет', () => {
+  const [alt] = caseSummaryItems([
+    {
+      title: 'Кассационная жалоба в КСОЮ',
+      deadline: '2026-11-30',
+      norm: 'абз. 2 ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)',
+      kind: 'applicant',
+      alternative: {
+        deadline: '2026-11-25',
+        norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17',
+        recommendation: 'Рекомендуем ориентироваться на более раннюю дату.',
+      },
+    },
+  ]);
+  assert.equal(alt.conflictNote, 'Норма и разъяснение Пленума расходятся в дате');
+
+  // Обычный срок (без alternative) вводной строки не несёт.
+  const [plain] = caseSummaryItems([
+    { title: 'Апелляционная жалоба', deadline: '2026-08-03', norm: 'ч. 1 ст. 321 ГПК РФ', kind: 'applicant' },
+  ]);
+  assert.equal(plain.alternative, false);
+  assert.equal(plain.conflictNote, undefined);
 });
 
 test('название события в календаре несёт характер даты', () => {

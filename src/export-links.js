@@ -64,6 +64,10 @@ export function caseSummaryItems(entries) {
         title: e.title,
         caption,
         alternative: true,
+        // Пояснение к паре дат — одна дата в двух прочтениях, а не два события.
+        // Без двоеточия: в печати это вводная строка между заголовком и первой
+        // датой, а не начало списка (двоеточие добавляет копирование).
+        conflictNote: ALTERNATIVE_CONFLICT_NOTE.replace(/:$/, ''),
         rows: [
           { date: ruDate(e.deadline), norm: shortNorm(e.norm) }, // по закону
           { date: ruDate(e.alternative.deadline), norm: shortNorm(e.alternative.norm) }, // Пленум
