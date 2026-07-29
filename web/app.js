@@ -6,6 +6,9 @@ import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
 import {
   googleCalendarUrl,
   termsAsText,
+  caseSummaryLines,
+  caseSummaryHeader,
+  reminderRulePhrase,
   calendarEventTitle,
   DEADLINE_CAPTION,
   DEADLINE_CAPTION_COURT,
@@ -108,6 +111,10 @@ const expiredFields = new Set();
 
 // Узлы, которые имеет смысл переносить в календарь: тот же отбор, что у .ics.
 const exportableIds = new Set();
+
+// Действующая длительность узла (из карточки или из реестра) — для фразы про
+// напоминания под ссылкой в Google. На самой карточке duration есть не всегда.
+const exportDurations = new Map();
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
 const GENERAL_CHAIN_NODES = new Set([
@@ -357,7 +364,13 @@ function renderTermCard(card, opts = {}) {
 
 // Ссылка на предзаполненную форму события в Google Календаре — по одной на срок.
 // Открывается в новой вкладке: расчёт на странице должен остаться на месте.
+//
+// Напоминания через ссылку задать нельзя: у формы события Google Календаря нет
+// параметра для них (поддерживаются только text, dates, details, location,
+// гости). Поэтому под ссылкой — честная пометка: Google подставит своё
+// напоминание по умолчанию, наши нужно добавить в событии вручную.
 function googleCalendarLink(card) {
+  const wrap = el('div', 'to-calendar-block');
   const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
   a.href = googleCalendarUrl({
     title: calendarEventTitle(card.title),
@@ -366,7 +379,15 @@ function googleCalendarLink(card) {
   });
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
-  return a;
+  wrap.appendChild(a);
+
+  const rule = reminderRulePhrase(exportDurations.get(card.id));
+  const note = rule
+    ? `Ссылка не задаёт напоминания — Google подставит своё по умолчанию. ` +
+      `Наши напоминания для этого срока (${rule}) добавьте в событии вручную.`
+    : 'Ссылка не задаёт напоминания — Google подставит своё по умолчанию.';
+  wrap.appendChild(el('div', 'hint to-calendar-note', note));
+  return wrap;
 }
 
 // Предупреждение в одну строку; полный текст раскрывается по клику.
@@ -551,13 +572,37 @@ function renderIncompleteNode(node) {
 // --- Экспорт .ics -----------------------------------------------------------
 
 let currentIcsTerms = []; // рассчитанные сроки с ics:true для кнопки «Скачать»
+let currentSummary = []; // сводка для копирования и печати (шире, чем .ics)
 
+// Сводка — это снимок видимых дат на экране, а не только сроки для календаря:
+// в неё входят и сроки суда (informational, без .ics), и разрешённые события
+// вступления в силу. Каждая запись помечена kind — от него зависит формулировка
+// строки («последний день подачи» / «последний день» / «вступает в силу»).
+function summaryEntries(cards) {
+  const entries = [];
+  for (const card of cards) {
+    if (card.kind === 'term' && card.deadline) {
+      entries.push({
+        title: card.title,
+        deadline: card.deadline,
+        norm: card.norm,
+        kind: card.informational ? 'court' : 'applicant',
+      });
+    } else if (card.kind === 'event' && card.status === 'resolved' && card.date) {
+      entries.push({ title: card.title, deadline: card.date, norm: card.norm, kind: 'event' });
+    }
+  }
+  return entries;
+}
 
 function updateExportButtons() {
-  const empty = currentIcsTerms.length === 0;
-  for (const id of ['download-ics', 'copy-terms', 'print-terms']) {
+  // .ics — только когда есть сроки для календаря; копирование и печать — когда
+  // есть хоть что-то видимое (сроки суда и события тоже переносятся текстом).
+  const ics = document.getElementById('download-ics');
+  if (ics) ics.disabled = currentIcsTerms.length === 0;
+  for (const id of ['copy-terms', 'print-terms']) {
     const btn = document.getElementById(id);
-    if (btn) btn.disabled = empty;
+    if (btn) btn.disabled = currentSummary.length === 0;
   }
 }
 
@@ -565,8 +610,8 @@ function updateExportButtons() {
 // защищённого соединения), поэтому при отказе — запасной путь через выделение
 // временного поля.
 async function copyTerms() {
-  if (currentIcsTerms.length === 0) return;
-  const text = termsAsText(currentIcsTerms, {
+  if (currentSummary.length === 0) return;
+  const text = termsAsText(currentSummary, {
     today,
     situation: situationById(state.situation).label,
   });
@@ -609,20 +654,28 @@ function showCopyStatus(message) {
   }, 3000);
 }
 
-// Печатная версия: заголовок с датой расчёта — остальное убирает CSS печати.
+// Печатная версия — тот же список строк, что и копирование: заголовок и по
+// строке на срок/событие. CSS печати прячет интерфейс и сами карточки, оставляя
+// только этот блок, — иначе печать повторяла бы неоднозначность карточек.
 function printTerms() {
-  if (currentIcsTerms.length === 0) return;
+  if (currentSummary.length === 0) return;
   window.print();
 }
 
-function renderPrintHeader(situation) {
-  const box = document.getElementById('print-header');
-  if (!box) return;
-  box.textContent = '';
-  box.appendChild(el('div', 'print-title', 'Процессуальные сроки по ГПК РФ'));
-  box.appendChild(
-    el('div', 'print-meta', `${situation.label} · расчёт от ${isoToRu(today)}`),
-  );
+function renderPrintList(situation) {
+  const head = document.getElementById('print-header');
+  if (head) {
+    head.textContent = '';
+    head.appendChild(
+      el('div', 'print-title', caseSummaryHeader({ today, situation: situation.label })),
+    );
+  }
+  const list = document.getElementById('print-list');
+  if (!list) return;
+  list.textContent = '';
+  for (const line of caseSummaryLines(currentSummary)) {
+    list.appendChild(el('div', 'print-row', line));
+  }
 }
 
 const ICS_FILENAME = 'gpk-sroki.ics';
@@ -706,10 +759,15 @@ function render() {
 
   const visibleCards = view.cards.filter((c) => visible.has(c.id));
   currentIcsTerms = icsTermsFromView({ cards: visibleCards });
+  currentSummary = summaryEntries(visibleCards);
   exportableIds.clear();
-  for (const { card } of exportableCards({ cards: visibleCards })) exportableIds.add(card.id);
+  exportDurations.clear();
+  for (const { card, meta } of exportableCards({ cards: visibleCards })) {
+    exportableIds.add(card.id);
+    exportDurations.set(card.id, card.duration || meta.duration);
+  }
   updateExportButtons();
-  renderPrintHeader(situation);
+  renderPrintList(situation);
 
   renderSituationSwitch(situation);
   renderPrimaryField(situation);

@@ -91,6 +91,9 @@
         font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600;
       }
       .to-calendar:hover { text-decoration: underline; }
+      .to-calendar-block { margin-top: 10px; }
+      .to-calendar-block .to-calendar { margin-top: 0; }
+      .to-calendar-note { margin-top: 4px; }
 
       .print-only { display: none; }
 
@@ -252,9 +255,10 @@
       @media print {
         body { background: #fff; color: #000; font-size: 12pt; }
         .wrap { max-width: none; padding: 0; }
+        /* Печатаем только заголовок и список сроков — весь интерфейс и сами
+           карточки скрыты, чтобы печать не повторяла неоднозначность карточек. */
         header h1,
         header p,
-        .related-stubs,
         .situation-switch,
         section.primary,
         .toolbar,
@@ -262,30 +266,16 @@
         .toolbar-secondary,
         #situation-inputs,
         #other-terms,
-        #stubs,
-        .note,
-        .invite,
-        .to-calendar,
-        details.more,
-        .empty { display: none !important; }
+        #results,
+        #stubs { display: none !important; }
 
         .print-only { display: block; }
-        #print-header { margin: 0 0 16px; }
+        #print-header { margin: 0 0 14px; }
         #print-header .print-title { font-size: 14pt; font-weight: 700; }
-        #print-header .print-meta { color: #444; font-size: 11pt; }
-
-        .card, .event-line {
-          border: none; border-bottom: 1px solid #999; border-radius: 0;
-          padding: 8px 0; margin: 0; background: #fff;
+        #print-list .print-row {
+          padding: 6px 0; border-bottom: 1px solid #ccc; font-size: 12pt;
           break-inside: avoid; page-break-inside: avoid;
         }
-        .card .kicker { display: none; }
-        .deadline { font-size: 14pt; }
-        .deadline.expired, .deadline.missed { color: #000; }
-        .norm { color: #333; }
-        details.warn.collapsible { border: none; background: #fff; padding: 0; color: #000; }
-        details.warn.collapsible > summary { list-style: none; font-weight: 400; }
-        .badge { border: 1px solid #999; background: #fff !important; color: #000 !important; }
       }
     </style>
 
@@ -332,6 +322,7 @@
       </p>
 
       <div class="print-only" id="print-header"></div>
+      <div class="print-only" id="print-list"></div>
 
       <main id="results">
         <p class="empty">Введите дату мотивированного решения — появятся рассчитанные сроки.</p>

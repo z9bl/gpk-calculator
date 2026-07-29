@@ -3,7 +3,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { googleCalendarUrl, termsAsText, ruDate } from '../src/export-links.js';
+import {
+  googleCalendarUrl,
+  termsAsText,
+  caseSummaryHeader,
+  caseSummaryLines,
+  reminderRulePhrase,
+  calendarEventTitle,
+  ruDate,
+} from '../src/export-links.js';
 import { buildView } from '../src/views.js';
 import { icsTermsFromView } from '../src/ics.js';
 
@@ -51,28 +59,62 @@ test('ссылка в Google: без нормы параметр описани�
   assert.equal(url.searchParams.has('details'), false);
 });
 
-test('текстовый список: заголовок с датой расчёта и по строке на срок', () => {
-  const text = termsAsText([APPEAL, { title: 'Кассация', deadline: '2026-11-03', norm: 'ст. 376.1' }], {
-    today: '2026-07-28',
-    situation: 'Решение суда в общем порядке',
-  });
+test('сводка: заголовок и строки с указанием характера даты', () => {
+  const text = termsAsText(
+    [
+      APPEAL,
+      { title: 'Изготовление решения', deadline: '2026-07-16', norm: 'ч. 4 ст. 232.4', kind: 'court' },
+      { title: 'Вступление в силу', deadline: '2026-08-04', norm: 'ч. 1 ст. 209', kind: 'event' },
+    ],
+    { today: '2026-07-28', situation: 'Решение суда в общем порядке' },
+  );
   assert.deepEqual(text.split('\n'), [
-    'Процессуальные сроки по ГПК РФ · Решение суда в общем порядке · расчёт от 28.07.2026',
+    'Сроки по делу (решение суда в общем порядке). Расчёт от 28.07.2026',
     '',
-    '03.08.2026 — Апелляционная жалоба (ч. 1 ст. 321 ГПК РФ)',
-    '03.11.2026 — Кассация (ст. 376.1)',
+    'Апелляционная жалоба — последний день подачи: 03.08.2026 (ч. 1 ст. 321 ГПК РФ)',
+    'Изготовление решения — последний день: 16.07.2026 (ч. 4 ст. 232.4)',
+    'Вступление в силу — вступает в силу 04.08.2026 (ч. 1 ст. 209)',
   ]);
 });
 
-test('текстовый список: пустой набор даёт только заголовок', () => {
+test('сводка: заголовок без ветви и без даты расчёта', () => {
+  assert.equal(caseSummaryHeader({}), 'Сроки по делу.');
+  assert.equal(caseSummaryHeader({ today: '2026-07-28' }), 'Сроки по делу. Расчёт от 28.07.2026');
+  assert.equal(
+    caseSummaryHeader({ situation: 'Решение мирового судьи' }),
+    'Сроки по делу (решение мирового судьи).',
+  );
+});
+
+test('сводка: пустой набор даёт только заголовок', () => {
   const text = termsAsText([], { today: '2026-07-28' });
-  assert.deepEqual(text.split('\n'), ['Процессуальные сроки по ГПК РФ · расчёт от 28.07.2026', '']);
+  assert.deepEqual(text.split('\n'), ['Сроки по делу. Расчёт от 28.07.2026', '']);
+});
+
+test('сводка: без нормы строка обходится без скобок', () => {
+  assert.deepEqual(caseSummaryLines([{ title: 'Срок', deadline: '2026-08-03', kind: 'applicant' }]), [
+    'Срок — последний день подачи: 03.08.2026',
+  ]);
+});
+
+test('название события в календаре несёт характер даты', () => {
+  assert.equal(calendarEventTitle('Апелляционная жалоба'), 'Апелляционная жалоба — последний день подачи');
+});
+
+test('фраза правила напоминаний совпадает с длительностями из ics', () => {
+  assert.equal(reminderRulePhrase({ value: 1, unit: 'month' }), 'за 3 и 7 дней');
+  assert.equal(reminderRulePhrase({ value: 3, unit: 'month' }), 'за 3 и 14 дней');
+  assert.equal(reminderRulePhrase({ value: 3, unit: 'year' }), 'за 7 дней и 1 месяц');
+  assert.equal(reminderRulePhrase({ value: 15, unit: 'working_day' }), 'за 3 и 7 рабочих дней');
+  assert.equal(reminderRulePhrase({ value: 7, unit: 'working_day' }), 'за 1 и 2 рабочих дня');
+  assert.equal(reminderRulePhrase({ value: 3, unit: 'working_day' }), 'за 1 рабочий день');
+  assert.equal(reminderRulePhrase(undefined), '');
 });
 
 test('текстовый список строится из тех же сроков, что и .ics', () => {
   // Способы переноса не должны расходиться между собой.
   const view = buildView({ reasoned_decision_date: '2026-07-01' }, { today: '2026-07-28' });
-  const terms = icsTermsFromView(view);
+  const terms = icsTermsFromView(view).map((t) => ({ ...t, kind: 'applicant' }));
   const text = termsAsText(terms, { today: '2026-07-28' });
   assert.ok(terms.length > 0);
   for (const t of terms) {
