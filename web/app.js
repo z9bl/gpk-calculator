@@ -37,12 +37,16 @@ const INPUT_LABELS = {
   simplified_reasoned_date: 'Дата составления мотивированного решения',
   simplified_appeal_filed_date: 'Дата подачи апелляционной жалобы (упрощённое производство)',
   simplified_appeal_ruling_date: 'Дата определения апелляционной инстанции (упрощённое производство)',
+  simplified_appeal_ruling_reasoned_date:
+    'Дата изготовления мотивированного апелляционного определения (упрощённое производство)',
   default_judgment_service_date: 'Дата вручения ответчику копии заочного решения',
   default_judgment_cancellation_request_date: 'Дата подачи заявления об отмене заочного решения',
   default_judgment_refusal_date: 'Дата определения об отказе в отмене заочного решения',
   default_judgment_cancellation_date: 'Дата определения об отмене заочного решения',
   default_judgment_appeal_filed_date: 'Дата подачи апелляционной жалобы (заочное решение)',
   default_judgment_appeal_ruling_date: 'Дата определения апелляционной инстанции (заочное решение)',
+  default_judgment_appeal_ruling_reasoned_date:
+    'Дата изготовления мотивированного апелляционного определения (заочное решение)',
   default_judgment_subject: 'Кто обжалует заочное решение',
   mirovoy_resolution_date: 'Дата объявления резолютивной части (мировой судья)',
   mirovoy_attendance: 'Участник присутствовал в судебном заседании',
@@ -75,6 +79,8 @@ const INPUT_HINTS = {
   simplified_appeal_filed_date:
     'Если жалоба подана, решение вступит в силу после её рассмотрения (ч. 7 ст. 232.4)',
   simplified_appeal_ruling_date: 'С этого дня решение считается вступившим в силу (ч. 7 ст. 232.4)',
+  simplified_appeal_ruling_reasoned_date:
+    'Если дело обжаловалось — от неё считается кассационный срок (абз. 2 ч. 1 ст. 376.1)',
   default_judgment_service_date:
     'От неё считается семидневный срок на заявление об отмене (ч. 1 ст. 237)',
   default_judgment_cancellation_request_date:
@@ -86,6 +92,8 @@ const INPUT_HINTS = {
   default_judgment_appeal_filed_date:
     'Если решение обжаловано, оно вступит в силу после рассмотрения жалобы (ч. 1 ст. 244)',
   default_judgment_appeal_ruling_date: 'Дата вступления решения в силу, если оно не отменено',
+  default_judgment_appeal_ruling_reasoned_date:
+    'Если дело обжаловалось — от неё считается кассационный срок (абз. 2 ч. 1 ст. 376.1)',
   mirovoy_resolution_date:
     'По делу мирового судьи сроки считаются в рабочих днях (ч. 3–5 ст. 199 ГПК)',
   mirovoy_request_date:
@@ -1014,6 +1022,13 @@ const FOLLOW_UP_FIELDS = {
         id: 'simplified_appeal_ruling_date',
         when: () => Boolean(state.inputs.simplified_appeal_filed_date),
       },
+      // Мотивированное апелляционное определение — от него считается кассация
+      // при обжаловании (абз. 2 ч. 1 ст. 376.1). Тот же документ, что и строка
+      // выше, поэтому спрашиваем рядом, а не в карточке кассации.
+      {
+        id: 'simplified_appeal_ruling_reasoned_date',
+        when: () => Boolean(state.inputs.simplified_appeal_filed_date),
+      },
     ],
   },
   default_judgment_cancellation_request: {
@@ -1038,6 +1053,12 @@ const FOLLOW_UP_FIELDS = {
       { id: 'default_judgment_appeal_filed_date' },
       {
         id: 'default_judgment_appeal_ruling_date',
+        when: () => Boolean(state.inputs.default_judgment_appeal_filed_date),
+      },
+      // Мотивированное апелляционное определение — от него считается кассация
+      // при обжаловании (абз. 2 ч. 1 ст. 376.1).
+      {
+        id: 'default_judgment_appeal_ruling_reasoned_date',
         when: () => Boolean(state.inputs.default_judgment_appeal_filed_date),
       },
     ],
@@ -1114,6 +1135,8 @@ function renderChoiceField(id, options, current) {
 // маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
   cassation_ksoyu: 'cassation_filed_date',
+  simplified_cassation_ksoyu: 'cassation_filed_date',
+  default_judgment_cassation_ksoyu: 'cassation_filed_date',
   cassation_vs: 'vs_cassation_filed_date',
   mirovoy_cassation: 'cassation_filed_date',
 };

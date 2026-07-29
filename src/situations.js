@@ -44,6 +44,8 @@ export const SITUATIONS = [
       'simplified_reasoned_making',
       'simplified_appeal',
       'simplified_entry_into_force',
+      'simplified_cassation_ksoyu',
+      'simplified_enforcement_presentation',
     ],
   },
   {
@@ -54,6 +56,8 @@ export const SITUATIONS = [
       'default_judgment_cancellation_request',
       'default_judgment_appeal',
       'default_judgment_entry_into_force',
+      'default_judgment_cassation_ksoyu',
+      'default_judgment_enforcement_presentation',
     ],
   },
   {

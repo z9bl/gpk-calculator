@@ -87,6 +87,16 @@ export const CASSATION_KSOYU = {
   ],
 };
 
+// Копии кассационного узла для веток помимо общей цепочки: та же норма, та же
+// механика и та же альтернатива по п. 12 ПП ВС РФ, но свой id (один id не может
+// принадлежать двум ситуациям; .ics-реестр строится по экспортированным
+// константам). Норма ст. 376.1 не различает порядок рассмотрения дела.
+export const SIMPLIFIED_CASSATION_KSOYU = { ...CASSATION_KSOYU, id: 'simplified_cassation_ksoyu' };
+export const DEFAULT_JUDGMENT_CASSATION_KSOYU = {
+  ...CASSATION_KSOYU,
+  id: 'default_judgment_cassation_ksoyu',
+};
+
 // --- Исчерпание способов обжалования (абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1) --
 //
 // Кассационная жалоба подаётся при условии, что иные способы обжалования
@@ -225,22 +235,37 @@ export const ENFORCEMENT_PRESENTATION = {
   ],
 };
 
+// Копии узла предъявления ИЛ для веток помимо общей цепочки: та же норма и та же
+// механика (три года со дня вступления в силу, ч. 1 ст. 21 ФЗ № 229-ФЗ —
+// безотносительно порядка рассмотрения дела), но свой id: один id не может
+// принадлежать двум ситуациям (см. situations.js), и .ics-реестр (TERM_REGISTRY)
+// собирается по экспортированным константам, поэтому их две.
+export const SIMPLIFIED_ENFORCEMENT_PRESENTATION = {
+  ...ENFORCEMENT_PRESENTATION,
+  id: 'simplified_enforcement_presentation',
+};
+export const DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION = {
+  ...ENFORCEMENT_PRESENTATION,
+  id: 'default_judgment_enforcement_presentation',
+};
+
 // Срок предъявления ИЛ — condition: узел появляется только когда вступление в
-// силу разрешено (resolved); в ветви pending его нет.
-function computeEnforcement(entry) {
+// силу разрешено (resolved); в ветви pending его нет. term — узел ветки (общий
+// ENFORCEMENT_PRESENTATION либо его копия с иным id).
+function computeEnforcement(entry, term = ENFORCEMENT_PRESENTATION) {
   if (!entry.resolved || entry.date == null) return null;
-  const calc = computeDeadline(ENFORCEMENT_PRESENTATION, entry.date);
+  const calc = computeDeadline(term, entry.date);
   return {
-    id: ENFORCEMENT_PRESENTATION.id,
-    title: ENFORCEMENT_PRESENTATION.title,
+    id: term.id,
+    title: term.title,
     anchor: calc.anchor,
     offset_start: calc.offset_start,
     raw_deadline: calc.raw_deadline,
     deadline: calc.deadline,
     shifted: calc.shifted,
-    logic: ENFORCEMENT_PRESENTATION.logic,
-    midnight_rule: ENFORCEMENT_PRESENTATION.midnight_rule,
-    norm: ENFORCEMENT_PRESENTATION.norm_versions[0].norm,
+    logic: term.logic,
+    midnight_rule: term.midnight_rule,
+    norm: term.norm_versions[0].norm,
   };
 }
 
@@ -579,9 +604,11 @@ function resolveSimplifiedEntry(appealFiled, reasoned, appealDeadline, appealRul
  * Упрощённое производство (глава 21.1 ГПК). Независимая ветка: считается по
  * своим inputs, от цепочки общего порядка не зависит.
  * @param {object} inputs
+ * @param {string|null} referenceDate — текущая дата (ISO) для выбора редакции
+ *   кассационной нормы, если не введена дата подачи кассационной жалобы.
  * @returns {object|null} null, если не введена дата резолютивной части.
  */
-export function computeSimplified(inputs) {
+export function computeSimplified(inputs, referenceDate = null) {
   const resolution = toISO(inputs?.simplified_resolution_date);
   if (resolution == null) return null;
 
@@ -611,11 +638,30 @@ export function computeSimplified(inputs) {
   const appealRuling = toISO(inputs.simplified_appeal_ruling_date);
   const entry = resolveSimplifiedEntry(appealFiled, reasoned, appeal.deadline, appealRuling);
 
+  // Предъявление ИЛ — три года со дня вступления решения в силу (ч. 1 ст. 21
+  // ФЗ № 229-ФЗ). Норма не различает порядок рассмотрения, поэтому узел тот же,
+  // что в общей цепочке, привязанный к событию ст. 232.4 (все три ветви).
+  const enforcement = computeEnforcement(entry, SIMPLIFIED_ENFORCEMENT_PRESENTATION);
+
+  // Кассация в КСОЮ (ст. 376.1). Исчерпание способов обжалования (3.7)
+  // применяется как в общей цепочке — упрощённое решение обжалуется в апелляцию
+  // по ч. 8 ст. 232.4.
+  const cassation = computeCassationTerm(
+    SIMPLIFIED_CASSATION_KSOYU,
+    inputs,
+    entry,
+    'simplified',
+    referenceDate,
+    { exhaustion: true },
+  );
+
   return {
     reasoned_request: request,
     reasoned_making: making,
     appeal,
     entry_into_force: { norm: SIMPLIFIED_ENTRY_NORM, ...entry },
+    enforcement,
+    cassation,
   };
 }
 
@@ -823,9 +869,11 @@ function resolveDefaultJudgmentEntry(facts) {
 /**
  * Заочное решение (ст. 237 ГПК). Независимая ветка по своим inputs.
  * @param {object} inputs
+ * @param {string|null} referenceDate — текущая дата (ISO) для выбора редакции
+ *   кассационной нормы, если не введена дата подачи кассационной жалобы.
  * @returns {object|null} null, если не введена дата вручения копии решения.
  */
-export function computeDefaultJudgment(inputs) {
+export function computeDefaultJudgment(inputs, referenceDate = null) {
   const service = toISO(inputs?.default_judgment_service_date);
   if (service == null) return null;
 
@@ -893,6 +941,25 @@ export function computeDefaultJudgment(inputs) {
     appealDeadline: appeal ? appeal.deadline : null,
   });
 
+  // Предъявление ИЛ — три года со дня вступления заочного решения в силу
+  // (ч. 1 ст. 21 ФЗ № 229-ФЗ). Привязано к событию ч. 1 ст. 244; в состоянии
+  // cancellation_granted вступления в силу не наступает (entry.resolved === false),
+  // и computeEnforcement возвращает null — узла нет.
+  const enforcement = computeEnforcement(entry, DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION);
+
+  // Кассация в КСОЮ (ст. 376.1). exhaustion: false — путь к кассации у заочного
+  // идёт через заявление об отмене (ст. 237), и входит ли этот шаг в «исчерпание
+  // способов обжалования» по п. 3 ПП ВС РФ № 17, по первоисточнику не сверено
+  // (раздел 9); предупреждение отложено до сверки.
+  const cassation = computeCassationTerm(
+    DEFAULT_JUDGMENT_CASSATION_KSOYU,
+    inputs,
+    entry,
+    'default_judgment',
+    referenceDate,
+    { exhaustion: false },
+  );
+
   return {
     subject,
     cancellation_request: request,
@@ -900,6 +967,8 @@ export function computeDefaultJudgment(inputs) {
     appeal_blocked: appealBlocked,
     appeal_not_applicable: appealNotApplicable,
     entry_into_force: { norm: DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
+    enforcement,
+    cassation,
   };
 }
 
@@ -1303,17 +1372,21 @@ function resolveEntryIntoForce(inputs, appealDeadline, today) {
 
 // --- Срок кассации (п. 4.2, п. 6) -------------------------------------------
 
-// Точка отсчёта кассационного срока для выбранной редакции.
-function resolveCassationAnchor(version, inputs, entry) {
-  if (version.anchor.event === 'appeal_ruling_reasoned') {
-    // Новая редакция — от мотивированного апелляционного определения. Если дело
-    // не обжаловалось, такого определения нет — считаем от вступления в силу.
-    if (entry.branch === 'appealed') return toISO(inputs.appeal_ruling_reasoned_date);
-    return entry.date;
-  }
-  // 'entry_into_force' — со дня вступления судебного постановления в силу.
-  return entry.date;
-}
+// Поля с датами апелляционного определения по веткам. reasoned — изготовление
+// мотивированного (точка отсчёта новой редакции при обжаловании); ruling —
+// принятие (точка отсчёта альтернативы по п. 12 ПП ВС РФ). Общая цепочка и две
+// ветки читают разные поля, механика — одна.
+const CASSATION_ANCHOR_FIELDS = {
+  general: { reasoned: 'appeal_ruling_reasoned_date', ruling: 'appeal_ruling_date' },
+  simplified: {
+    reasoned: 'simplified_appeal_ruling_reasoned_date',
+    ruling: 'simplified_appeal_ruling_date',
+  },
+  default_judgment: {
+    reasoned: 'default_judgment_appeal_ruling_reasoned_date',
+    ruling: 'default_judgment_appeal_ruling_date',
+  },
+};
 
 // Точка отсчёта кассационного срока в ВС (ст. 390.3) для выбранной редакции.
 function resolveVsAnchor(version, inputs) {
@@ -1437,28 +1510,48 @@ function exhaustionWarningFor(notAppealed) {
   return notAppealed ? EXHAUSTION_WARNING : null;
 }
 
-// Кассация в КСОЮ. referenceDate — текущая дата (ISO) для выбора редакции, если
-// не введена дата подачи кассационной жалобы.
-function computeCassation(inputs, entry, referenceDate) {
-  // condition: entry_into_force.resolved — пока событие не разрешено, не считаем.
+// Кассация в КСОЮ — обобщённый расчёт для общей цепочки и веток упрощённого
+// производства / заочного решения. Норма ст. 376.1 одна и та же; ветки
+// различаются лишь именами полей с датами апелляционного определения и тем,
+// показывать ли предупреждение об исчерпании (3.7).
+//
+// term — узел ветки (CASSATION_KSOYU или его копия с иным id);
+// branch — ключ CASSATION_ANCHOR_FIELDS; referenceDate — текущая дата (ISO) для
+// выбора редакции, если не введена дата подачи жалобы; exhaustion — показывать
+// ли предупреждение об исчерпании (для заочного отложено — см. 3.7).
+//
+// Точка отсчёта: не обжаловалось — со дня вступления в силу; обжаловалось — со
+// дня изготовления мотивированного апелляционного определения (новая редакция).
+function computeCassationTerm(term, inputs, entry, branch, referenceDate, { exhaustion } = {}) {
+  // condition: событие вступления в силу разрешено — иначе не считаем.
   if (!entry.resolved) return null;
+  const fields = CASSATION_ANCHOR_FIELDS[branch];
+  const appealed = entry.branch === 'appealed';
   const effectiveDate = toISO(inputs.cassation_filed_date) ?? referenceDate;
-  const altDates =
-    entry.branch === 'appealed'
-      ? { ruling: inputs.appeal_ruling_date, reasoned: inputs.appeal_ruling_reasoned_date }
-      : null;
-  const result = computeVersionedTerm(
-    CASSATION_KSOYU,
-    effectiveDate,
-    (version) => resolveCassationAnchor(version, inputs, entry),
-    altDates,
-  );
-  // Ветвь not_appealed: решение первой инстанции в апелляции не обжаловалось.
-  if (result) {
-    const warn = exhaustionWarningFor(entry.branch === 'not_appealed');
+  const altDates = appealed
+    ? { ruling: inputs[fields.ruling], reasoned: inputs[fields.reasoned] }
+    : null;
+  const resolveAnchor = (version) => {
+    // Новая редакция при обжаловании — от мотивированного определения; иначе
+    // (не обжаловалось либо прежняя редакция) — со дня вступления в силу.
+    if (version.anchor.event === 'appeal_ruling_reasoned' && appealed) {
+      return toISO(inputs[fields.reasoned]);
+    }
+    return entry.date;
+  };
+  const result = computeVersionedTerm(term, effectiveDate, resolveAnchor, altDates);
+  if (result && exhaustion) {
+    const warn = exhaustionWarningFor(!appealed); // не обжаловалось → предупреждение
     if (warn) result.exhaustion_warning = warn;
   }
   return result;
+}
+
+// Кассация в КСОЮ для общей цепочки.
+function computeCassation(inputs, entry, referenceDate) {
+  return computeCassationTerm(CASSATION_KSOYU, inputs, entry, 'general', referenceDate, {
+    exhaustion: true,
+  });
 }
 
 // Кассация в Судебную коллегию ВС РФ (ст. 390.3).
@@ -1516,9 +1609,9 @@ export function computeChain(inputs, options = {}) {
     // Сроки в рабочих днях — независимые узлы, каждый по своему input.
     ...computeIndependentTerms(inputs),
     // Упрощённое производство — своя ветка со своим вступлением в силу.
-    simplified: computeSimplified(inputs),
-    // Заочное решение — своя ветка; вступление в силу не рассчитывается.
-    default_judgment: computeDefaultJudgment(inputs),
+    simplified: computeSimplified(inputs, toISO(options.today)),
+    // Заочное решение — своя ветка со своим вступлением в силу.
+    default_judgment: computeDefaultJudgment(inputs, toISO(options.today)),
     // Мировой судья без мотивированного решения — своя ветка.
     mirovoy: computeMirovoy(inputs, toISO(options.today)),
   };

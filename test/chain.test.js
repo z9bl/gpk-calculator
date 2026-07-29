@@ -583,6 +583,110 @@ test('упрощённое: событие — своё, по ст. 232.4, а н
   assert.notEqual(r.simplified.entry_into_force.date, r.entry_into_force.date);
 });
 
+test('упрощённое: предъявление ИЛ — 3 года со дня вступления в силу (все ветви)', () => {
+  // ч. 5 — жалоба не подана: событие разрешено, ИЛ считается от его даты.
+  const ch5 = computeSimplified(SIMPL);
+  assert.equal(ch5.entry_into_force.date, '2026-01-23');
+  assert.ok(ch5.enforcement);
+  assert.equal(ch5.enforcement.id, 'simplified_enforcement_presentation');
+  assert.equal(ch5.enforcement.anchor, '2026-01-23');
+  assert.equal(ch5.enforcement.deadline, '2029-01-23'); // + 3 года
+  assert.match(ch5.enforcement.norm.primary, /229-ФЗ/);
+
+  // ч. 6 — составлено мотивированное решение: ИЛ от даты события этой ветви.
+  const ch6 = computeSimplified({ ...SIMPL, simplified_reasoned_date: '2026-01-15' });
+  assert.equal(ch6.enforcement.anchor, '2026-02-06');
+
+  // ч. 7 — обжаловано, определение известно: ИЛ от даты вступления в силу.
+  const ch7 = computeSimplified({
+    ...SIMPL,
+    simplified_appeal_filed_date: '2026-01-20',
+    simplified_appeal_ruling_date: '2026-03-05',
+  });
+  assert.equal(ch7.enforcement.anchor, '2026-03-05');
+});
+
+test('упрощённое: ИЛ отсутствует, пока событие не разрешено (ч. 7 без определения)', () => {
+  const s = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' });
+  assert.equal(s.entry_into_force.resolved, false);
+  assert.equal(s.enforcement, null);
+});
+
+test('упрощённое: кассация в КСОЮ — обе точки отсчёта', () => {
+  // Не обжаловалось (ч. 5): со дня вступления в силу.
+  const notAppealed = computeSimplified(SIMPL, '2026-03-01');
+  assert.ok(notAppealed.cassation);
+  assert.equal(notAppealed.cassation.id, 'simplified_cassation_ksoyu');
+  assert.equal(notAppealed.cassation.version_id, 'from_135fz');
+  assert.equal(notAppealed.cassation.anchor, notAppealed.entry_into_force.date);
+  assert.equal(notAppealed.cassation.anchor, '2026-01-23');
+  assert.match(notAppealed.cassation.norm.primary, /ст\. 376\.1/);
+
+  // Обжаловалось: со дня изготовления мотивированного апелляционного определения.
+  const appealed = computeSimplified(
+    {
+      ...SIMPL,
+      simplified_appeal_filed_date: '2026-01-20',
+      simplified_appeal_ruling_date: '2026-03-05',
+      simplified_appeal_ruling_reasoned_date: '2026-03-12',
+    },
+    '2026-03-01',
+  );
+  assert.equal(appealed.cassation.anchor, '2026-03-12'); // изготовление, не принятие
+});
+
+test('упрощённое: исчерпание способов обжалования (3.7) — как в общей цепочке', () => {
+  // Не обжаловалось → предупреждение показывается.
+  const notAppealed = computeSimplified(SIMPL, '2026-03-01');
+  assert.ok(notAppealed.cassation.exhaustion_warning);
+  assert.equal(notAppealed.cassation.exhaustion_warning.code, 'appeal_not_exhausted');
+
+  // Обжаловалось → способы исчерпаны, предупреждения нет.
+  const appealed = computeSimplified(
+    {
+      ...SIMPL,
+      simplified_appeal_filed_date: '2026-01-20',
+      simplified_appeal_ruling_date: '2026-03-05',
+      simplified_appeal_ruling_reasoned_date: '2026-03-12',
+    },
+    '2026-03-01',
+  );
+  assert.equal(appealed.cassation.exhaustion_warning, undefined);
+});
+
+test('упрощённое: alternative_calculation при различии дат принятия и изготовления', () => {
+  const differ = computeSimplified(
+    {
+      ...SIMPL,
+      simplified_appeal_filed_date: '2026-01-20',
+      simplified_appeal_ruling_date: '2026-03-05', // принятие
+      simplified_appeal_ruling_reasoned_date: '2026-03-12', // изготовление позже
+    },
+    '2026-03-01',
+  );
+  assert.ok(differ.cassation.alternative);
+  assert.equal(differ.cassation.alternative.anchor, '2026-03-05'); // от принятия (п. 12 ПП ВС)
+  assert.match(differ.cassation.alternative.norm, /п\. 12 ПП ВС РФ от 22\.06\.2021 № 17/);
+
+  // Даты совпадают — расхождения нет, альтернативы нет.
+  const same = computeSimplified(
+    {
+      ...SIMPL,
+      simplified_appeal_filed_date: '2026-01-20',
+      simplified_appeal_ruling_date: '2026-03-05',
+      simplified_appeal_ruling_reasoned_date: '2026-03-05',
+    },
+    '2026-03-01',
+  );
+  assert.equal(same.cassation.alternative, undefined);
+});
+
+test('упрощённое: кассации нет, пока событие вступления в силу не разрешено', () => {
+  const s = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' }, '2026-03-01');
+  assert.equal(s.entry_into_force.resolved, false);
+  assert.equal(s.cassation, null);
+});
+
 // --- Заочное решение (ст. 237 ГПК) ------------------------------------------
 // Вручение копии 22.12.2025 → семидневный срок пересекает январские каникулы.
 
@@ -740,6 +844,80 @@ test('ст. 244: заявление об отмене удовлетворено
   });
   assert.equal(alsoAppealed.entry_into_force.branch, 'cancellation_granted');
   assert.equal(alsoAppealed.entry_into_force.date, null);
+});
+
+test('заочное: предъявление ИЛ — 3 года со дня вступления в силу', () => {
+  // Ветвь refused_not_appealed: событие разрешено (13.03 → 12.03.2026 + 1).
+  const d = computeDefaultJudgment({ ...DJ, default_judgment_refusal_date: '2026-02-10' });
+  assert.equal(d.entry_into_force.date, '2026-03-11');
+  assert.ok(d.enforcement);
+  assert.equal(d.enforcement.id, 'default_judgment_enforcement_presentation');
+  assert.equal(d.enforcement.anchor, '2026-03-11');
+  assert.equal(d.enforcement.deadline, '2029-03-12'); // вс 11.03.2029 → пн 12.03
+  assert.match(d.enforcement.norm.primary, /229-ФЗ/);
+
+  // Обжаловано и определение известно: ИЛ от даты вступления в силу.
+  const appealed = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_refusal_date: '2026-02-10',
+    default_judgment_appeal_filed_date: '2026-03-02',
+    default_judgment_appeal_ruling_date: '2026-06-15',
+  });
+  assert.equal(appealed.enforcement.anchor, '2026-06-15');
+});
+
+test('заочное: ИЛ отсутствует при удовлетворённом заявлении об отмене', () => {
+  // cancellation_granted — вступления в силу нет вовсе, узла ИЛ тоже.
+  const d = computeDefaultJudgment({
+    ...DJ,
+    default_judgment_cancellation_request_date: '2026-01-09',
+    default_judgment_cancellation_date: '2026-01-20',
+  });
+  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(d.enforcement, null);
+});
+
+test('заочное: кассация в КСОЮ — обе точки отсчёта, предупреждение об исчерпании отложено', () => {
+  // Не обжаловалось (refused_not_appealed): со дня вступления в силу.
+  const notAppealed = computeDefaultJudgment(
+    { ...DJ, default_judgment_refusal_date: '2026-02-10' },
+    '2026-04-01',
+  );
+  assert.ok(notAppealed.cassation);
+  assert.equal(notAppealed.cassation.id, 'default_judgment_cassation_ksoyu');
+  assert.equal(notAppealed.cassation.anchor, notAppealed.entry_into_force.date);
+  assert.match(notAppealed.cassation.norm.primary, /ст\. 376\.1/);
+  // Отложено до сверки п. 3 ПП ВС № 17 по заочному (раздел 9).
+  assert.equal(notAppealed.cassation.exhaustion_warning, undefined);
+
+  // Обжаловалось: со дня изготовления мотивированного апелляционного определения,
+  // с альтернативой по п. 12 ПП ВС при различии дат принятия и изготовления.
+  const appealed = computeDefaultJudgment(
+    {
+      ...DJ,
+      default_judgment_refusal_date: '2026-02-10',
+      default_judgment_appeal_filed_date: '2026-03-02',
+      default_judgment_appeal_ruling_date: '2026-06-15', // принятие
+      default_judgment_appeal_ruling_reasoned_date: '2026-06-22', // изготовление
+    },
+    '2026-07-01',
+  );
+  assert.equal(appealed.cassation.anchor, '2026-06-22'); // изготовление
+  assert.ok(appealed.cassation.alternative);
+  assert.equal(appealed.cassation.alternative.anchor, '2026-06-15'); // принятие
+});
+
+test('заочное: кассации нет при удовлетворённом заявлении об отмене', () => {
+  const d = computeDefaultJudgment(
+    {
+      ...DJ,
+      default_judgment_cancellation_request_date: '2026-01-09',
+      default_judgment_cancellation_date: '2026-01-20',
+    },
+    '2026-04-01',
+  );
+  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(d.cassation, null);
 });
 
 // --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199) -------------

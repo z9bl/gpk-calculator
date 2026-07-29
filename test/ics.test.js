@@ -159,6 +159,27 @@ test('5. срок предъявления ИЛ уходит в .ics', () => {
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${compact}`));
 });
 
+test('ИЛ упрощённого и заочного уходят в .ics с той же структурой (3 года → 2 напоминания)', () => {
+  // Упрощённое: событие ст. 232.4 разрешено (ч. 5) → ИЛ экспортируется.
+  const sView = buildView({ simplified_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
+  const sTerm = icsTermsFromView(sView).find((t) => t.title.includes('исполнительного листа'));
+  assert.ok(sTerm, 'ИЛ упрощённого в списке экспорта');
+  assert.deepEqual(sTerm.duration, { value: 3, unit: 'year' });
+  const sIcs = buildICS([sTerm], { referenceDate: '2020-01-01', now: NOW });
+  assert.equal((sIcs.match(/BEGIN:VALARM/g) || []).length, 2); // как в общем порядке
+
+  // Заочное: событие ч. 1 ст. 244 разрешено → ИЛ экспортируется.
+  const dView = buildView(
+    { default_judgment_service_date: '2025-12-22', default_judgment_refusal_date: '2026-02-10' },
+    { today: '2026-03-01' },
+  );
+  const dTerm = icsTermsFromView(dView).find((t) => t.title.includes('исполнительного листа'));
+  assert.ok(dTerm, 'ИЛ заочного в списке экспорта');
+  assert.deepEqual(dTerm.duration, { value: 3, unit: 'year' });
+  const dIcs = buildICS([dTerm], { referenceDate: '2020-01-01', now: NOW });
+  assert.equal((dIcs.match(/BEGIN:VALARM/g) || []).length, 2);
+});
+
 // --- Напоминания для сроков в годах (3 года: 3 мес / 1 мес / 7 дней) --------
 
 // Срок предъявления ИЛ (3 года) с дедлайном 10.07.2028. Заранее проверено:

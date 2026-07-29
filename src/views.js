@@ -374,6 +374,12 @@ function simplifiedCards(simplified) {
   attachCalendarWarning(entryCard, entry.date);
   cards.push(entryCard);
 
+  // Кассация в КСОЮ — после вступления решения в силу (ст. 376.1).
+  if (simplified.cassation) cards.push(cassationCard(simplified.cassation));
+
+  // Предъявление ИЛ — после вступления решения в силу (ч. 1 ст. 21 ФЗ № 229-ФЗ).
+  if (simplified.enforcement) cards.push(enforcementCard(simplified.enforcement));
+
   return cards;
 }
 
@@ -451,6 +457,15 @@ function defaultJudgmentCards(dj) {
   if (entry.note) entryCard.note = entry.note;
   attachCalendarWarning(entryCard, entry.date);
   cards.push(entryCard);
+
+  // Кассация в КСОЮ — после вступления заочного решения в силу (ст. 376.1).
+  // Без exhaustion_warning (отложено, см. computeDefaultJudgment).
+  if (dj.cassation) cards.push(cassationCard(dj.cassation));
+
+  // Предъявление ИЛ — после вступления заочного решения в силу (ч. 1 ст. 21
+  // ФЗ № 229-ФЗ). При удовлетворённом заявлении об отмене вступления в силу нет,
+  // и dj.enforcement === null — карточки нет.
+  if (dj.enforcement) cards.push(enforcementCard(dj.enforcement));
 
   return { cards, incomplete };
 }
@@ -661,8 +676,10 @@ function buildDownstream(inputs, today) {
 function independentNodes(source, today = null) {
   const fromChain = source && 'protocol_remarks' in source;
   const terms = fromChain ? source : computeIndependentTerms(source);
-  const simplified = fromChain ? source.simplified : computeSimplified(source);
-  const defaultJudgment = fromChain ? source.default_judgment : computeDefaultJudgment(source);
+  const simplified = fromChain ? source.simplified : computeSimplified(source, today);
+  const defaultJudgment = fromChain
+    ? source.default_judgment
+    : computeDefaultJudgment(source, today);
   const mirovoy = fromChain ? source.mirovoy : computeMirovoy(source, today);
 
   const cards = [];
