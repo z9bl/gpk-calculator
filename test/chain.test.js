@@ -877,7 +877,7 @@ test('заочное: ИЛ отсутствует при удовлетворё�
   assert.equal(d.enforcement, null);
 });
 
-test('заочное: кассация в КСОЮ — обе точки отсчёта, предупреждение об исчерпании отложено', () => {
+test('заочное: кассация в КСОЮ — обе точки отсчёта', () => {
   // Не обжаловалось (refused_not_appealed): со дня вступления в силу.
   const notAppealed = computeDefaultJudgment(
     { ...DJ, default_judgment_refusal_date: '2026-02-10' },
@@ -887,8 +887,6 @@ test('заочное: кассация в КСОЮ — обе точки отс�
   assert.equal(notAppealed.cassation.id, 'default_judgment_cassation_ksoyu');
   assert.equal(notAppealed.cassation.anchor, notAppealed.entry_into_force.date);
   assert.match(notAppealed.cassation.norm.primary, /ст\. 376\.1/);
-  // Отложено до сверки п. 3 ПП ВС № 17 по заочному (раздел 9).
-  assert.equal(notAppealed.cassation.exhaustion_warning, undefined);
 
   // Обжаловалось: со дня изготовления мотивированного апелляционного определения,
   // с альтернативой по п. 12 ПП ВС при различии дат принятия и изготовления.
@@ -905,6 +903,62 @@ test('заочное: кассация в КСОЮ — обе точки отс�
   assert.equal(appealed.cassation.anchor, '2026-06-22'); // изготовление
   assert.ok(appealed.cassation.alternative);
   assert.equal(appealed.cassation.alternative.anchor, '2026-06-15'); // принятие
+});
+
+// Исчерпание способов обжалования для заочного решения (3.7): у ответчика перед
+// апелляцией обязательно заявление об отмене (ст. 237, позиция ВС РФ).
+test('заочное, ответчик без заявления об отмене: предупреждение есть даже при апелляции', () => {
+  const d = computeDefaultJudgment(
+    {
+      ...DJ,
+      default_judgment_appeal_filed_date: '2026-01-20',
+      default_judgment_appeal_ruling_date: '2026-05-10',
+      default_judgment_appeal_ruling_reasoned_date: '2026-05-15',
+    },
+    '2026-06-01',
+  );
+  assert.equal(d.entry_into_force.branch, 'appealed');
+  assert.ok(d.cassation.exhaustion_warning, 'без заявления об отмене — предупреждение');
+  // Специальный текст про заявление об отмене, а не общий про апелляцию.
+  assert.match(d.cassation.exhaustion_warning.text, /заявление об отмене/);
+  assert.match(d.cassation.exhaustion_warning.text, /ст\. 237/);
+});
+
+test('заочное, ответчик с заявлением и отказом: предупреждение снимается по факту апелляции', () => {
+  const base = { ...DJ, default_judgment_refusal_date: '2026-02-10' };
+  // Заявление рассмотрено (отказ), но апелляции нет — общее предупреждение.
+  const notAppealed = computeDefaultJudgment(base, '2026-04-01');
+  assert.ok(notAppealed.cassation.exhaustion_warning);
+  // Апелляция подана — способы исчерпаны, предупреждения нет.
+  const appealed = computeDefaultJudgment(
+    {
+      ...base,
+      default_judgment_appeal_filed_date: '2026-03-02',
+      default_judgment_appeal_ruling_date: '2026-06-15',
+      default_judgment_appeal_ruling_reasoned_date: '2026-06-20',
+    },
+    '2026-07-01',
+  );
+  assert.equal(appealed.cassation.exhaustion_warning, undefined);
+});
+
+test('заочное, иные лица: условие как в общем порядке, заявление об отмене не проверяется', () => {
+  const others = { ...DJ, default_judgment_subject: 'other_persons' };
+  // Не обжаловалось — общее предупреждение (без заявления об отмене).
+  const notAppealed = computeDefaultJudgment(others, '2026-04-01');
+  assert.ok(notAppealed.cassation.exhaustion_warning);
+  assert.doesNotMatch(notAppealed.cassation.exhaustion_warning.text, /заявление об отмене/);
+  // Обжаловалось — предупреждения нет, независимо от заявления об отмене.
+  const appealed = computeDefaultJudgment(
+    {
+      ...others,
+      default_judgment_appeal_filed_date: '2026-01-20',
+      default_judgment_appeal_ruling_date: '2026-05-10',
+      default_judgment_appeal_ruling_reasoned_date: '2026-05-15',
+    },
+    '2026-06-01',
+  );
+  assert.equal(appealed.cassation.exhaustion_warning, undefined);
 });
 
 test('заочное: кассации нет при удовлетворённом заявлении об отмене', () => {

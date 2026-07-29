@@ -446,10 +446,11 @@ test('заочное решение: карточки, выбор субъект
     'default_judgment_enforcement_presentation',
   ]);
 
-  // Кассация в КСОЮ: у заочного предупреждение об исчерпании отложено (3.7).
+  // Кассация в КСОЮ: ответчик, заявление рассмотрено (отказ), но апелляции нет —
+  // общее предупреждение об исчерпании (3.7).
   const cass = byId(v.cards, 'default_judgment_cassation_ksoyu');
   assert.match(cass.norm, /ст\. 376\.1/);
-  assert.equal(cass.exhaustion_warning, undefined, 'у заочного предупреждение отложено');
+  assert.ok(cass.exhaustion_warning, 'у ответчика без апелляции — предупреждение об исчерпании');
 
   const request = byId(v.cards, 'default_judgment_cancellation_request');
   assert.equal(request.unit, 'working_day');

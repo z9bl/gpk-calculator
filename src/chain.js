@@ -124,6 +124,19 @@ const EXHAUSTION_WARNING = {
     'соглашения, определения по делам об оспаривании решений третейских судов.',
 };
 
+// Заочное решение, ветвь ответчика: до апелляции ответчик обязан обратиться с
+// заявлением об отмене (ст. 237 ГПК в новой редакции). Позиция Верховного Суда
+// (см. раздел 3.7 SPEC.md — сверено по цитирующей публикации, не по тексту
+// определений). Текст для пользователя короткий, без реквизитов определений.
+const DEFAULT_JUDGMENT_DEFENDANT_EXHAUSTION_WARNING = {
+  code: 'appeal_not_exhausted',
+  norm: 'абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1 ГПК РФ',
+  text:
+    'Кассационная жалоба ответчика на заочное решение подаётся при условии, ' +
+    'что заявление об отмене (ст. 237 ГПК РФ) было подано и рассмотрено. Без ' +
+    'этого жалоба подлежит возврату.',
+};
+
 // Редакция нормы по дате (ч. 3 ст. 1 ГПК): границы включительны, null = без границы.
 function pickVersion(versions, dateISO) {
   return versions.find(
@@ -652,7 +665,7 @@ export function computeSimplified(inputs, referenceDate = null) {
     entry,
     'simplified',
     referenceDate,
-    { exhaustion: true },
+    { exhaustion: generalExhaustion },
   );
 
   return {
@@ -947,17 +960,16 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
   // и computeEnforcement возвращает null — узла нет.
   const enforcement = computeEnforcement(entry, DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION);
 
-  // Кассация в КСОЮ (ст. 376.1). exhaustion: false — путь к кассации у заочного
-  // идёт через заявление об отмене (ст. 237), и входит ли этот шаг в «исчерпание
-  // способов обжалования» по п. 3 ПП ВС РФ № 17, по первоисточнику не сверено
-  // (раздел 9); предупреждение отложено до сверки.
+  // Кассация в КСОЮ (ст. 376.1). Условие исчерпания у заочного зависит от
+  // субъекта: у ответчика нужно ещё и рассмотренное заявление об отмене
+  // (ст. 237, позиция ВС РФ), у иных лиц — как в общем порядке (3.7).
   const cassation = computeCassationTerm(
     DEFAULT_JUDGMENT_CASSATION_KSOYU,
     inputs,
     entry,
     'default_judgment',
     referenceDate,
-    { exhaustion: false },
+    { exhaustion: defaultJudgmentExhaustion(subject, refusal != null) },
   );
 
   return {
@@ -1517,8 +1529,9 @@ function exhaustionWarningFor(notAppealed) {
 //
 // term — узел ветки (CASSATION_KSOYU или его копия с иным id);
 // branch — ключ CASSATION_ANCHOR_FIELDS; referenceDate — текущая дата (ISO) для
-// выбора редакции, если не введена дата подачи жалобы; exhaustion — показывать
-// ли предупреждение об исчерпании (для заочного отложено — см. 3.7).
+// выбора редакции, если не введена дата подачи жалобы; exhaustion —
+// функция-резолвер `({ appealed }) => предупреждение | null`: условие исчерпания
+// у веток разное (у заочного оно зависит ещё и от заявления об отмене, 3.7).
 //
 // Точка отсчёта: не обжаловалось — со дня вступления в силу; обжаловалось — со
 // дня изготовления мотивированного апелляционного определения (новая редакция).
@@ -1540,18 +1553,37 @@ function computeCassationTerm(term, inputs, entry, branch, referenceDate, { exha
     return entry.date;
   };
   const result = computeVersionedTerm(term, effectiveDate, resolveAnchor, altDates);
-  if (result && exhaustion) {
-    const warn = exhaustionWarningFor(!appealed); // не обжаловалось → предупреждение
+  if (result && typeof exhaustion === 'function') {
+    const warn = exhaustion({ appealed });
     if (warn) result.exhaustion_warning = warn;
   }
   return result;
 }
 
+// Условие исчерпания общего порядка: не обжаловалось в апелляции → предупреждение.
+const generalExhaustion = ({ appealed }) => exhaustionWarningFor(!appealed);
+
 // Кассация в КСОЮ для общей цепочки.
 function computeCassation(inputs, entry, referenceDate) {
   return computeCassationTerm(CASSATION_KSOYU, inputs, entry, 'general', referenceDate, {
-    exhaustion: true,
+    exhaustion: generalExhaustion,
   });
+}
+
+// Условие исчерпания для заочного решения (3.7). У ответчика перед апелляцией
+// обязательно заявление об отмене (ст. 237, позиция ВС РФ): исчерпание — только
+// когда заявление рассмотрено (есть определение об отказе) И решение обжаловано
+// в апелляции. Без рассмотренного заявления — специальное предупреждение о
+// заявлении об отмене, даже если апелляция подана; заявление рассмотрено, но
+// апелляции нет — общее предупреждение об апелляции. Иным лицам заявление об
+// отмене недоступно — условие как в общем порядке.
+function defaultJudgmentExhaustion(subject, requestReviewed) {
+  return ({ appealed }) => {
+    if (subject === 'defendant' && !requestReviewed) {
+      return DEFAULT_JUDGMENT_DEFENDANT_EXHAUSTION_WARNING;
+    }
+    return exhaustionWarningFor(!appealed);
+  };
 }
 
 // Кассация в Судебную коллегию ВС РФ (ст. 390.3).
