@@ -209,6 +209,9 @@ function eventCard(entry) {
     id: 'entry_into_force',
     kind: 'event',
     title: 'Вступление решения в законную силу',
+    // Подлежащее для строки события: она рендерится без карточки, и при
+    // выделении/копировании должна читаться сама по себе («Решение суда …»).
+    subject: 'Решение суда',
     status: entry.resolved ? 'resolved' : 'pending',
     norm: entry.norm,
     date: entry.date,
@@ -360,6 +363,7 @@ function simplifiedCards(simplified) {
     id: 'simplified_entry_into_force',
     kind: 'event',
     title: 'Вступление решения в законную силу (упрощённое производство)',
+    subject: 'Решение суда',
     status: entry.resolved ? 'resolved' : 'pending',
     norm: `${entry.norm} — ${entry.part}`,
     date: entry.date,
@@ -436,6 +440,7 @@ function defaultJudgmentCards(dj) {
     id: 'default_judgment_entry_into_force',
     kind: 'event',
     title: 'Вступление заочного решения в законную силу',
+    subject: 'Заочное решение',
     status: entry.resolved ? 'resolved' : entry.applicable === false ? 'not_applicable' : 'pending',
     norm: entry.norm,
     date: entry.date,
