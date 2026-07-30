@@ -17,6 +17,11 @@ export const DEADLINE_CAPTION_COURT = 'последний день';        // �
 // печати («Спорный срок: норма и разъяснение Пленума расходятся»).
 export const ALTERNATIVE_CONFLICT_NOTE = 'Норма и разъяснение Пленума расходятся в дате:';
 
+// Сокращённая пометка-дисклеймер в конце копируемого текста и печати. Полный
+// текст — в подвале страницы (index.html); здесь короткая версия, чтобы сводка
+// не разрасталась.
+export const SHORT_DISCLAIMER = 'Справочный расчёт, не заменяет консультацию юриста';
+
 /**
  * Название события в календаре. В календаре видно только название, поэтому
  * пояснение уходит в него: «Апелляционная жалоба — последний день подачи».
@@ -164,7 +169,9 @@ export function googleCalendarUrl(term) {
  * @returns {string}
  */
 export function termsAsText(entries, options = {}) {
-  return [caseSummaryHeader(options), '', ...caseSummaryLines(entries)].join('\n');
+  return [caseSummaryHeader(options), '', ...caseSummaryLines(entries), '', SHORT_DISCLAIMER].join(
+    '\n',
+  );
 }
 
 // Русское описание правила напоминаний для срока данной длительности — для
