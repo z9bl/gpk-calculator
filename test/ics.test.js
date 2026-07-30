@@ -178,6 +178,14 @@ test('ИЛ упрощённого и заочного уходят в .ics с т
   assert.deepEqual(dTerm.duration, { value: 3, unit: 'year' });
   const dIcs = buildICS([dTerm], { referenceDate: '2020-01-01', now: NOW });
   assert.equal((dIcs.match(/BEGIN:VALARM/g) || []).length, 2);
+
+  // Мировой судья: событие ч. 1 ст. 209 разрешено (не обжаловано) → ИЛ экспортируется.
+  const mView = buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
+  const mTerm = icsTermsFromView(mView).find((t) => t.title.includes('исполнительного листа'));
+  assert.ok(mTerm, 'ИЛ мирового в списке экспорта');
+  assert.deepEqual(mTerm.duration, { value: 3, unit: 'year' });
+  const mIcs = buildICS([mTerm], { referenceDate: '2020-01-01', now: NOW });
+  assert.equal((mIcs.match(/BEGIN:VALARM/g) || []).length, 2);
 });
 
 // --- Напоминания для сроков в годах (3 года: 3 мес / 1 мес / 7 дней) --------
@@ -323,6 +331,8 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_resolution_date: '2025-07-06',
   mirovoy_request_date: '2025-07-07',
   mirovoy_reasoned_date: '2025-07-15',
+  // Принятие апелляционного определения — вступление в силу и предъявление ИЛ.
+  mirovoy_appeal_ruling_date: '2025-08-15',
   // Мотивированное апелляционное определение районного суда: открывает узел
   // кассации по делам мировых судей, не требуя, чтобы срок апелляции истёк.
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',

@@ -261,6 +261,10 @@ export const DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION = {
   ...ENFORCEMENT_PRESENTATION,
   id: 'default_judgment_enforcement_presentation',
 };
+export const MIROVOY_ENFORCEMENT_PRESENTATION = {
+  ...ENFORCEMENT_PRESENTATION,
+  id: 'mirovoy_enforcement_presentation',
+};
 
 // Срок предъявления ИЛ — condition: узел появляется только когда вступление в
 // силу разрешено (resolved); в ветви pending его нет. term — узел ветки (общий
@@ -1105,10 +1109,74 @@ const MIROVOY_APPEAL_MODES = {
   },
 };
 
+const MIROVOY_ENTRY_NORM = 'ч. 1 ст. 209 ГПК РФ';
+
+// Событие вступления решения мирового судьи в силу — по общему правилу ч. 1
+// ст. 209 (как в общей цепочке), три ветви. Обжалование распознаём по датам
+// апелляционного определения районного суда: принятие (mirovoy_appeal_ruling_date)
+// и/или изготовление мотивированного (mirovoy_appeal_ruling_reasoned_date).
+// Ветвь «обжаловано» разрешается по дате ПРИНЯТИЯ — постановление вступает в силу
+// со дня принятия апелляционного определения (как в общем порядке), а не со дня
+// изготовления мотивированного (та дата остаётся точкой отсчёта кассации).
+function resolveMirovoyEntry(inputs, appealDeadline, today) {
+  const ruling = toISO(inputs.mirovoy_appeal_ruling_date); // принятие
+  const reasoned = toISO(inputs.mirovoy_appeal_ruling_reasoned_date); // изготовление
+  const appealed = ruling != null || reasoned != null;
+
+  if (appealed) {
+    const base = {
+      branch: 'appealed',
+      logic:
+        'Обжаловано в районный суд и оставлено в силе — вступает в законную силу ' +
+        'со дня принятия апелляционного определения.',
+      note:
+        'Если апелляция отменила решение и приняла новое — новое вступает в силу немедленно.',
+    };
+    if (ruling != null) return { ...base, resolved: true, date: ruling };
+    // Известно только изготовление мотивированного — для даты вступления в силу
+    // нужна дата принятия; честно просим её, а не считаем от изготовления.
+    return {
+      ...base,
+      resolved: false,
+      date: null,
+      message: 'Вступит в силу со дня принятия апелляционного определения',
+      missing_inputs: ['mirovoy_appeal_ruling_date'],
+      note: 'Укажите дату принятия апелляционного определения — тогда дата будет рассчитана.',
+    };
+  }
+
+  // not_appealed: срок апелляционного обжалования истёк, жалоба не подавалась.
+  // Без текущей даты (today) отличить not_appealed от pending нельзя — считаем
+  // pending: не подтверждаем вступление в силу, пока это не видно из фактов.
+  const t = toISO(today);
+  if (t != null && t > appealDeadline) {
+    const entryDate = toISO(addDays(appealDeadline, 1));
+    return {
+      branch: 'not_appealed',
+      resolved: true,
+      date: entryDate,
+      logic: 'Не обжаловано — вступает в силу по истечении срока апелляционного обжалования.',
+    };
+  }
+
+  // pending: срок обжалования ещё течёт (или текущая дата неизвестна).
+  const notEarlierThan = toISO(addDays(appealDeadline, 1));
+  return {
+    branch: 'pending',
+    resolved: false,
+    date: null,
+    not_earlier_than: notEarlierThan,
+    message: `Вступит в силу не ранее ${notEarlierThan}`,
+    logic: 'Срок апелляционного обжалования не истёк.',
+  };
+}
+
 /**
  * Мировой судья без мотивированного решения (ч. 3–5 ст. 199 ГПК).
  * Независимая ветка по своим inputs.
  * @param {object} inputs
+ * @param {string|null} referenceDate — текущая дата (ISO): нужна для ветвей
+ *   not_appealed/pending события вступления в силу и для выбора маршрута кассации.
  * @returns {object|null} null, если не введена дата объявления резолютивной части.
  */
 export function computeMirovoy(inputs, referenceDate = null) {
@@ -1142,12 +1210,18 @@ export function computeMirovoy(inputs, referenceDate = null) {
     anchor_kind: appealAnchorKind,
   });
 
+  // Вступление в силу по ч. 1 ст. 209 (общее правило) и предъявление ИЛ от него.
+  const entry = resolveMirovoyEntry(inputs, appeal.deadline, toISO(referenceDate));
+  const enforcement = computeEnforcement(entry, MIROVOY_ENFORCEMENT_PRESENTATION);
+
   return {
     attendance,
     reasoned_request: request,
     reasoned_making: making,
     appeal,
     cassation: computeMirovoyCassation(inputs, appeal, toISO(referenceDate)),
+    entry_into_force: { norm: MIROVOY_ENTRY_NORM, ...entry },
+    enforcement,
   };
 }
 

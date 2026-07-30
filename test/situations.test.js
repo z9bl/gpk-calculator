@@ -34,6 +34,7 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_resolution_date: '2025-07-06',
   mirovoy_request_date: '2025-07-07',
   mirovoy_reasoned_date: '2025-07-15',
+  mirovoy_appeal_ruling_date: '2025-08-15', // принятие → вступление в силу, ИЛ
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
 };
 

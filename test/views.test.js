@@ -567,11 +567,24 @@ test('мировой судья: карточки ветви, выбор явк�
   assert.deepEqual(ids(present.cards), [
     'mirovoy_reasoned_request',
     'mirovoy_appeal',
+    'mirovoy_entry_into_force',
     'mirovoy_cassation',
+    'mirovoy_enforcement_presentation',
   ]);
   const req = byId(present.cards, 'mirovoy_reasoned_request');
   assert.equal(req.unit, 'working_day');
   assert.equal(req.deadline, '2025-12-25');
+
+  // Не обжаловано (срок апелляции истёк) → вступление в силу и предъявление ИЛ.
+  const entry = byId(present.cards, 'mirovoy_entry_into_force');
+  assert.equal(entry.kind, 'event');
+  assert.equal(entry.status, 'resolved');
+  assert.equal(entry.branch, 'not_appealed');
+  assert.equal(entry.date, '2026-01-23'); // дедлайн апелляции 22.01 + 1
+  assert.match(entry.norm, /ч\. 1 ст\. 209/);
+  const enf = byId(present.cards, 'mirovoy_enforcement_presentation');
+  assert.equal(enf.deadline, '2029-01-23'); // + 3 года
+  assert.match(enf.norm, /ст\. 21 ФЗ .*229-ФЗ/);
 
   const absent = buildView(
     { mirovoy_resolution_date: '2025-12-22', mirovoy_attendance: 'absent' },
