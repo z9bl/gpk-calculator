@@ -97,6 +97,12 @@
 
       .print-only { display: none; }
 
+      /* Дисклеймер в подвале — приглушённо, не конкурирует с картой сроков. */
+      .disclaimer {
+        margin: 36px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
+        color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 60ch;
+      }
+
       /* Плавное появление блоков: разворот по высоте через grid-template-rows.
          Анимируется одноразовым keyframes только на впервые показанном блоке —
          на уже показанных класса нет, поэтому перерисовка их не дёргает. */
@@ -282,9 +288,12 @@
         #situation-inputs,
         #other-terms,
         #results,
+        .disclaimer,
         #stubs { display: none !important; }
 
         .print-only { display: block; }
+        /* Сокращённая пометка в конце печати — мелко и серым. */
+        .print-disclaimer { font-size: 9pt; color: #555; margin: 16px 0 0; }
         #print-header { margin: 0 0 14px; }
         #print-header .print-title { font-size: 14pt; font-weight: 700; }
         /* Иерархия: дата крупная и жирная, норма мельче и серым строкой ниже. */
@@ -355,6 +364,16 @@
       <section class="other-terms" id="other-terms"></section>
 
       <section class="stubs" id="stubs"></section>
+
+      <footer class="disclaimer">
+        Калькулятор даёт справочный расчёт на основе текста ГПК РФ и разъяснений
+        Пленума Верховного Суда. Он не заменяет консультацию юриста и не является
+        юридической консультацией. Перед подачей документов проверяйте сроки по
+        первоисточникам — расчёт может не учитывать особенности конкретного дела.
+      </footer>
+
+      <!-- В печати — сокращённая пометка в конце (полный текст скрыт). -->
+      <p class="print-only print-disclaimer">Справочный расчёт, не заменяет консультацию юриста</p>
     </div>
 
     <script type="module">
