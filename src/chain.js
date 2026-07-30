@@ -1311,13 +1311,22 @@ const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 // --- Вспомогательные --------------------------------------------------------
 
 // Приводит Date | 'YYYY-MM-DD' | null/undefined к ISO-строке или null.
+//
+// Пустая строка и неполные/битые даты дают null, а не «NaN-NaN-NaN»: иначе
+// проверки вида `toISO(x) != null` ложно срабатывают на пустом поле. Так пустое
+// поле «определение об отказе» переставало гасить предупреждение об исчерпании
+// для ответчика по заочному решению.
 function toISO(value) {
-  if (value == null) return null;
+  if (value == null || value === '') return null;
   if (typeof value === 'string') {
-    const [y, m, d] = value.split('-').map(Number);
-    return toISODate(new Date(Date.UTC(y, m - 1, d)));
+    const parts = value.split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+    const [y, m, d] = parts;
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return Number.isNaN(date.getTime()) ? null : toISODate(date);
   }
-  return toISODate(value);
+  const iso = toISODate(value);
+  return iso === 'NaN-NaN-NaN' ? null : iso;
 }
 
 // --- Событие: вступление решения в силу (п. 4.3) ----------------------------

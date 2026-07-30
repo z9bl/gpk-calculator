@@ -924,6 +924,26 @@ test('заочное, ответчик без заявления об отмен
   assert.match(d.cassation.exhaustion_warning.text, /ст\. 237/);
 });
 
+// Регрессия: пустые (не undefined, а '') поля заявления об отмене — как их может
+// передать внешний слой — раньше через toISO давали «NaN-NaN-NaN», и проверка
+// «есть определение об отказе» ложно срабатывала, гася предупреждение.
+test('заочное, ответчик: пустые строки заявления/отказа не гасят предупреждение', () => {
+  const d = computeDefaultJudgment(
+    {
+      ...DJ,
+      default_judgment_subject: 'defendant',
+      default_judgment_cancellation_request_date: '',
+      default_judgment_refusal_date: '',
+      default_judgment_appeal_filed_date: '2026-01-20',
+      default_judgment_appeal_ruling_date: '2026-05-10',
+      default_judgment_appeal_ruling_reasoned_date: '2026-05-15',
+    },
+    '2026-06-01',
+  );
+  assert.ok(d.cassation.exhaustion_warning, 'пустые строки = заявления нет → предупреждение');
+  assert.match(d.cassation.exhaustion_warning.text, /заявление об отмене/);
+});
+
 test('заочное, ответчик с заявлением и отказом: предупреждение снимается по факту апелляции', () => {
   const base = { ...DJ, default_judgment_refusal_date: '2026-02-10' };
   // Заявление рассмотрено (отказ), но апелляции нет — общее предупреждение.
