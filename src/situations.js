@@ -32,7 +32,9 @@ export const SITUATIONS = [
       'mirovoy_reasoned_request',
       'mirovoy_reasoned_making',
       'mirovoy_appeal',
+      'mirovoy_entry_into_force',
       'mirovoy_cassation',
+      'mirovoy_enforcement_presentation',
     ],
   },
   {

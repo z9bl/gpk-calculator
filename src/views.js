@@ -499,6 +499,24 @@ function mirovoyCards(m) {
   attachCalendarWarning(appeal);
   cards.push(appeal);
 
+  // Вступление в силу по ч. 1 ст. 209 (как в общем порядке), три ветви.
+  const entry = m.entry_into_force;
+  const entryCard = {
+    id: 'mirovoy_entry_into_force',
+    kind: 'event',
+    title: 'Вступление решения в законную силу (мировой судья)',
+    subject: 'Решение мирового судьи',
+    status: entry.resolved ? 'resolved' : 'pending',
+    norm: entry.norm,
+    date: entry.date,
+    branch: entry.branch,
+    details: { collapsed: true, logic: entry.logic },
+  };
+  if (entry.message) entryCard.message = entry.message;
+  if (entry.note) entryCard.note = entry.note;
+  attachCalendarWarning(entryCard, entry.date);
+  cards.push(entryCard);
+
   // Кассация по делам мировых судей: маршрут зависит от даты подачи
   // (глава 40.1 с 10.05.2026 либо прежний КСОЮ по переходному положению).
   if (m.cassation) {
@@ -509,6 +527,10 @@ function mirovoyCards(m) {
     if (m.cassation.transitional_note) cass.note = m.cassation.transitional_note;
     cards.push(cass);
   }
+
+  // Предъявление ИЛ — после вступления решения в силу (ч. 1 ст. 21 ФЗ № 229-ФЗ).
+  if (m.enforcement) cards.push(enforcementCard(m.enforcement));
+
   return cards;
 }
 

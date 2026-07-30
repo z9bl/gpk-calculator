@@ -1168,6 +1168,70 @@ test('кассация мировых: узла нет без данных ап�
   assert.equal(computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }).cassation, null);
 });
 
+// --- Мировой: вступление в силу (ч. 1 ст. 209) и предъявление ИЛ ------------
+
+test('мировой, вступление в силу: три ветви события', () => {
+  // Резолютивная часть 22.12.2025 → апелляция (present) истекает 22.01.2026.
+  // not_appealed: срок апелляции истёк, жалоба не подавалась.
+  const notAppealed = computeMirovoy(MIR, '2026-03-01');
+  assert.equal(notAppealed.entry_into_force.branch, 'not_appealed');
+  assert.equal(notAppealed.entry_into_force.resolved, true);
+  assert.equal(notAppealed.entry_into_force.date, '2026-01-23'); // дедлайн 22.01 + 1
+  assert.match(notAppealed.entry_into_force.norm, /ч\. 1 ст\. 209/);
+
+  // pending: срок апелляции ещё течёт.
+  const pending = computeMirovoy(MIR, '2026-01-10');
+  assert.equal(pending.entry_into_force.branch, 'pending');
+  assert.equal(pending.entry_into_force.resolved, false);
+  assert.equal(pending.entry_into_force.date, null);
+  assert.match(pending.entry_into_force.message, /не ранее 2026-01-23/);
+
+  // appealed: разрешается датой ПРИНЯТИЯ апелляционного определения.
+  const appealed = computeMirovoy(
+    { ...MIR, mirovoy_appeal_ruling_date: '2026-05-10' },
+    '2026-06-01',
+  );
+  assert.equal(appealed.entry_into_force.branch, 'appealed');
+  assert.equal(appealed.entry_into_force.resolved, true);
+  assert.equal(appealed.entry_into_force.date, '2026-05-10'); // день принятия
+});
+
+test('мировой, appealed: известно только изготовление — просим дату принятия', () => {
+  // Обжаловано (есть изготовление для кассации), но даты принятия нет — событие
+  // не разрешено, дату вступления в силу не выдумываем.
+  const m = computeMirovoy(
+    { ...MIR, mirovoy_appeal_ruling_reasoned_date: '2026-05-15' },
+    '2026-06-01',
+  );
+  assert.equal(m.entry_into_force.branch, 'appealed');
+  assert.equal(m.entry_into_force.resolved, false);
+  assert.equal(m.entry_into_force.date, null);
+  assert.deepEqual(m.entry_into_force.missing_inputs, ['mirovoy_appeal_ruling_date']);
+});
+
+test('мировой, предъявление ИЛ — 3 года со дня вступления в силу', () => {
+  // not_appealed: ИЛ от даты события (23.01.2026).
+  const notAppealed = computeMirovoy(MIR, '2026-03-01');
+  assert.ok(notAppealed.enforcement);
+  assert.equal(notAppealed.enforcement.id, 'mirovoy_enforcement_presentation');
+  assert.equal(notAppealed.enforcement.anchor, '2026-01-23');
+  assert.equal(notAppealed.enforcement.deadline, '2029-01-23'); // + 3 года
+  assert.match(notAppealed.enforcement.norm.primary, /229-ФЗ/);
+
+  // appealed: ИЛ от даты принятия апелляционного определения.
+  const appealed = computeMirovoy(
+    { ...MIR, mirovoy_appeal_ruling_date: '2026-05-10' },
+    '2026-06-01',
+  );
+  assert.equal(appealed.enforcement.anchor, '2026-05-10');
+});
+
+test('мировой: ИЛ отсутствует, пока вступление в силу не разрешено (pending)', () => {
+  const pending = computeMirovoy(MIR, '2026-01-10');
+  assert.equal(pending.entry_into_force.resolved, false);
+  assert.equal(pending.enforcement, null);
+});
+
 // --- Исчерпание способов обжалования (абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1) ---
 
 test('исчерпание: КСОЮ в ветви not_appealed несёт предупреждение', () => {
