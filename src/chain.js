@@ -676,6 +676,87 @@ function computePeriodicPayments(inputs) {
   );
 }
 
+// Дела о возвращении ребёнка и об осуществлении прав доступа (глава 22.2 ГПК).
+//
+// Специальная категория дел из §11.4 SPEC.md: по делам, рассматриваемым на
+// основании международного договора РФ, сроки обжалования КОРОЧЕ общего
+// порядка, и общий узел (месяц по ст. 321) дал бы для них неверный результат.
+//
+// Два независимых узла с РАЗНЫМИ якорями — объединять их нельзя:
+//   ч. 1 ст. 244.17 — апелляция, десять дней со дня принятия решения суда в
+//     окончательной форме (аналог обычной апелляции, но не месяц);
+//   ч. 1 ст. 244.18 — частная жалоба на определение суда первой инстанции по
+//     такому делу, десять дней со дня вынесения определения (аналог
+//     PRIVATE_COMPLAINT: определение промежуточное, а не итоговое решение).
+//
+// Единица — рабочие дни. Слова «рабочих» в тексте статей нет, но по абз. 2
+// ч. 3 ст. 107 нерабочие дни в сроки, исчисляемые днями, не входят; так же
+// считаются ст. 128 (COURT_ORDER_OBJECTION) и ст. 332 (PRIVATE_COMPLAINT).
+//
+// Вне модели остаётся вся остальная процедура главы 22.2, в том числе сроки
+// СУДА, а не участника: 42 дня на рассмотрение дела (ст. 244.15), месяц на
+// рассмотрение апелляционной жалобы (ч. 2 ст. 244.17) и десять дней на
+// рассмотрение частной жалобы (ч. 2 ст. 244.18).
+//
+// Редакций не заводим — обе части в этом виде не менялись.
+export const CHILD_RETURN_APPEAL = {
+  id: 'child_return_appeal',
+  title: 'Апелляционная жалоба по делу о возвращении ребёнка (глава 22.2 ГПК)',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'child_return_reasoned_decision_date', offset_start: 1 },
+  condition: 'child_return_reasoned_decision_date',
+  ics: true,
+  logic:
+    'Десять дней со дня принятия решения суда в окончательной форме (ч. 1 ' +
+    'ст. 244.17 ГПК РФ) — по этой категории дел срок короче месячного срока ' +
+    'общего порядка (ст. 321). Срок исчисляется днями — нерабочие дни не ' +
+    'включаются (абз. 2 ч. 3 ст. 107 ГПК РФ); течение начинается со дня, ' +
+    'следующего за принятием решения в окончательной форме, а если он ' +
+    'нерабочий — с первого рабочего дня.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'child_return_reasoned_decision_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 244.17 ГПК РФ',
+        calculation: ['ч. 3 (абз. 2) ст. 107 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+export const CHILD_RETURN_PRIVATE_COMPLAINT = {
+  id: 'child_return_private_complaint',
+  title: 'Частная жалоба по делу о возвращении ребёнка (глава 22.2 ГПК)',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'child_return_interim_ruling_date', offset_start: 1 },
+  condition: 'child_return_interim_ruling_date',
+  ics: true,
+  logic:
+    'Десять дней со дня вынесения определения судом первой инстанции по делу ' +
+    'о возвращении ребёнка или об осуществлении прав доступа (ч. 1 ст. 244.18 ' +
+    'ГПК РФ) — короче пятнадцатидневного срока общего порядка (ст. 332). Срок ' +
+    'исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ст. 107 ГПК ' +
+    'РФ); течение начинается со дня, следующего за вынесением определения, а ' +
+    'если он нерабочий — с первого рабочего дня.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'child_return_interim_ruling_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 244.18 ГПК РФ',
+        calculation: ['ч. 3 (абз. 2) ст. 107 ГПК РФ'],
+      },
+    },
+  ],
+};
+
 // Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
 function computeSimpleTerm(term, anchorDate, overrides = null) {
   const anchor = toISO(anchorDate);
@@ -720,7 +801,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -750,6 +831,20 @@ export function computeIndependentTerms(inputs) {
       inputs?.enforcement_interruptions,
     ),
     periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
+    // Дела о возвращении ребёнка (глава 22.2): два независимых узла одной
+    // ситуации — как у судебного приказа, а не ветвь с внутренними связями,
+    // как mirovoy/simplified. Апелляция считается от даты решения в
+    // окончательной форме, частная жалоба — от даты определения суда первой
+    // инстанции; ни одна из дат не является входом для другого узла, поэтому
+    // отдельная функция-ветвь им не нужна.
+    child_return_appeal: computeSimpleTerm(
+      CHILD_RETURN_APPEAL,
+      inputs?.child_return_reasoned_decision_date,
+    ),
+    child_return_private_complaint: computeSimpleTerm(
+      CHILD_RETURN_PRIVATE_COMPLAINT,
+      inputs?.child_return_interim_ruling_date,
+    ),
   };
 }
 

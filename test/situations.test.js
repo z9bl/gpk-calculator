@@ -40,6 +40,8 @@ const ALL_BRANCHES_INPUTS = {
   court_order_copy_received_date: '2025-07-02',
   court_order_issued_date: '2023-04-12',
   periodic_payment_period_end_date: '2023-04-12',
+  child_return_reasoned_decision_date: '2025-07-02',
+  child_return_interim_ruling_date: '2025-07-08',
 };
 
 test('каждый узел из buildView попадает ровно в одну ситуацию', () => {
@@ -100,6 +102,45 @@ test('судебный приказ: оба узла ситуации учтен
   );
 });
 
+test('возвращение ребёнка: оба узла ситуации учтены в разбиении', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'child_return');
+  assert.deepEqual(situation.nodes, ['child_return_appeal', 'child_return_private_complaint']);
+  assert.deepEqual(situation.fields, [
+    'child_return_reasoned_decision_date',
+    'child_return_interim_ruling_date',
+  ]);
+  // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  // Каждое поле открывает свой узел и только его — узлы независимы.
+  const appealOnly = buildView(
+    { child_return_reasoned_decision_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    appealOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['child_return_appeal'],
+  );
+  const privateOnly = buildView(
+    { child_return_interim_ruling_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    privateOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['child_return_private_complaint'],
+  );
+
+  // Узлы главы 22.2 не должны просачиваться в другие ветви: сроки специальные.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'child_return')) {
+    for (const id of situation.nodes) {
+      assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} не отсюда`);
+    }
+    for (const f of situation.fields) {
+      assert.ok(!s.fields.includes(f), `${s.id}: поле ${f} не отсюда`);
+    }
+  }
+});
+
 test('возврат кассационной жалобы: узел в независимом пуле, а не в ветви категории', () => {
   const separate = SITUATIONS.find((s) => s.id === 'separate');
   assert.ok(
@@ -137,7 +178,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined).id, 'general');
 });
 
-test('все семь ситуаций на месте и подписаны', () => {
+test('все восемь ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -147,6 +188,7 @@ test('все семь ситуаций на месте и подписаны', (
       'default_judgment',
       'court_order',
       'periodic_payments',
+      'child_return',
       'separate',
     ],
   );

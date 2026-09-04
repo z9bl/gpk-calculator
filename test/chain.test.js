@@ -1332,6 +1332,139 @@ test('возражения должника: логика упоминает п�
   assert.match(t.midnight_rule, /ч\. 3 ст\. 108/);
 });
 
+// --- Возвращение ребёнка / права доступа (глава 22.2 ГПК) -------------------
+
+test('глава 22.2: апелляция — 10 рабочих дней со дня решения в окончательной форме', () => {
+  const t = computeIndependentTerms({ child_return_reasoned_decision_date: '2026-03-02' })
+    .child_return_appeal;
+  assert.equal(t.anchor, '2026-03-02');
+  assert.equal(t.first_working_day, '2026-03-03'); // течение со следующего дня
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.shifted, false); // ч. 2 ст. 108 к срокам в рабочих днях не применяется
+  assert.match(t.norm.primary, /ч\. 1 ст\. 244\.17/);
+  assert.deepEqual(t.norm.calculation, ['ч. 3 (абз. 2) ст. 107 ГПК РФ']);
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+});
+
+test('глава 22.2: частная жалоба — 10 рабочих дней со дня вынесения определения', () => {
+  const t = computeIndependentTerms({ child_return_interim_ruling_date: '2026-03-02' })
+    .child_return_private_complaint;
+  assert.equal(t.anchor, '2026-03-02');
+  assert.equal(t.first_working_day, '2026-03-03');
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.shifted, false);
+  assert.match(t.norm.primary, /ч\. 1 ст\. 244\.18/);
+  assert.deepEqual(t.norm.calculation, ['ч. 3 (абз. 2) ст. 107 ГПК РФ']);
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+});
+
+test('глава 22.2: сроки короче общего порядка — не месяц и не 15 дней', () => {
+  // Смысл всей категории: общий узел дал бы для этих дел неверный результат.
+  const { appeal } = computeChain({ reasoned_decision_date: '2026-03-02' }, { today: '2026-03-01' });
+  assert.equal(appeal.deadline, '2026-04-02'); // месяц по ст. 321
+  const terms = computeIndependentTerms({
+    child_return_reasoned_decision_date: '2026-03-02',
+    interim_ruling_date: '2026-03-02',
+    child_return_interim_ruling_date: '2026-03-02',
+  });
+  assert.equal(terms.child_return_appeal.deadline, '2026-03-17'); // 10 рабочих дней
+  // Частная жалоба общего порядка (ст. 332) — 15 рабочих дней, глава 22.2 — 10.
+  assert.equal(terms.private_complaint.deadline, '2026-03-24');
+  assert.equal(terms.child_return_private_complaint.deadline, '2026-03-17');
+});
+
+test('глава 22.2: рабочие дни, а не календарные — перенос через каникулы', () => {
+  // Решение в окончательной форме 26.12.2025 (пятница). Течение — с 29.12;
+  // 31.12.2025 и 01–09.01.2026 нерабочие, поэтому десятый рабочий день —
+  // 21.01.2026, а не 05.01.2026, как было бы при календарном счёте.
+  const t = computeIndependentTerms({ child_return_reasoned_decision_date: '2025-12-26' })
+    .child_return_appeal;
+  assert.equal(t.first_working_day, '2025-12-29');
+  assert.equal(t.deadline, '2026-01-21');
+
+  const p = computeIndependentTerms({ child_return_interim_ruling_date: '2025-12-26' })
+    .child_return_private_complaint;
+  assert.equal(p.first_working_day, '2025-12-29');
+  assert.equal(p.deadline, '2026-01-21');
+});
+
+test('глава 22.2: течение начинается с первого рабочего дня', () => {
+  // 20.02.2026 (пятница): 21–22 выходные, 23 февраля праздник — отсчёт идёт
+  // с 24.02, а не со следующего календарного дня.
+  const t = computeIndependentTerms({ child_return_reasoned_decision_date: '2026-02-20' })
+    .child_return_appeal;
+  assert.equal(t.first_working_day, '2026-02-24');
+  assert.equal(t.deadline, '2026-03-10');
+
+  const p = computeIndependentTerms({ child_return_interim_ruling_date: '2026-02-20' })
+    .child_return_private_complaint;
+  assert.equal(p.first_working_day, '2026-02-24');
+  assert.equal(p.deadline, '2026-03-10');
+});
+
+test('глава 22.2: узлов нет без своих дат', () => {
+  const empty = computeIndependentTerms({});
+  assert.equal(empty.child_return_appeal, null);
+  assert.equal(empty.child_return_private_complaint, null);
+  const chain = computeChain(BASE, { today: '2026-03-01' });
+  assert.equal(chain.child_return_appeal, null);
+  assert.equal(chain.child_return_private_complaint, null);
+  // Даты общей ветви и общей частной жалобы эти узлы не открывают: у главы 22.2
+  // свои поля.
+  const other = computeIndependentTerms({
+    reasoned_decision_date: '2026-03-02',
+    interim_ruling_date: '2026-03-02',
+  });
+  assert.equal(other.child_return_appeal, null);
+  assert.equal(other.child_return_private_complaint, null);
+});
+
+test('глава 22.2: апелляция и частная жалоба считаются независимо', () => {
+  // Оба поля ситуации друг от друга не зависят: можно заполнить только одно,
+  // только другое, оба или ни одного. Якоря разные, поэтому и даты разные.
+  const onlyAppeal = computeIndependentTerms({
+    child_return_reasoned_decision_date: '2026-03-02',
+  });
+  assert.ok(onlyAppeal.child_return_appeal);
+  assert.equal(onlyAppeal.child_return_private_complaint, null);
+
+  const onlyPrivate = computeIndependentTerms({ child_return_interim_ruling_date: '2026-02-20' });
+  assert.equal(onlyPrivate.child_return_appeal, null);
+  assert.ok(onlyPrivate.child_return_private_complaint);
+
+  const both = computeIndependentTerms({
+    child_return_reasoned_decision_date: '2026-03-02',
+    child_return_interim_ruling_date: '2026-02-20',
+  });
+  // Каждый узел считается от своего якоря — соседнее поле его не сдвигает.
+  assert.equal(both.child_return_appeal.deadline, onlyAppeal.child_return_appeal.deadline);
+  assert.equal(
+    both.child_return_private_complaint.deadline,
+    onlyPrivate.child_return_private_complaint.deadline,
+  );
+  assert.equal(both.child_return_appeal.deadline, '2026-03-17');
+  assert.equal(both.child_return_private_complaint.deadline, '2026-03-10');
+
+  const neither = computeIndependentTerms({});
+  assert.equal(neither.child_return_appeal, null);
+  assert.equal(neither.child_return_private_complaint, null);
+});
+
+test('глава 22.2: узлы доступны и через computeChain', () => {
+  const chain = computeChain(
+    {
+      ...BASE,
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-03-01' },
+  );
+  assert.equal(chain.child_return_appeal.deadline, '2026-03-17');
+  assert.equal(chain.child_return_private_complaint.deadline, '2026-03-10');
+  assert.match(chain.child_return_appeal.midnight_rule, /ч\. 3 ст\. 108/);
+  assert.match(chain.child_return_private_complaint.midnight_rule, /ч\. 3 ст\. 108/);
+});
+
 // --- Периодические платежи: предъявление к исполнению (ч. 4 ст. 21 229-ФЗ) --
 
 test('периодические платежи: 3 года со дня окончания периода, перенос через выходные', () => {

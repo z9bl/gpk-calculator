@@ -754,6 +754,98 @@ test('возражения должника: истёкший срок поме�
   assert.equal(obj.status, 'expired');
 });
 
+test('глава 22.2: карточки появляются по своим датам', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('child_return_appeal'));
+  assert.ok(!ids(without.cards).includes('child_return_private_complaint'));
+
+  const v = buildView(
+    {
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-03-01' },
+  );
+
+  const appeal = byId(v.cards, 'child_return_appeal');
+  assert.ok(appeal);
+  assert.equal(appeal.status, 'computed');
+  assert.equal(appeal.unit, 'working_day');
+  assert.equal(appeal.first_working_day, '2026-03-03');
+  assert.equal(appeal.deadline, '2026-03-17');
+  assert.match(appeal.norm, /ч\. 1 ст\. 244\.17/);
+  assert.deepEqual(appeal.duration, { value: 10, unit: 'working_day' });
+
+  const priv = byId(v.cards, 'child_return_private_complaint');
+  assert.ok(priv);
+  assert.equal(priv.status, 'computed');
+  assert.equal(priv.unit, 'working_day');
+  assert.equal(priv.first_working_day, '2026-02-24');
+  assert.equal(priv.deadline, '2026-03-10');
+  assert.match(priv.norm, /ч\. 1 ст\. 244\.18/);
+  assert.deepEqual(priv.duration, { value: 10, unit: 'working_day' });
+});
+
+test('глава 22.2: два узла ситуации независимы друг от друга', () => {
+  const onlyAppeal = buildView(
+    { child_return_reasoned_decision_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(onlyAppeal.cards).filter((id) => id.startsWith('child_return')),
+    ['child_return_appeal'],
+  );
+
+  const onlyPrivate = buildView(
+    { child_return_interim_ruling_date: '2026-02-20' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(onlyPrivate.cards).filter((id) => id.startsWith('child_return')),
+    ['child_return_private_complaint'],
+  );
+
+  const both = buildView(
+    {
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(both.cards).filter((id) => id.startsWith('child_return')),
+    ['child_return_appeal', 'child_return_private_complaint'],
+  );
+  assert.equal(byId(both.cards, 'child_return_appeal').deadline, '2026-03-17');
+  assert.equal(byId(both.cards, 'child_return_private_complaint').deadline, '2026-03-10');
+
+  const neither = buildView({}, { today: '2026-03-01' });
+  assert.deepEqual(ids(neither.cards).filter((id) => id.startsWith('child_return')), []);
+});
+
+test('глава 22.2: даты общей ветви эти карточки не поднимают', () => {
+  // Своя категория дел — свои поля: общая дата решения и общая дата определения
+  // суда первой инстанции считаются по общим нормам (ст. 321, 332).
+  const v = buildView(
+    { reasoned_decision_date: '2026-03-02', interim_ruling_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(ids(v.cards).filter((id) => id.startsWith('child_return')), []);
+  assert.ok(ids(v.cards).includes('private_complaint'));
+});
+
+test('глава 22.2: истёкший срок помечается по текущей дате', () => {
+  const v = buildView(
+    {
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-04-01' },
+  );
+  assert.equal(byId(v.cards, 'child_return_appeal').status, 'expired');
+  assert.equal(byId(v.cards, 'child_return_private_complaint').status, 'expired');
+});
+
 test('периодические платежи: карточка появляется по дате окончания периода', () => {
   const without = buildView({}, { today: '2026-03-01' });
   assert.ok(!ids(without.cards).includes('periodic_payments_presentation'));

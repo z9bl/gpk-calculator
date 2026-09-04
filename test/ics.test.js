@@ -344,6 +344,11 @@ const ALL_BRANCHES_INPUTS = {
   court_order_issued_date: '2023-04-12',
   // периодические платежи (независимый трек, ч. 4 ст. 21 ФЗ № 229-ФЗ)
   periodic_payment_period_end_date: '2023-04-12',
+  // возвращение ребёнка / права доступа (глава 22.2 ГПК): апелляция от решения
+  // в окончательной форме (ч. 1 ст. 244.17) и частная жалоба от определения
+  // суда первой инстанции (ч. 1 ст. 244.18) — два независимых узла
+  child_return_reasoned_decision_date: '2025-07-02',
+  child_return_interim_ruling_date: '2025-07-08',
 };
 
 // Дата расчёта для проверок полноты экспорта — раньше всех дедлайнов набора.
@@ -488,6 +493,66 @@ test('возражения должника на судебный приказ �
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260313T090000Z')); // 2 рабочих дня
   assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260310T090000Z')); // 5 рабочих дней
+});
+
+test('глава 22.2: оба узла уходят в .ics (по 10 рабочих дней)', () => {
+  const view = buildView(
+    {
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromView(view); // ровно тот путь, что у кнопки «Скачать»
+
+  const appeal = terms.find((t) => t.title.includes('Апелляционная жалоба по делу'));
+  assert.ok(appeal, 'апелляция по делу о возвращении ребёнка в списке экспорта');
+  assert.deepEqual(appeal.duration, { value: 10, unit: 'working_day' });
+  assert.equal(appeal.deadline, '2026-03-17');
+  assert.match(appeal.norm, /ч\. 1 ст\. 244\.17/);
+
+  const priv = terms.find((t) => t.title.includes('Частная жалоба по делу'));
+  assert.ok(priv, 'частная жалоба по делу о возвращении ребёнка в списке экспорта');
+  assert.deepEqual(priv.duration, { value: 10, unit: 'working_day' });
+  assert.equal(priv.deadline, '2026-03-10');
+  assert.match(priv.norm, /ч\. 1 ст\. 244\.18/);
+
+  const ics = buildICS(terms, { referenceDate: '2026-02-19', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${appeal.deadline.replace(/-/g, '')}`));
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${priv.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
+  // Смещения в рабочих днях: за 2 и за 5 рабочих дней до каждого дедлайна.
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4);
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260313T090000Z')); // 17.03 − 2 р. д.
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260310T090000Z')); // 17.03 − 5 р. д.
+  // 09.03.2026 — перенесённый выходной за 8 марта, поэтому два рабочих дня до
+  // 10.03 — это 05.03, а не 08.03: смещения тоже в рабочих днях.
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260305T090000Z')); // 10.03 − 2 р. д.
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260302T090000Z')); // 10.03 − 5 р. д.
+});
+
+test('глава 22.2: те же сроки и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      child_return_reasoned_decision_date: '2026-03-02',
+      child_return_interim_ruling_date: '2026-02-20',
+    },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromChain(chain);
+
+  const appeal = terms.find((t) => t.title.includes('Апелляционная жалоба по делу'));
+  assert.ok(appeal, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(appeal.deadline, '2026-03-17');
+  assert.equal(appeal.ics, true);
+  assert.deepEqual(appeal.duration, { value: 10, unit: 'working_day' });
+
+  const priv = terms.find((t) => t.title.includes('Частная жалоба по делу'));
+  assert.ok(priv, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(priv.deadline, '2026-03-10');
+  assert.equal(priv.ics, true);
+  assert.deepEqual(priv.duration, { value: 10, unit: 'working_day' });
 });
 
 test('предъявление документов о периодических платежах уходит в .ics при заданной дате', () => {
