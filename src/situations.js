@@ -79,8 +79,13 @@ export const SITUATIONS = [
     // default_judgment, а не primary_field — тот зарезервирован за общей
     // веткой (см. тест 'по умолчанию выбран общий порядок' в situations.test.js
     // и статическую разметку общего поля в web/app.js).
-    fields: ['court_order_issued_date'],
-    nodes: ['court_order_presentation'],
+    // Два независимых поля одной процедуры, в порядке самой процедуры: копия
+    // приказа получена должником (ст. 128) → возражений в срок нет → приказ
+    // выдан взыскателю (ст. 130, ч. 3 ст. 21 ФЗ № 229-ФЗ). Друг от друга поля
+    // не зависят: каждый узел считается по своему input, любое из полей можно
+    // заполнить отдельно.
+    fields: ['court_order_copy_received_date', 'court_order_issued_date'],
+    nodes: ['court_order_objection', 'court_order_presentation'],
   },
   {
     id: 'periodic_payments',

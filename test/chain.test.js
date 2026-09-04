@@ -1141,6 +1141,97 @@ test('судебный приказ: узел не зависит от поле�
   assert.equal(chain.court_order_presentation.deadline, '2026-04-13');
 });
 
+// --- Возражения должника на судебный приказ (ст. 128 ГПК) -------------------
+
+test('возражения должника: 10 рабочих дней со дня получения копии приказа (ст. 128)', () => {
+  const t = computeIndependentTerms({ court_order_copy_received_date: '2026-03-02' })
+    .court_order_objection;
+  assert.equal(t.anchor, '2026-03-02');
+  assert.equal(t.first_working_day, '2026-03-03'); // течение со следующего дня
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.shifted, false); // ч. 2 ст. 108 к срокам в рабочих днях не применяется
+  assert.match(t.norm.primary, /ст\. 128/);
+  assert.deepEqual(t.norm.calculation, ['ч. 3 (абз. 2) ст. 107 ГПК РФ']);
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+});
+
+test('возражения должника: рабочие дни, а не календарные — перенос через каникулы', () => {
+  // Копия получена 26.12.2025 (пятница). Течение — с 29.12 (понедельник);
+  // 31.12.2025 и 01–09.01.2026 нерабочие, поэтому десятый рабочий день —
+  // 21.01.2026, а не 05.01.2026, как было бы при календарном счёте.
+  const t = computeIndependentTerms({ court_order_copy_received_date: '2025-12-26' })
+    .court_order_objection;
+  assert.equal(t.first_working_day, '2025-12-29');
+  assert.equal(t.deadline, '2026-01-21');
+});
+
+test('возражения должника: течение начинается с первого рабочего дня', () => {
+  // Копия получена 20.02.2026 (пятница): 21–22 выходные, 23 февраля праздник —
+  // отсчёт идёт с 24.02, а не со следующего календарного дня.
+  const t = computeIndependentTerms({ court_order_copy_received_date: '2026-02-20' })
+    .court_order_objection;
+  assert.equal(t.first_working_day, '2026-02-24');
+  assert.equal(t.deadline, '2026-03-10');
+});
+
+test('возражения должника: узла нет без даты получения копии', () => {
+  assert.equal(computeIndependentTerms({}).court_order_objection, null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).court_order_objection, null);
+  // Дата выдачи приказа взыскателю этот узел не открывает — это другой момент
+  // процедуры и другой input.
+  assert.equal(
+    computeIndependentTerms({ court_order_issued_date: '2023-04-12' }).court_order_objection,
+    null,
+  );
+});
+
+test('возражения должника и предъявление приказа считаются независимо', () => {
+  // Оба поля ситуации «Судебный приказ» друг от друга не зависят: можно
+  // заполнить только одно, только другое, оба или ни одного.
+  const onlyObjection = computeIndependentTerms({ court_order_copy_received_date: '2026-03-02' });
+  assert.ok(onlyObjection.court_order_objection);
+  assert.equal(onlyObjection.court_order_presentation, null);
+
+  const onlyPresentation = computeIndependentTerms({ court_order_issued_date: '2023-04-12' });
+  assert.equal(onlyPresentation.court_order_objection, null);
+  assert.ok(onlyPresentation.court_order_presentation);
+
+  const both = computeIndependentTerms({
+    court_order_copy_received_date: '2026-03-02',
+    court_order_issued_date: '2023-04-12',
+  });
+  // Каждый узел считается от своей даты — соседнее поле его не сдвигает.
+  assert.equal(both.court_order_objection.deadline, onlyObjection.court_order_objection.deadline);
+  assert.equal(
+    both.court_order_presentation.deadline,
+    onlyPresentation.court_order_presentation.deadline,
+  );
+
+  const neither = computeIndependentTerms({});
+  assert.equal(neither.court_order_objection, null);
+  assert.equal(neither.court_order_presentation, null);
+});
+
+test('возражения должника: перерывы ст. 22 ФЗ № 229-ФЗ к сроку не применяются', () => {
+  // Перерыв — механика срока предъявления исполнительного документа; срок на
+  // возражения по ст. 128 к исполнительному производству отношения не имеет.
+  const t = computeIndependentTerms({
+    court_order_copy_received_date: '2026-03-02',
+    enforcement_interruptions: [{ type: 'presentment', date: '2026-03-05' }],
+  }).court_order_objection;
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.interruptible, undefined);
+  assert.equal(t.interruptions, undefined);
+});
+
+test('возражения должника: логика упоминает пятидневный срок суда как контекст', () => {
+  const t = computeIndependentTerms({ court_order_copy_received_date: '2026-03-02' })
+    .court_order_objection;
+  assert.match(t.logic, /Пятидневный срок/);
+  assert.match(t.logic, /получение копии/);
+  assert.match(t.midnight_rule, /ч\. 3 ст\. 108/);
+});
+
 // --- Периодические платежи: предъявление к исполнению (ч. 4 ст. 21 229-ФЗ) --
 
 test('периодические платежи: 3 года со дня окончания периода, перенос через выходные', () => {

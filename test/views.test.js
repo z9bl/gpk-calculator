@@ -630,6 +630,71 @@ test('судебный приказ: карточка появляется по 
   assert.deepEqual(co.duration, { value: 3, unit: 'year' });
 });
 
+test('возражения должника: карточка появляется по дате получения копии приказа', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('court_order_objection'));
+
+  const v = buildView({ court_order_copy_received_date: '2026-03-02' }, { today: '2026-03-01' });
+  const obj = byId(v.cards, 'court_order_objection');
+  assert.ok(obj);
+  assert.equal(obj.status, 'computed');
+  assert.equal(obj.deadline, '2026-03-17');
+  assert.equal(obj.unit, 'working_day');
+  assert.equal(obj.first_working_day, '2026-03-03');
+  assert.match(obj.norm, /ст\. 128/);
+  assert.deepEqual(obj.duration, { value: 10, unit: 'working_day' });
+});
+
+test('возражения должника: заметка связывает узел со сроком предъявления (ст. 130)', () => {
+  const v = buildView({ court_order_copy_received_date: '2026-03-02' }, { today: '2026-03-01' });
+  const obj = byId(v.cards, 'court_order_objection');
+  assert.match(obj.note, /ст\. 130/);
+  assert.match(obj.note, /предъявлени/);
+  assert.equal(obj.details.related_node, 'court_order_presentation');
+  // Заметка — только связь, а не второй расчёт: своего дедлайна у неё нет.
+  assert.ok(!ids(v.cards).includes('court_order_presentation'));
+});
+
+test('судебный приказ: два узла ситуации независимы друг от друга', () => {
+  const onlyObjection = buildView(
+    { court_order_copy_received_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(onlyObjection.cards).filter((id) => id.startsWith('court_order')),
+    ['court_order_objection'],
+  );
+
+  const onlyPresentation = buildView(
+    { court_order_issued_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(onlyPresentation.cards).filter((id) => id.startsWith('court_order')),
+    ['court_order_presentation'],
+  );
+
+  const both = buildView(
+    { court_order_copy_received_date: '2026-03-02', court_order_issued_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(
+    ids(both.cards).filter((id) => id.startsWith('court_order')),
+    ['court_order_objection', 'court_order_presentation'],
+  );
+  assert.equal(byId(both.cards, 'court_order_objection').deadline, '2026-03-17');
+  assert.equal(byId(both.cards, 'court_order_presentation').deadline, '2026-04-13');
+
+  const neither = buildView({}, { today: '2026-03-01' });
+  assert.deepEqual(ids(neither.cards).filter((id) => id.startsWith('court_order')), []);
+});
+
+test('возражения должника: истёкший срок помечается по текущей дате', () => {
+  const v = buildView({ court_order_copy_received_date: '2026-03-02' }, { today: '2026-04-01' });
+  const obj = byId(v.cards, 'court_order_objection');
+  assert.equal(obj.status, 'expired');
+});
+
 test('периодические платежи: карточка появляется по дате окончания периода', () => {
   const without = buildView({}, { today: '2026-03-01' });
   assert.ok(!ids(without.cards).includes('periodic_payments_presentation'));

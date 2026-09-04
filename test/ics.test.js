@@ -336,7 +336,9 @@ const ALL_BRANCHES_INPUTS = {
   // Мотивированное апелляционное определение районного суда: открывает узел
   // кассации по делам мировых судей, не требуя, чтобы срок апелляции истёк.
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
-  // судебный приказ (независимый трек, глава 11 ГПК)
+  // судебный приказ (независимый трек, глава 11 ГПК): возражения должника
+  // (ст. 128) и предъявление приказа к исполнению — два независимых узла
+  court_order_copy_received_date: '2025-07-02',
   court_order_issued_date: '2023-04-12',
   // периодические платежи (независимый трек, ч. 4 ст. 21 ФЗ № 229-ФЗ)
   periodic_payment_period_end_date: '2023-04-12',
@@ -439,6 +441,26 @@ test('предъявление судебного приказа уходит в
   const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${co.deadline.replace(/-/g, '')}`));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // как у других трёхлетних сроков
+});
+
+test('возражения должника на судебный приказ уходят в .ics (10 рабочих дней)', () => {
+  const view = buildView(
+    { court_order_copy_received_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromView(view);
+  const obj = terms.find((t) => t.title.includes('Возражения должника'));
+  assert.ok(obj, 'срок возражений должника в списке экспорта');
+  assert.deepEqual(obj.duration, { value: 10, unit: 'working_day' });
+  assert.equal(obj.deadline, '2026-03-17');
+  assert.match(obj.norm, /ст\. 128/);
+
+  const ics = buildICS(terms, { referenceDate: '2026-03-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${obj.deadline.replace(/-/g, '')}`));
+  // Смещения в рабочих днях: за 2 и за 5 рабочих дней до дедлайна.
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260313T090000Z')); // 2 рабочих дня
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260310T090000Z')); // 5 рабочих дней
 });
 
 test('предъявление документов о периодических платежах уходит в .ics при заданной дате', () => {
