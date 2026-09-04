@@ -18,6 +18,7 @@ import {
   CASSATION_KSOYU,
   CASSATION_VS,
   ENFORCEMENT_PRESENTATION,
+  COURT_ORDER_OBJECTION,
   COURT_ORDER_PRESENTATION,
   PERIODIC_PAYMENTS_PRESENTATION,
   PROTOCOL_REMARKS,
@@ -126,6 +127,11 @@ function reminderOffsets(duration) {
         return [
           { unit: 'working_day', value: 1 },
           { unit: 'working_day', value: 2 },
+        ];
+      case 10: // возражения должника на судебный приказ (ст. 128)
+        return [
+          { unit: 'working_day', value: 2 },
+          { unit: 'working_day', value: 5 },
         ];
       case 15: // частная жалоба, апелляция по упрощённому, заявление без явки
         return [
@@ -344,6 +350,19 @@ export function icsTermsFromChain(chain) {
       norm: chain.private_complaint.norm.primary,
       ics: PRIVATE_COMPLAINT.ics,
       duration: PRIVATE_COMPLAINT.duration,
+    });
+  }
+  // Возражения должника относительно исполнения судебного приказа (ст. 128
+  // ГПК) — независимый узел приказного производства, считается по своему input
+  // (court_order_copy_received_date), отдельно от срока предъявления приказа к
+  // исполнению.
+  if (chain && chain.court_order_objection && chain.court_order_objection.deadline) {
+    terms.push({
+      title: chain.court_order_objection.title,
+      deadline: chain.court_order_objection.deadline,
+      norm: chain.court_order_objection.norm.primary,
+      ics: COURT_ORDER_OBJECTION.ics,
+      duration: COURT_ORDER_OBJECTION.duration,
     });
   }
   // Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ) —

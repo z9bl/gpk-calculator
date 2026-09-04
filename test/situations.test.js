@@ -36,6 +36,7 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_reasoned_date: '2025-07-15',
   mirovoy_appeal_ruling_date: '2025-08-15', // принятие → вступление в силу, ИЛ
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
+  court_order_copy_received_date: '2025-07-02',
   court_order_issued_date: '2023-04-12',
   periodic_payment_period_end_date: '2023-04-12',
 };
@@ -69,6 +70,33 @@ test('в ситуациях нет узлов, которых модель не 
   const shown = new Set([...view.cards, ...view.incomplete].map((n) => n.id));
   const missing = allSituationNodes().filter((id) => !shown.has(id));
   assert.deepEqual(missing, [], 'узлы разбиения, которых нет в модели');
+});
+
+test('судебный приказ: оба узла ситуации учтены в разбиении', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'court_order');
+  assert.deepEqual(situation.nodes, ['court_order_objection', 'court_order_presentation']);
+  assert.deepEqual(situation.fields, [
+    'court_order_copy_received_date',
+    'court_order_issued_date',
+  ]);
+
+  // Каждое поле открывает свой узел и только его — узлы независимы.
+  const objectionOnly = buildView(
+    { court_order_copy_received_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    objectionOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['court_order_objection'],
+  );
+  const presentationOnly = buildView(
+    { court_order_issued_date: '2023-04-12' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    presentationOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['court_order_presentation'],
+  );
 });
 
 test('по умолчанию выбран общий порядок', () => {

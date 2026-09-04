@@ -517,6 +517,53 @@ export const PRIVATE_COMPLAINT = {
   ],
 };
 
+// Возражения должника относительно исполнения судебного приказа (ст. 128 ГПК).
+//
+// Более ранний момент приказного производства, чем COURT_ORDER_PRESENTATION:
+// приказ ещё не вступил в силу, и у должника есть десять дней на возражения.
+// Узел независимый — считается по своему input, как PRIVATE_COMPLAINT.
+//
+// Точка отсчёта — дата ПОЛУЧЕНИЯ должником копии приказа. Первое предложение
+// ст. 128 даёт судье пятидневный срок со дня вынесения приказа на высылку
+// копии, но это срок суда, и отдельным узлом он не считается: должник не знает
+// заранее ни дня вынесения приказа, ни дня его отправки — известен только день,
+// когда копия получена. От него и идёт отсчёт.
+//
+// Срок исчисляется днями, а не месяцами или годами, и «календарными» ГПК его
+// не называет, поэтому по абз. 2 ч. 3 ст. 107 нерабочие дни в него не входят —
+// working_day, как у частной жалобы (ст. 332).
+//
+// Редакций не заводим — ст. 128 в этой части не менялась.
+export const COURT_ORDER_OBJECTION = {
+  id: 'court_order_objection',
+  title: 'Возражения должника относительно исполнения судебного приказа',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'court_order_copy_received_date', offset_start: 1 },
+  condition: 'court_order_copy_received_date',
+  ics: true,
+  logic:
+    'Десять дней со дня получения должником копии судебного приказа (ст. 128 ' +
+    'ГПК РФ). Срок исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ' +
+    'ст. 107 ГПК РФ); течение начинается со дня, следующего за получением копии, ' +
+    'а если он нерабочий — с первого рабочего дня. Пятидневный срок на высылку ' +
+    'копии приказа должнику (первое предложение ст. 128) — срок суда: отдельным ' +
+    'сроком он здесь не считается, и точка отсчёта — именно получение копии, а ' +
+    'не вынесение приказа и не его отправка.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'court_order_copy_received_date', offset_start: 1 },
+      norm: {
+        primary: 'ст. 128 ГПК РФ',
+        calculation: ['ч. 3 (абз. 2) ст. 107 ГПК РФ'],
+      },
+    },
+  ],
+};
+
 // Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ).
 //
 // Приказное производство (глава 11 ГПК) — самостоятельный трек, а не часть
@@ -673,7 +720,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -682,6 +729,14 @@ export function computeIndependentTerms(inputs) {
     protocol_remarks_review: review,
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
     supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
+    // Приказное производство: два независимых узла одной ситуации. Возражения
+    // должника (ст. 128) считаются от даты получения копии приказа,
+    // предъявление к исполнению — от даты его выдачи взыскателю; ни один из
+    // них не является входом для другого.
+    court_order_objection: computeSimpleTerm(
+      COURT_ORDER_OBJECTION,
+      inputs?.court_order_copy_received_date,
+    ),
     court_order_presentation: computeInterruptibleTerm(
       COURT_ORDER_PRESENTATION,
       inputs?.court_order_issued_date,

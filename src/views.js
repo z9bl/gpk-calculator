@@ -72,6 +72,7 @@ const INPUT_LABELS = {
   mirovoy_appeal_ruling_reasoned_date:
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
+  court_order_copy_received_date: 'Дата получения должником копии судебного приказа',
   court_order_issued_date: 'Дата выдачи судебного приказа',
   periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
@@ -619,6 +620,25 @@ function periodicPaymentsCard(term) {
   return monthTermCard(term);
 }
 
+// Карточка возражений должника на судебный приказ (ст. 128 ГПК) — обычный срок
+// в рабочих днях плюс заметка о том, что происходит по истечении срока.
+//
+// Заметка связывает два узла одной ситуации логически, не задваивая расчёт:
+// срок предъявления приказа к исполнению считается своим узлом
+// (court_order_presentation) от своей даты — выдачи приказа взыскателю.
+const COURT_ORDER_OBJECTION_NOTE =
+  'Если возражения не поступят в срок, взыскателю выдаётся судебный приказ для ' +
+  'предъявления к исполнению (ст. 130 ГПК РФ) — см. срок предъявления к исполнению.';
+
+function courtOrderObjectionCard(term) {
+  const card = workingDayCard(term);
+  card.note = COURT_ORDER_OBJECTION_NOTE;
+  // Ссылка на смежный узел — структурная, чтобы разбиение узлов по ситуациям
+  // проверялось, а не держалось на совпадении формулировок.
+  card.details.related_node = 'court_order_presentation';
+  return card;
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -778,6 +798,7 @@ function independentNodes(source, today = null) {
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
+  if (terms.court_order_objection) cards.push(courtOrderObjectionCard(terms.court_order_objection));
   if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
