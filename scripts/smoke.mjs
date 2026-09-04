@@ -83,6 +83,44 @@ if ((await page.locator('#results .card').count()) < 1) {
   problems.push('после ввода даты карточки не появились');
 }
 
+// Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ): список событий на
+// карточке ИЛ добавляет строку и пересчитывает срок от даты события. Проверяем
+// в браузере — расчёт покрыт node --test, а вот повторяемый список полей
+// (добавление строки, маска даты, перерисовка) живёт только в app.js.
+const ilCard = page
+  .locator('#results .card')
+  .filter({ hasText: 'Предъявление исполнительного листа к исполнению' });
+if ((await ilCard.count()) !== 1) {
+  problems.push('карточка предъявления ИЛ не найдена');
+} else {
+  if ((await ilCard.locator('.interruption-scope').count()) === 0) {
+    problems.push('предупреждение о ч. 3.1 ст. 22 не показано рядом с полем');
+  }
+  await ilCard.getByRole('button', { name: 'Добавить перерыв' }).click();
+  await page.waitForTimeout(100);
+  if ((await page.locator('#in-interruption-0-type').count()) === 0) {
+    problems.push('строка перерыва не добавилась');
+  }
+  await page.fill('#in-interruption-0-date', '15.06.2026');
+  await page.waitForTimeout(200);
+  const deadline = await ilCard.locator('.deadline').first().innerText();
+  if (deadline.trim() !== '15.06.2029') {
+    problems.push(`после перерыва ждали 15.06.2029, получили «${deadline.trim()}»`);
+  }
+  if ((await ilCard.locator('.interruption-history').count()) === 0) {
+    problems.push('история перерывов на карточке не показана');
+  }
+  // Удаление строки возвращает расчёт к исходному якорю.
+  await ilCard.getByRole('button', { name: 'Удалить' }).first().click();
+  await page.waitForTimeout(200);
+  if ((await ilCard.locator('.interruption-history').count()) !== 0) {
+    problems.push('после удаления строки история перерывов осталась');
+  }
+  if ((await ilCard.locator('.deadline').first().innerText()).trim() === '15.06.2029') {
+    problems.push('после удаления перерыва срок не пересчитался обратно');
+  }
+}
+
 await browser.close();
 server.close();
 

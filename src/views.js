@@ -20,11 +20,19 @@ import {
   computeDefaultJudgment,
   computeMirovoy,
   reasonedDelayVersionFor,
+  INTERRUPTION_TYPES,
+  INTERRUPTION_SCOPE_WARNING,
 } from './chain.js';
+
+// Перерыв срока (ст. 22 ФЗ № 229-ФЗ) — константы модели нужны и интерфейсу:
+// список оснований для выпадающего списка и текст предупреждения о ч. 3.1.
+// Отдаём их через слой представления, чтобы web/app.js не тянул chain.js.
+export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING };
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Судебный
 // приказ раскрыт отдельным узлом (court_order_presentation, своя ситуация в
-// situations.js) и здесь больше не заглушка.
+// situations.js), перерыв срока — сдвигом якоря по событиям ст. 22 (см.
+// applyInterruptions в chain.js); заглушек для них больше нет.
 const ENFORCEMENT_STUBS = [
   {
     id: 'periodic_payments',
@@ -33,14 +41,6 @@ const ENFORCEMENT_STUBS = [
       'Исполнительный лист можно предъявить в течение всего срока, на который ' +
       'присуждены платежи, плюс три года после его окончания.',
     norm: 'ч. 4 ст. 21 ФЗ № 229-ФЗ',
-  },
-  {
-    id: 'interruption',
-    title: 'Перерыв срока',
-    explanation:
-      'Расчёт с учётом перерыва не поддерживается — требуется дата предъявления ' +
-      'исполнительного листа или частичного исполнения.',
-    norm: 'ст. 22 ФЗ № 229-ФЗ',
   },
 ];
 import { computeDeadline, addDays } from './engine.js';
@@ -80,6 +80,26 @@ const INPUT_LABELS = {
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
   court_order_issued_date: 'Дата выдачи судебного приказа',
+  enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
+};
+
+// Подписи оснований перерыва — для выпадающего списка в UI и для истории на
+// карточке. Идентификаторы — из INTERRUPTION_TYPES (chain.js).
+export const INTERRUPTION_TYPE_LABELS = {
+  presentment: 'Предъявление исполнительного документа к исполнению (ч. 1 ст. 22)',
+  partial_execution: 'Частичное исполнение документа должником (ч. 1 ст. 22)',
+  returned_no_assets:
+    'Возврат документа взыскателю: взыскание невозможно (ч. 3 ст. 22, п. 3, 4 ч. 1 ст. 46)',
+};
+
+// Почему событие не принято в расчёт. Молча выбрасывать нельзя: пользователь
+// должен видеть, что введённая им дата на срок не повлияла, и почему.
+export const INTERRUPTION_IGNORED_TEXT = {
+  no_date: 'Дата не указана — событие в расчёт не принято.',
+  unknown_type: 'Основание не распознано — событие в расчёт не принято.',
+  before_anchor:
+    'Событие раньше начала течения срока — в расчёт не принято: прерывать ещё ' +
+    'не начавшийся срок нечем.',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
@@ -245,6 +265,32 @@ function cassationCard(cassation) {
   return card;
 }
 
+// История перерывов срока (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) на карточке: список
+// событий с подписями оснований, дата, от которой срок пошёл заново, норма и
+// логика в details, предупреждение о ч. 3.1 (не блокирующее).
+//
+// Расчёт уже сдвинут в chain.js — здесь только показываем, от чего он пошёл.
+function attachInterruptions(card, term) {
+  if (term.interruptible) card.interruptible = true;
+  if (!term.interruptions || term.interruptions.length === 0) return;
+  card.base_anchor = term.base_anchor;
+  card.interruptions = term.interruptions.map((event) => {
+    const row = {
+      ...event,
+      label: INTERRUPTION_TYPE_LABELS[event.type] ?? 'Основание не распознано',
+    };
+    if (event.ignored) row.ignored_text = INTERRUPTION_IGNORED_TEXT[event.ignored_reason];
+    return row;
+  });
+  // Дата, от которой срок пошёл заново, — последнее по хронологии учтённое
+  // событие. null означает, что в расчёт не принято ни одно из введённых.
+  const applied = term.interruptions.filter((event) => !event.ignored);
+  card.restarted_from = applied.length ? applied[applied.length - 1].date : null;
+  card.interruption_warning = term.interruption_warning;
+  card.details.interruption_norm = term.interruption_norm;
+  card.details.interruption_logic = term.interruption_logic;
+}
+
 // Карточка срока предъявления ИЛ. Рядом — заглушки по смежным случаям (в card.stubs).
 function enforcementCard(enf) {
   const card = {
@@ -262,6 +308,7 @@ function enforcementCard(enf) {
     },
     stubs: ENFORCEMENT_STUBS,
   };
+  attachInterruptions(card, enf);
   attachCalendarWarning(card);
   return card;
 }
@@ -550,6 +597,8 @@ function monthTermCard(term) {
       midnight_rule: term.midnight_rule,
     },
   };
+  // Прерываемые сроки (предъявление судебного приказа) — история перерывов.
+  attachInterruptions(card, term);
   attachCalendarWarning(card);
   return card;
 }

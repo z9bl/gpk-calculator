@@ -152,10 +152,16 @@ test('ИЛ: узел появляется при resolved, несёт заглу
   const il = byId(resolved.cards, 'enforcement_presentation');
   assert.ok(il, 'узел ИЛ есть, когда вступление в силу разрешено');
   assert.match(il.norm, /229-ФЗ/);
-  assert.equal(il.stubs.length, 2); // периодические платежи, перерыв (приказ раскрыт узлом)
+  // Приказ раскрыт своим узлом, перерыв срока — сдвигом якоря (ст. 22);
+  // заглушкой остаются только периодические платежи (ч. 4 ст. 21).
+  assert.equal(il.stubs.length, 1);
   assert.deepEqual(
     il.stubs.map((s) => s.id),
-    ['periodic_payments', 'interruption'],
+    ['periodic_payments'],
+  );
+  assert.ok(
+    !il.stubs.some((s) => s.id === 'interruption'),
+    'заглушка перерыва снята — расчёт поддержан',
   );
 
   const pending = buildView(BASE, { today: '2025-04-01' }); // pending
@@ -630,6 +636,106 @@ test('судебный приказ: карточка появляется по 
   assert.equal(co.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
   assert.match(co.norm, /ч\. 3 ст\. 21/);
   assert.deepEqual(co.duration, { value: 3, unit: 'year' });
+});
+
+// --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
+
+test('перерыв: карточка ИЛ показывает историю событий и норму ст. 22', () => {
+  const v = buildView(
+    {
+      ...BASE,
+      enforcement_interruptions: [
+        { type: 'partial_execution', date: '2027-02-10' },
+        { type: 'presentment', date: '2026-06-01' },
+      ],
+    },
+    { today: '2025-05-01' },
+  );
+  const il = byId(v.cards, 'enforcement_presentation');
+  assert.equal(il.deadline, '2030-02-11'); // от 10.02.2027 + 3 года, перенос
+  // История — в хронологическом порядке, с подписями оснований.
+  assert.deepEqual(
+    il.interruptions.map((e) => [e.date, e.type]),
+    [
+      ['2026-06-01', 'presentment'],
+      ['2027-02-10', 'partial_execution'],
+    ],
+  );
+  for (const event of il.interruptions) {
+    assert.ok(event.label && event.label.length > 3, 'у события должна быть подпись');
+  }
+  assert.equal(il.base_anchor, '2025-04-12');
+  assert.equal(il.restarted_from, '2027-02-10');
+  assert.match(il.details.interruption_norm, /ч\. 1–3 ст\. 22/);
+  assert.ok(il.details.interruption_logic);
+});
+
+test('перерыв: карточка несёт предупреждение о ч. 3.1 ст. 22', () => {
+  const v = buildView(
+    { ...BASE, enforcement_interruptions: [{ type: 'returned_no_assets', date: '2026-06-01' }] },
+    { today: '2025-05-01' },
+  );
+  const warning = byId(v.cards, 'enforcement_presentation').interruption_warning;
+  assert.equal(warning.code, 'interruption_scope');
+  assert.match(warning.norm, /3\.1/);
+  // Смысл: сюда идёт только возврат по невозможности взыскания; отзыв самим
+  // взыскателем считается по другому правилу и завысит срок.
+  assert.match(warning.text, /невозможност/i);
+  assert.match(warning.text, /ч\. 3\.1/);
+  assert.match(warning.text, /завысит/);
+});
+
+test('перерыв: без событий карточка не обрастает полями истории', () => {
+  const il = byId(buildView(BASE, { today: '2025-05-01' }).cards, 'enforcement_presentation');
+  assert.equal(il.deadline, '2028-04-12');
+  assert.equal(il.interruptions, undefined);
+  assert.equal(il.interruption_warning, undefined);
+  assert.equal(il.details.interruption_norm, undefined);
+  // Флаг для UI при этом стоит: список перерывов можно открыть и на пустом.
+  assert.equal(il.interruptible, true);
+});
+
+test('перерыв: неучтённое событие остаётся в истории с объяснением', () => {
+  const v = buildView(
+    { ...BASE, enforcement_interruptions: [{ type: 'presentment', date: '2025-01-10' }] },
+    { today: '2025-05-01' },
+  );
+  const il = byId(v.cards, 'enforcement_presentation');
+  assert.equal(il.deadline, '2028-04-12'); // дедлайн не уехал назад
+  assert.equal(il.restarted_from, null);
+  assert.equal(il.interruptions[0].ignored, true);
+  assert.match(il.interruptions[0].ignored_text, /не принято/);
+});
+
+test('перерыв: карточка судебного приказа считает срок от последнего события', () => {
+  const v = buildView(
+    {
+      court_order_issued_date: '2023-04-12',
+      enforcement_interruptions: [{ type: 'presentment', date: '2024-03-05' }],
+    },
+    { today: '2026-03-01' },
+  );
+  const co = byId(v.cards, 'court_order_presentation');
+  assert.equal(co.deadline, '2027-03-05'); // вместо 13.04.2026 без перерыва
+  assert.equal(co.base_anchor, '2023-04-12');
+  assert.equal(co.restarted_from, '2024-03-05');
+  assert.ok(co.interruption_warning);
+});
+
+test('перерыв: срок надзора остаётся непрерываемым', () => {
+  // Модификатор привязан к исполнительным документам, а не ко всем срокам:
+  // список перерывов не должен просачиваться в чужие узлы.
+  const v = buildView(
+    {
+      vs_ruling_date: '2025-09-01',
+      enforcement_interruptions: [{ type: 'presentment', date: '2026-06-01' }],
+    },
+    { today: '2026-03-01' },
+  );
+  const sup = byId(v.cards, 'supervision');
+  assert.equal(sup.deadline, '2025-12-01');
+  assert.equal(sup.interruptible, undefined);
+  assert.equal(sup.interruptions, undefined);
 });
 
 test('кассация по делам мировых судей: маршрут и пометка о переходном положении', () => {

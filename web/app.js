@@ -1,7 +1,13 @@
 // Интерфейс (раздел 8, задача 4б SPEC.md). Поверх buildView, без изменения
 // логики: приложение только читает даты, вызывает buildView и рисует результат.
 
-import { buildView, ACTION_FACT_INPUT } from '../src/views.js';
+import {
+  buildView,
+  ACTION_FACT_INPUT,
+  INTERRUPTION_TYPES,
+  INTERRUPTION_TYPE_LABELS,
+  INTERRUPTION_SCOPE_WARNING,
+} from '../src/views.js';
 import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
 import {
   googleCalendarUrl,
@@ -57,6 +63,7 @@ const INPUT_LABELS = {
     'Дата изготовления мотивированного апелляционного определения районного суда',
   mirovoy_appeal_ruling_date: 'Дата принятия апелляционного определения районного суда',
   court_order_issued_date: 'Дата выдачи судебного приказа',
+  enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подана, укажите дату',
@@ -111,6 +118,9 @@ const INPUT_HINTS = {
   court_order_issued_date:
     'Три года со дня выдачи приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), а не со дня его ' +
     'вынесения мировым судьёй',
+  enforcement_interruptions:
+    'Каждое событие перезапускает трёхлетний срок: он идёт заново от последнего по дате ' +
+    '(ч. 1–3 ст. 22 ФЗ № 229-ФЗ), время до перерыва не засчитывается',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -333,6 +343,9 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(el('div', 'note', opts.conditionNote));
   }
 
+  // Перерывы срока (ст. 22 ФЗ № 229-ФЗ): история введённых событий.
+  if (card.interruptions) c.appendChild(renderInterruptionHistory(card));
+
   if (card.warnings) {
     for (const w of card.warnings) {
       const details = [el('div', null, w.text)];
@@ -376,6 +389,146 @@ function renderTermCard(card, opts = {}) {
   if (card.details) c.appendChild(renderDetails(card.details));
   if (exportableIds.has(card.id)) c.appendChild(googleCalendarLink(card));
   return c;
+}
+
+// --- Перерывы срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
+//
+// Повторяемый список: у каждой строки основание и дата. Черновик живёт отдельно
+// от state.inputs по той же причине, что и rawDates: render() пересобирает поля
+// заново, а строка с недобранной датой должна остаться на экране — в расчёт при
+// этом она не идёт.
+const interruptionDraft = [];
+
+const DEFAULT_INTERRUPTION_TYPE = INTERRUPTION_TYPES[0].id;
+
+// Черновик → input модели: только строки с полной существующей датой.
+function syncInterruptions() {
+  const ready = interruptionDraft
+    .map((row) => ({ type: row.type, date: ruToISO(row.raw) }))
+    .filter((row) => row.date != null);
+  if (ready.length) state.inputs.enforcement_interruptions = ready;
+  else delete state.inputs.enforcement_interruptions;
+}
+
+// Одна строка списка: основание (выпадающий список) + дата + кнопка удаления.
+function renderInterruptionRow(row, index) {
+  const wrap = el('div', 'field interruption-row');
+  const typeId = `in-interruption-${index}-type`;
+  const dateId = `in-interruption-${index}-date`;
+
+  const typeLabel = el('label', null, 'Основание перерыва');
+  typeLabel.setAttribute('for', typeId);
+  wrap.appendChild(typeLabel);
+  const select = el('select');
+  select.id = typeId;
+  for (const type of INTERRUPTION_TYPES) {
+    const option = el('option', null, INTERRUPTION_TYPE_LABELS[type.id]);
+    option.value = type.id;
+    if (type.id === row.type) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener('change', () => {
+    row.type = select.value;
+    syncInterruptions();
+    render();
+  });
+  wrap.appendChild(select);
+
+  const dateLabel = el('label', 'interruption-date-label', 'Дата события');
+  dateLabel.setAttribute('for', dateId);
+  wrap.appendChild(dateLabel);
+  const input = el('input');
+  input.type = 'text';
+  input.id = dateId;
+  input.setAttribute('inputmode', 'numeric');
+  input.placeholder = 'ДД.ММ.ГГГГ';
+  input.autocomplete = 'off';
+  input.value = row.raw;
+  wrap.appendChild(input);
+  const err = el('p', 'field-error');
+  // Строка пересоздаётся при каждой перерисовке — состояние ошибки
+  // восстанавливаем из сырого текста, как в renderInviteField.
+  err.textContent = dateFieldError(row.raw);
+  if (err.textContent) input.classList.add('invalid');
+  wrap.appendChild(err);
+  attachDateMask(input, (_input, parsed) => {
+    row.raw = parsed.raw;
+    syncInterruptions();
+    render();
+  });
+
+  const remove = el('button', 'row-remove', 'Удалить');
+  remove.type = 'button';
+  remove.addEventListener('click', () => {
+    interruptionDraft.splice(index, 1);
+    syncInterruptions();
+    render();
+  });
+  wrap.appendChild(remove);
+  return wrap;
+}
+
+// Редактор списка — на карточке прерываемого срока (card.interruptible).
+function renderInterruptions() {
+  const box = el('div', 'note interruptions');
+  box.appendChild(
+    el(
+      'div',
+      null,
+      'Срок прерывался? Добавьте события — срок пойдёт заново от последнего по дате.',
+    ),
+  );
+  box.appendChild(el('p', 'hint', INPUT_HINTS.enforcement_interruptions));
+  interruptionDraft.forEach((row, index) => box.appendChild(renderInterruptionRow(row, index)));
+
+  const add = el('button', 'row-add', 'Добавить перерыв');
+  add.type = 'button';
+  add.addEventListener('click', () => {
+    interruptionDraft.push({ type: DEFAULT_INTERRUPTION_TYPE, raw: '' });
+    const index = interruptionDraft.length - 1;
+    syncInterruptions();
+    render();
+    // render() пересобрал DOM — фокус ставим уже на новое поле, иначе строка
+    // появляется, а курсор остаётся на кнопке.
+    document.getElementById(`in-interruption-${index}-date`)?.focus();
+  });
+  box.appendChild(add);
+
+  // Предупреждение видно рядом с полем, а не по клику: ошибка в основании
+  // возврата завышает срок, и заметить её потом уже не по чему.
+  const warn = el('div', 'warn interruption-scope');
+  warn.appendChild(el('div', null, INTERRUPTION_SCOPE_WARNING.text));
+  warn.appendChild(el('div', 'hint', INTERRUPTION_SCOPE_WARNING.norm));
+  box.appendChild(warn);
+  return box;
+}
+
+// История перерывов на карточке: что введено, что принято в расчёт и от какой
+// даты срок пошёл заново (ч. 2 ст. 22).
+function renderInterruptionHistory(card) {
+  const box = el('div', 'interruption-history');
+  box.appendChild(el('div', 'interruption-history-title', 'Перерывы срока'));
+  const list = el('ul', 'interruption-list');
+  for (const event of card.interruptions) {
+    const item = el('li', event.ignored ? 'interruption ignored' : 'interruption');
+    item.appendChild(el('span', 'interruption-date', event.date ? isoToRu(event.date) : '—'));
+    item.appendChild(el('span', 'interruption-label', event.label));
+    if (event.ignored_text) item.appendChild(el('div', 'hint', event.ignored_text));
+    list.appendChild(item);
+  }
+  box.appendChild(list);
+  box.appendChild(
+    el(
+      'div',
+      'hint',
+      card.restarted_from
+        ? `Срок течёт заново с ${isoToRu(card.restarted_from)}; время до перерыва в него не ` +
+          `засчитывается (ч. 2 ст. 22). Исходная точка отсчёта — ${isoToRu(card.base_anchor)}.`
+        : `Ни одно событие в расчёт не принято — срок считается от исходной точки отсчёта ` +
+          `(${isoToRu(card.base_anchor)}).`,
+    ),
+  );
+  return box;
 }
 
 // Ссылка на предзаполненную форму события в Google Календаре — по одной на срок.
@@ -946,6 +1099,9 @@ function render() {
           );
           termEl.appendChild(box);
         }
+        // Перерыв срока предъявления (ст. 22 ФЗ № 229-ФЗ) — повторяемый
+        // список событий у узлов ИЛ и судебного приказа.
+        if (card.interruptible) termEl.appendChild(renderInterruptions());
         // Заглушки рядом с узлом (напр. предъявление ИЛ).
         if (card.stubs) termEl.appendChild(renderRelatedStubs(card.stubs));
         appendFollowUpFields(termEl, id, card);
