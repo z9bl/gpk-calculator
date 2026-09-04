@@ -76,6 +76,10 @@ const INPUT_LABELS = {
   court_order_copy_received_date: 'Дата получения должником копии судебного приказа',
   court_order_issued_date: 'Дата выдачи судебного приказа',
   periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
+  child_return_reasoned_decision_date:
+    'Дата решения суда в окончательной форме (глава 22.2 ГПК)',
+  child_return_interim_ruling_date:
+    'Дата определения суда первой инстанции (глава 22.2 ГПК)',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
 };
 
@@ -806,6 +810,12 @@ function independentNodes(source, today = null) {
   if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
+  }
+  // Глава 22.2 (возвращение ребёнка / права доступа): оба срока — в рабочих
+  // днях, каждый от своей даты, поэтому обычные workingDayCard.
+  if (terms.child_return_appeal) cards.push(workingDayCard(terms.child_return_appeal));
+  if (terms.child_return_private_complaint) {
+    cards.push(workingDayCard(terms.child_return_private_complaint));
   }
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {

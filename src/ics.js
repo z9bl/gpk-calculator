@@ -23,6 +23,8 @@ import {
   PERIODIC_PAYMENTS_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
+  CHILD_RETURN_APPEAL,
+  CHILD_RETURN_PRIVATE_COMPLAINT,
   CASSATION_RETURN_RULING_APPEAL,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
@@ -351,6 +353,32 @@ export function icsTermsFromChain(chain) {
       norm: chain.private_complaint.norm.primary,
       ics: PRIVATE_COMPLAINT.ics,
       duration: PRIVATE_COMPLAINT.duration,
+    });
+  }
+  // Дела о возвращении ребёнка / осуществлении прав доступа (глава 22.2
+  // ГПК) — два независимых узла со своими input: апелляция от решения в
+  // окончательной форме (ч. 1 ст. 244.17), частная жалоба от определения суда
+  // первой инстанции (ч. 1 ст. 244.18). Оба в рабочих днях.
+  if (chain && chain.child_return_appeal && chain.child_return_appeal.deadline) {
+    terms.push({
+      title: chain.child_return_appeal.title,
+      deadline: chain.child_return_appeal.deadline,
+      norm: chain.child_return_appeal.norm.primary,
+      ics: CHILD_RETURN_APPEAL.ics,
+      duration: CHILD_RETURN_APPEAL.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.child_return_private_complaint &&
+    chain.child_return_private_complaint.deadline
+  ) {
+    terms.push({
+      title: chain.child_return_private_complaint.title,
+      deadline: chain.child_return_private_complaint.deadline,
+      norm: chain.child_return_private_complaint.norm.primary,
+      ics: CHILD_RETURN_PRIVATE_COMPLAINT.ics,
+      duration: CHILD_RETURN_PRIVATE_COMPLAINT.duration,
     });
   }
   // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2
