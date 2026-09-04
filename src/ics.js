@@ -23,6 +23,7 @@ import {
   PERIODIC_PAYMENTS_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
+  CASSATION_RETURN_RULING_APPEAL,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
   DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
@@ -350,6 +351,22 @@ export function icsTermsFromChain(chain) {
       norm: chain.private_complaint.norm.primary,
       ics: PRIVATE_COMPLAINT.ics,
       duration: PRIVATE_COMPLAINT.duration,
+    });
+  }
+  // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2
+  // ГПК) — независимый узел стадии кассации: считается по своему input
+  // (cassation_return_ruling_date) и не привязан к категории дела.
+  if (
+    chain &&
+    chain.cassation_return_ruling_appeal &&
+    chain.cassation_return_ruling_appeal.deadline
+  ) {
+    terms.push({
+      title: chain.cassation_return_ruling_appeal.title,
+      deadline: chain.cassation_return_ruling_appeal.deadline,
+      norm: chain.cassation_return_ruling_appeal.norm.primary,
+      ics: CASSATION_RETURN_RULING_APPEAL.ics,
+      duration: CASSATION_RETURN_RULING_APPEAL.duration,
     });
   }
   // Возражения должника относительно исполнения судебного приказа (ст. 128

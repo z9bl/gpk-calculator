@@ -720,7 +720,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -729,6 +729,13 @@ export function computeIndependentTerms(inputs) {
     protocol_remarks_review: review,
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
     supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
+    // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2):
+    // событие стадии кассации, возможное по делу любой категории, — поэтому
+    // независимый узел, а не часть какой-либо ветви цепочки.
+    cassation_return_ruling_appeal: computeSimpleTerm(
+      CASSATION_RETURN_RULING_APPEAL,
+      inputs?.cassation_return_ruling_date,
+    ),
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
     // предъявление к исполнению — от даты его выдачи взыскателю; ни один из
@@ -787,6 +794,69 @@ export const SUPERVISION = {
         primary: 'ч. 2 ст. 391.2 ГПК РФ',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
         clarification: 'ст. 390.17 ГПК РФ (вступление в силу со дня вынесения)',
+      },
+    },
+  ],
+};
+
+// Обжалование определения КСОЮ о возвращении кассационной жалобы
+// (ч. 1 ст. 379.2 ГПК).
+//
+// Это не категория дела, а процессуальное событие: возвратить жалобу
+// кассационный суд может по делу любой категории — общего порядка, мирового
+// судьи, упрощённого или заочного производства. Поэтому узел не встроен ни в
+// одну ветвь computeChain, а считается независимо, по образцу
+// PRIVATE_COMPLAINT/SUPERVISION: свой input, своя карточка, никакой привязки к
+// выбранной ситуации.
+//
+// Точка отсчёта — день ВЫНЕСЕНИЯ определения о возвращении («в течение одного
+// месяца со дня его вынесения»), а не день его получения заявителем. Жалоба
+// подаётся в тот же кассационный суд, который определение вынес, а не в
+// вышестоящую инстанцию.
+//
+// Редакций не заводим. Статья 379.2 переиздана Федеральным законом от
+// 09.04.2026 № 79-ФЗ целиком (в рамках общей реформы главы 40.1), но по
+// существу не изменилась: и месячный срок обжалования, и десятидневный срок
+// рассмотрения самим судом, и правило о дне первоначального обращения при
+// отмене определения сохранены дословно. Темпорального ветвления по дате
+// подачи здесь нет — в отличие от ст. 376.1 и 390.3 (см. раздел 10 SPEC.md).
+//
+// Не путать с MIROVOY_CASSATION: там глава 40.1 задаёт маршрут кассации по
+// делам мировых судей (президиумы судов субъектов РФ), здесь — обжалование
+// возврата жалобы, отдельное событие внутри уже начатой кассации.
+export const CASSATION_RETURN_RULING_APPEAL = {
+  id: 'cassation_return_ruling_appeal',
+  title: 'Обжалование определения о возврате кассационной жалобы',
+  duration: { value: 1, unit: 'month' },
+  anchor: { event: 'cassation_return_ruling_date', offset_start: 1 },
+  condition: 'cassation_return_ruling_date',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Один месяц со дня вынесения определения кассационного суда общей юрисдикции ' +
+    'о возвращении кассационных жалобы, представления (ч. 1 ст. 379.2 ГПК РФ). ' +
+    'Жалоба подаётся в тот же кассационный суд, который вынес определение, а не в ' +
+    'вышестоящую инстанцию; отсчёт идёт от дня вынесения, а не от дня получения ' +
+    'копии определения. Десятидневный срок, в который суд рассматривает такую ' +
+    'жалобу коллегиальным составом (первое предложение ч. 2 ст. 379.2), — срок ' +
+    'суда, а не участника: отдельным сроком он здесь не считается. Если ' +
+    'определение о возвращении отменено, кассационные жалоба, представление ' +
+    'считаются поданными в день первоначального обращения в суд (второе ' +
+    'предложение ч. 2 ст. 379.2): соблюдение кассационного срока (ст. 376.1) ' +
+    'проверяется по этому дню, заново срок не течёт.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'cassation_return_ruling_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 1 ст. 379.2 ГПК РФ',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+        clarification:
+          'ч. 2 ст. 379.2 ГПК РФ (при отмене определения жалоба считается поданной ' +
+          'в день первоначального обращения в суд)',
       },
     },
   ],

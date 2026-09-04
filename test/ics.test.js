@@ -318,6 +318,8 @@ const ALL_BRANCHES_INPUTS = {
   // сроки в рабочих днях
   protocol_signed_date: '2025-07-01',
   interim_ruling_date: '2025-07-02',
+  // обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2)
+  cassation_return_ruling_date: '2025-07-08',
   // упрощённое производство
   simplified_resolution_date: '2025-07-03',
   simplified_reasoned_request_date: '2025-07-04',
@@ -427,6 +429,31 @@ test('надзор уходит в .ics с напоминаниями трёхм
   const ics = buildICS(terms, { referenceDate: '2026-07-26', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${sup.deadline.replace(/-/g, '')}`));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
+});
+
+test('возврат кассационной жалобы уходит в .ics (1 месяц → напоминания за 3 и 7 дней)', () => {
+  const view = buildView({ cassation_return_ruling_date: '2027-09-01' }, { today: '2026-07-26' });
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('возврате кассационной жалобы'));
+  assert.ok(t, 'срок обжалования определения о возврате в списке экспорта');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.equal(t.deadline, '2027-10-01');
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 7 дней
+});
+
+test('возврат кассационной жалобы: тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    { reasoned_decision_date: '2025-03-11', cassation_return_ruling_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('возврате кассационной жалобы'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-10-01');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
 });
 
 test('предъявление судебного приказа уходит в .ics (3 года → 2 напоминания)', () => {

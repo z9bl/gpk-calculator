@@ -25,6 +25,7 @@ const ALL_BRANCHES_INPUTS = {
   ksoyu_ruling_reasoned_date: '2025-08-05',
   protocol_signed_date: '2025-07-01',
   interim_ruling_date: '2025-07-02',
+  cassation_return_ruling_date: '2025-07-08',
   simplified_resolution_date: '2025-07-03',
   simplified_reasoned_request_date: '2025-07-04',
   simplified_reasoned_date: '2025-07-10',
@@ -96,6 +97,30 @@ test('судебный приказ: оба узла ситуации учтен
   assert.deepEqual(
     presentationOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
     ['court_order_presentation'],
+  );
+});
+
+test('возврат кассационной жалобы: узел в независимом пуле, а не в ветви категории', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(
+    separate.nodes.includes('cassation_return_ruling_appeal'),
+    'узел должен лежать в пуле отдельных сроков — рядом с частной жалобой',
+  );
+  assert.ok(separate.fields.includes('cassation_return_ruling_date'));
+  // Ни в одной ветви конкретной категории дела узла быть не должно.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(
+      !s.nodes.includes('cassation_return_ruling_appeal'),
+      `${s.id}: узел не привязан к категории дела`,
+    );
+    assert.ok(!s.fields.includes('cassation_return_ruling_date'), `${s.id}: поле не отсюда`);
+  }
+
+  // Одной своей даты достаточно: узел появляется без данных любой ветви.
+  const v = buildView({ cassation_return_ruling_date: '2025-07-08' }, { today: '2025-07-01' });
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['cassation_return_ruling_appeal'],
   );
 });
 

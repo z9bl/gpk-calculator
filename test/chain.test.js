@@ -11,6 +11,7 @@ import {
   computeMirovoy,
   applyInterruptions,
   interruptionEvents,
+  CASSATION_RETURN_RULING_APPEAL,
 } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
@@ -1110,6 +1111,105 @@ test('надзор: перенос последнего дня (ч. 2 ст. 108)
   assert.equal(t.raw_deadline, '2026-04-11');
   assert.equal(t.deadline, '2026-04-13');
   assert.equal(t.shifted, true);
+});
+
+// --- Возврат кассационной жалобы: обжалование определения (ч. 1 ст. 379.2) --
+
+test('возврат кассационной жалобы: 1 месяц со дня вынесения определения (ч. 1 ст. 379.2)', () => {
+  const t = computeIndependentTerms({ cassation_return_ruling_date: '2025-09-01' })
+    .cassation_return_ruling_appeal;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-10-01');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 1 ст\. 379\.2/);
+});
+
+test('возврат кассационной жалобы: перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 14.02.2026 + 1 месяц = 14.03.2026 (суббота) → 16.03.2026 (понедельник).
+  const t = computeIndependentTerms({ cassation_return_ruling_date: '2026-02-14' })
+    .cassation_return_ruling_appeal;
+  assert.equal(t.raw_deadline, '2026-03-14');
+  assert.equal(t.deadline, '2026-03-16');
+  assert.equal(t.shifted, true);
+
+  // Новогодние каникулы: 11.12.2025 + 1 месяц = 11.01.2026 (вс) → 12.01.2026.
+  const holiday = computeIndependentTerms({ cassation_return_ruling_date: '2025-12-11' })
+    .cassation_return_ruling_appeal;
+  assert.equal(holiday.raw_deadline, '2026-01-11');
+  assert.equal(holiday.deadline, '2026-01-12');
+});
+
+test('возврат кассационной жалобы: узла нет без даты определения', () => {
+  assert.equal(computeIndependentTerms({}).cassation_return_ruling_appeal, null);
+  // Дата определения КСОЮ по существу кассации этот узел не открывает: возврат
+  // жалобы — отдельное определение, и вводится оно своим полем.
+  assert.equal(
+    computeIndependentTerms({ ksoyu_ruling_date: '2025-09-01' }).cassation_return_ruling_appeal,
+    null,
+  );
+});
+
+test('возврат кассационной жалобы: узел независим от категории дела и ветви цепочки', () => {
+  // Возвратить жалобу кассационный суд может по делу любой категории, поэтому
+  // расчёт не должен зависеть ни от данных цепочки, ни от их отсутствия.
+  const alone = computeIndependentTerms({ cassation_return_ruling_date: '2025-09-01' })
+    .cassation_return_ruling_appeal;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const withBranches = computeIndependentTerms({
+    cassation_return_ruling_date: '2025-09-01',
+    reasoned_decision_date: '2025-03-11',
+    mirovoy_resolution_date: '2025-07-06',
+    default_judgment_service_date: '2025-07-05',
+    simplified_resolution_date: '2025-07-03',
+    ksoyu_ruling_reasoned_date: '2025-08-05',
+  }).cassation_return_ruling_appeal;
+  assert.equal(withBranches.deadline, alone.deadline);
+  assert.equal(withBranches.anchor, alone.anchor);
+
+  // И через computeChain — тот же узел, той же датой.
+  const chain = computeChain(
+    { ...BASE, cassation_return_ruling_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.cassation_return_ruling_appeal.deadline, alone.deadline);
+  assert.equal(computeChain(BASE, { today: '2025-09-10' }).cassation_return_ruling_appeal, null);
+});
+
+test('возврат кассационной жалобы: одна редакция, переиздание 79-ФЗ ветвления не даёт', () => {
+  // Статья переиздана Федеральным законом от 09.04.2026 № 79-ФЗ, но по существу
+  // не изменилась — темпорального ветвления по дате быть не должно.
+  assert.equal(CASSATION_RETURN_RULING_APPEAL.norm_versions.length, 1);
+  const [version] = CASSATION_RETURN_RULING_APPEAL.norm_versions;
+  assert.equal(version.from, null);
+  assert.equal(version.to, null);
+
+  const before = computeIndependentTerms({ cassation_return_ruling_date: '2026-03-13' })
+    .cassation_return_ruling_appeal;
+  const after = computeIndependentTerms({ cassation_return_ruling_date: '2026-03-13' })
+    .cassation_return_ruling_appeal;
+  assert.equal(before.deadline, after.deadline);
+  assert.equal(before.norm.primary, after.norm.primary);
+});
+
+test('возврат кассационной жалобы: контекст в logic — 10 дней суда и день первоначального обращения', () => {
+  const t = computeIndependentTerms({ cassation_return_ruling_date: '2025-09-01' })
+    .cassation_return_ruling_appeal;
+  // Десятидневный срок рассмотрения самим судом (ч. 2, первое предложение) —
+  // срок суда: только упоминание в тексте, отдельного расчёта нет.
+  assert.match(t.logic, /[Дд]есятидневный/);
+  assert.match(t.logic, /срок суда/);
+  // Правило ч. 2 (второе предложение): при отмене определения жалоба считается
+  // поданной в день первоначального обращения.
+  assert.match(t.logic, /день первоначального обращения/);
+  assert.match(t.norm.clarification, /первоначального обращения/);
+  // Отдельным узлом десятидневный срок не заводится.
+  assert.equal(
+    computeIndependentTerms({ cassation_return_ruling_date: '2025-09-01' })
+      .cassation_return_ruling_review,
+    undefined,
+  );
 });
 
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------

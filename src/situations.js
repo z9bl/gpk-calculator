@@ -99,9 +99,21 @@ export const SITUATIONS = [
   },
   {
     id: 'separate',
-    label: 'Отдельные сроки (протокол, частная жалоба)',
-    fields: ['protocol_signed_date', 'interim_ruling_date'],
-    nodes: ['protocol_remarks', 'protocol_remarks_review', 'private_complaint'],
+    label: 'Отдельные сроки (протокол, частная жалоба, возврат кассационной жалобы)',
+    // Пул сроков, не привязанных к категории дела: каждый считается по своему
+    // input независимо от цепочки обжалования. Обжалование определения о
+    // возврате кассационной жалобы (ч. 1 ст. 379.2) — событие стадии кассации,
+    // возможное по делу любой категории, поэтому оно здесь, а не в ветви
+    // конкретного производства. Единицы сроков в пуле разные: замечания на
+    // протокол и частная жалоба — рабочие дни, возврат кассационной жалобы —
+    // месяц (ч. 1, 2 ст. 108).
+    fields: ['protocol_signed_date', 'interim_ruling_date', 'cassation_return_ruling_date'],
+    nodes: [
+      'protocol_remarks',
+      'protocol_remarks_review',
+      'private_complaint',
+      'cassation_return_ruling_appeal',
+    ],
   },
 ];
 

@@ -618,6 +618,65 @@ test('надзор: карточка появляется по дате опре
   assert.deepEqual(sup.duration, { value: 3, unit: 'month' });
 });
 
+test('возврат кассационной жалобы: карточка месячного срока (ч. 1 ст. 379.2)', () => {
+  const without = buildView({ ksoyu_ruling_date: '2025-09-01' }, { today: '2026-03-01' });
+  assert.ok(
+    !ids(without.cards).includes('cassation_return_ruling_appeal'),
+    'дата определения КСОЮ по существу узел возврата не открывает',
+  );
+
+  const v = buildView({ cassation_return_ruling_date: '2025-09-01' }, { today: '2025-09-10' });
+  const card = byId(v.cards, 'cassation_return_ruling_appeal');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.status, 'computed');
+  assert.equal(card.title, 'Обжалование определения о возврате кассационной жалобы');
+  assert.equal(card.deadline, '2025-10-01');
+  assert.match(card.norm, /ч\. 1 ст\. 379\.2/);
+  assert.deepEqual(card.duration, { value: 1, unit: 'month' });
+  // Прерываемым (ст. 22 ФЗ № 229-ФЗ) этот срок не является.
+  assert.equal(card.interruptible, undefined);
+});
+
+test('возврат кассационной жалобы: правило о дне первоначального обращения — в details', () => {
+  const v = buildView({ cassation_return_ruling_date: '2025-09-01' }, { today: '2025-09-10' });
+  const card = byId(v.cards, 'cassation_return_ruling_appeal');
+  assert.match(card.details.logic, /день первоначального обращения/);
+  // Десятидневный срок рассмотрения самим судом — контекст в тексте карточки,
+  // отдельной карточки для него нет.
+  assert.match(card.details.logic, /[Дд]есятидневный/);
+  assert.match(card.details.logic, /срок суда/);
+  assert.equal(
+    v.cards.filter((c) => /возврат/i.test(c.title)).length,
+    1,
+    'срок суда отдельной карточкой не заводится',
+  );
+  assert.match(card.details.midnight_rule, /ч\. 3 ст\. 108/);
+});
+
+test('возврат кассационной жалобы: узел доступен в любой ветви, без данных цепочки', () => {
+  // Возвратить жалобу кассационный суд может по делу любой категории — карточка
+  // не должна зависеть ни от одной из ветвей и от их полей.
+  const alone = buildView({ cassation_return_ruling_date: '2025-09-01' }, { today: '2025-09-10' });
+  assert.ok(byId(alone.cards, 'cassation_return_ruling_appeal'));
+
+  for (const branch of [
+    { reasoned_decision_date: '2025-03-11' },
+    { mirovoy_resolution_date: '2025-07-06' },
+    { simplified_resolution_date: '2025-07-03' },
+    { default_judgment_service_date: '2025-07-05' },
+    { court_order_issued_date: '2023-04-12' },
+  ]) {
+    const v = buildView(
+      { ...branch, cassation_return_ruling_date: '2025-09-01' },
+      { today: '2025-09-10' },
+    );
+    const card = byId(v.cards, 'cassation_return_ruling_appeal');
+    assert.ok(card, `узел пропал в ветви ${Object.keys(branch)[0]}`);
+    assert.equal(card.deadline, '2025-10-01');
+  }
+});
+
 test('судебный приказ: карточка появляется по дате выдачи приказа', () => {
   const without = buildView({}, { today: '2026-03-01' });
   assert.ok(!ids(without.cards).includes('court_order_presentation'));
