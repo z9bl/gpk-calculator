@@ -19,6 +19,7 @@ import {
   CASSATION_VS,
   ENFORCEMENT_PRESENTATION,
   COURT_ORDER_PRESENTATION,
+  PERIODIC_PAYMENTS_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
   SIMPLIFIED_REASONED_REQUEST,
@@ -355,6 +356,23 @@ export function icsTermsFromChain(chain) {
       norm: chain.court_order_presentation.norm.primary,
       ics: COURT_ORDER_PRESENTATION.ics,
       duration: COURT_ORDER_PRESENTATION.duration,
+    });
+  }
+  // Предъявление документов о взыскании периодических платежей (ч. 4 ст. 21
+  // ФЗ № 229-ФЗ) — независимый узел, считается по своему input
+  // (periodic_payment_period_end_date). В ветке not_applicable (бессрочное
+  // взыскание) deadline нет — в экспорт узел не попадает.
+  if (
+    chain &&
+    chain.periodic_payments_presentation &&
+    chain.periodic_payments_presentation.deadline
+  ) {
+    terms.push({
+      title: chain.periodic_payments_presentation.title,
+      deadline: chain.periodic_payments_presentation.deadline,
+      norm: chain.periodic_payments_presentation.norm.primary,
+      ics: PERIODIC_PAYMENTS_PRESENTATION.ics,
+      duration: PERIODIC_PAYMENTS_PRESENTATION.duration,
     });
   }
   // Упрощённое производство: заявление о мотивированном решении и апелляция.

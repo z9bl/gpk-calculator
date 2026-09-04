@@ -57,6 +57,8 @@ const INPUT_LABELS = {
     'Дата изготовления мотивированного апелляционного определения районного суда',
   mirovoy_appeal_ruling_date: 'Дата принятия апелляционного определения районного суда',
   court_order_issued_date: 'Дата выдачи судебного приказа',
+  periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
+  periodic_payment_indefinite: 'Срок, на который присуждены платежи, не определён (бессрочное взыскание)',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подана, укажите дату',
@@ -111,6 +113,9 @@ const INPUT_HINTS = {
   court_order_issued_date:
     'Три года со дня выдачи приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), а не со дня его ' +
     'вынесения мировым судьёй',
+  periodic_payment_period_end_date:
+    'Три года после окончания этого срока (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока сам срок ' +
+    'не окончен, предъявить можно в любой момент',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -1150,6 +1155,27 @@ function renderChoiceField(id, options, current) {
   return wrap;
 }
 
+// Поле-чекбокс: бессрочное взыскание периодических платежей (ч. 4 ст. 21
+// ФЗ № 229-ФЗ) — альтернатива дате окончания периода, а не нехватка данных
+// (см. periodic_payment_indefinite в chain.js).
+function renderCheckboxField(id, current) {
+  const wrap = el('div', 'field checkbox-field');
+  const lab = el('label', null);
+  lab.setAttribute('for', `in-${id}`);
+  const input = el('input');
+  input.type = 'checkbox';
+  input.id = `in-${id}`;
+  input.checked = Boolean(current);
+  input.addEventListener('change', () => {
+    state.inputs[id] = input.checked;
+    render();
+  });
+  lab.appendChild(input);
+  lab.appendChild(el('span', null, INPUT_LABELS[id]));
+  wrap.appendChild(lab);
+  return wrap;
+}
+
 // Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
 // маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
@@ -1320,7 +1346,28 @@ function renderSituationFields(situation, primaryFilled) {
     );
   }
   const box = el('div', 'invite');
-  for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
+  if (situation.id === 'periodic_payments') {
+    // Дата окончания периода и чекбокс бессрочности — взаимоисключающие: при
+    // бессрочном взыскании дедлайна не существует в принципе, дата ему не
+    // нужна (см. computePeriodicPayments в chain.js), поэтому поле даты
+    // скрывается, а не просто перестаёт учитываться.
+    const indefinite = Boolean(state.inputs.periodic_payment_indefinite);
+    box.appendChild(renderCheckboxField('periodic_payment_indefinite', indefinite));
+    if (indefinite) {
+      box.appendChild(
+        el(
+          'p',
+          'hint',
+          'Дата окончания срока не нужна — предъявить можно в любой момент, пока ' +
+            'сохраняется право на периодические платежи.',
+        ),
+      );
+    } else {
+      box.appendChild(inviteFieldOrPointer('periodic_payment_period_end_date'));
+    }
+  } else {
+    for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
+  }
   root.appendChild(reveal(`sitfields:${situation.id}`, box));
 }
 

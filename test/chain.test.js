@@ -1139,6 +1139,50 @@ test('судебный приказ: узел не зависит от поле�
   assert.equal(chain.court_order_presentation.deadline, '2026-04-13');
 });
 
+// --- Периодические платежи: предъявление к исполнению (ч. 4 ст. 21 229-ФЗ) --
+
+test('периодические платежи: 3 года со дня окончания периода, перенос через выходные', () => {
+  const t = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
+    .periodic_payments_presentation;
+  assert.equal(t.anchor, '2023-04-12');
+  assert.equal(t.raw_deadline, '2026-04-12'); // воскресенье
+  assert.equal(t.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
+  assert.equal(t.shifted, true);
+  assert.match(t.norm.primary, /ч\. 4 ст\. 21/);
+});
+
+test('периодические платежи: бессрочное взыскание — not_applicable без дедлайна', () => {
+  const t = computeIndependentTerms({ periodic_payment_indefinite: true })
+    .periodic_payments_presentation;
+  assert.ok(t);
+  assert.equal(t.status, 'not_applicable');
+  assert.equal(t.deadline, undefined);
+  assert.match(t.reason, /бессрочно/);
+  assert.match(t.norm, /ч\. 4 ст\. 21/);
+});
+
+test('периодические платежи: бессрочность важнее введённой даты окончания периода', () => {
+  const t = computeIndependentTerms({
+    periodic_payment_period_end_date: '2023-04-12',
+    periodic_payment_indefinite: true,
+  }).periodic_payments_presentation;
+  assert.equal(t.status, 'not_applicable');
+});
+
+test('периодические платежи: узла нет без даты окончания периода и без отметки о бессрочности', () => {
+  assert.equal(computeIndependentTerms({}).periodic_payments_presentation, null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).periodic_payments_presentation, null);
+});
+
+test('периодические платежи: узел не зависит от полей общей цепочки', () => {
+  const chain = computeChain(
+    { ...BASE, periodic_payment_period_end_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  assert.ok(chain.periodic_payments_presentation);
+  assert.equal(chain.periodic_payments_presentation.deadline, '2026-04-13');
+});
+
 // --- Кассация по делам мировых судей (глава 40.1 ГПК, ФЗ № 79-ФЗ) -----------
 
 const MIR_CASS = {
