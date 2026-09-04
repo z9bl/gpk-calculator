@@ -29,20 +29,13 @@ import {
 // Отдаём их через слой представления, чтобы web/app.js не тянул chain.js.
 export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING };
 
-// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Судебный
-// приказ раскрыт отдельным узлом (court_order_presentation, своя ситуация в
+// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Список пуст:
+// судебный приказ и периодические платежи раскрыты отдельными узлами
+// (court_order_presentation, periodic_payments_presentation — свои ситуации в
 // situations.js), перерыв срока — сдвигом якоря по событиям ст. 22 (см.
-// applyInterruptions в chain.js); заглушек для них больше нет.
-const ENFORCEMENT_STUBS = [
-  {
-    id: 'periodic_payments',
-    title: 'Периодические платежи',
-    explanation:
-      'Исполнительный лист можно предъявить в течение всего срока, на который ' +
-      'присуждены платежи, плюс три года после его окончания.',
-    norm: 'ч. 4 ст. 21 ФЗ № 229-ФЗ',
-  },
-];
+// applyInterruptions в chain.js). Механизм оставлен, как и STUBS ниже: он
+// понадобится следующему смежному случаю, для которого расчёта не окажется.
+const ENFORCEMENT_STUBS = [];
 import { computeDeadline, addDays } from './engine.js';
 import { toISODate, calendarNote, isWorkingDay } from './calendar.js';
 
@@ -80,6 +73,7 @@ const INPUT_LABELS = {
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
   court_order_issued_date: 'Дата выдачи судебного приказа',
+  periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
 };
 
@@ -291,7 +285,8 @@ function attachInterruptions(card, term) {
   card.details.interruption_logic = term.interruption_logic;
 }
 
-// Карточка срока предъявления ИЛ. Рядом — заглушки по смежным случаям (в card.stubs).
+// Карточка срока предъявления ИЛ. Смежные случаи (card.stubs) сейчас пусты —
+// все раскрыты узлами; поле остаётся, чтобы следующий случай было куда класть.
 function enforcementCard(enf) {
   const card = {
     id: enf.id,
@@ -603,6 +598,27 @@ function monthTermCard(term) {
   return card;
 }
 
+// Карточка предъявления документов о взыскании периодических платежей
+// (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
+// ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
+// существует в принципе, и узел приходит уже в состоянии not_applicable (по
+// образцу default_judgment_appeal при отменённом заочном решении).
+function periodicPaymentsCard(term) {
+  if (term.status === 'not_applicable') {
+    return {
+      id: term.id,
+      kind: 'term',
+      title: term.title,
+      status: 'not_applicable',
+      deadline: null,
+      norm: term.norm,
+      message: term.message,
+      details: { collapsed: true, logic: term.reason },
+    };
+  }
+  return monthTermCard(term);
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -763,6 +779,9 @@ function independentNodes(source, today = null) {
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
+  if (terms.periodic_payments_presentation) {
+    cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
+  }
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {
     const dj = defaultJudgmentCards(defaultJudgment);

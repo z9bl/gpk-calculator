@@ -559,6 +559,76 @@ export const COURT_ORDER_PRESENTATION = {
   ],
 };
 
+// Предъявление к исполнению документов о взыскании периодических платежей
+// (ч. 4 ст. 21 ФЗ № 229-ФЗ).
+//
+// Независимый трек по тому же образцу, что и COURT_ORDER_PRESENTATION: не
+// встроен в computeChain, считается по своему input.
+//
+// Норма: «в течение всего срока, на который присуждены платежи, а также в
+// течение трёх лет после окончания этого срока». Пока период идёт,
+// содержательного дедлайна нет — предъявить можно в любой момент, поэтому
+// промежуточный узел на это время не заводим. Дедлайн для калькулятора —
+// окончание периода плюс три года; точка отсчёта — дата ОКОНЧАНИЯ периода, на
+// который присуждены платежи (не дата их назначения и не текущая дата).
+// Редакций не заводим — часть 4 ст. 21 в этой части не менялась.
+export const PERIODIC_PAYMENTS_PRESENTATION = {
+  id: 'periodic_payments_presentation',
+  title: 'Предъявление к исполнению документов о взыскании периодических платежей',
+  duration: { value: 3, unit: 'year' },
+  anchor: { event: 'periodic_payment_period_end_date', offset_start: 1 },
+  condition: 'periodic_payment_period_end_date && !periodic_payment_indefinite',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три года со дня окончания срока, на который присуждены периодические ' +
+    'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ можно ' +
+    'предъявить в любой момент — содержательного дедлайна на это время нет.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'periodic_payment_period_end_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 4 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Причина отсутствия дедлайна при бессрочном взыскании (например, пожизненное
+// содержание) — это не нехватка данных, а содержательный факт: срок, на
+// который присуждены платежи, не определён во времени, поэтому не определена
+// и точка отсчёта трёхлетнего хвоста.
+const PERIODIC_PAYMENTS_INDEFINITE_REASON =
+  'Взыскание установлено бессрочно (срок, на который присуждены платежи, не ' +
+  'определён во времени) — предъявить документ к исполнению можно в любой ' +
+  'момент, пока сохраняется право на периодические платежи.';
+
+// Узел предъявления периодических платежей — с веткой indefinite (по образцу
+// appeal_not_applicable в computeDefaultJudgment): бессрочное взыскание не
+// даёт точки отсчёта, поэтому вместо computeSimpleTerm возвращаем узел в
+// состоянии not_applicable, а не «недостаточно данных».
+function computePeriodicPayments(inputs) {
+  if (inputs?.periodic_payment_indefinite === true) {
+    return {
+      id: PERIODIC_PAYMENTS_PRESENTATION.id,
+      title: PERIODIC_PAYMENTS_PRESENTATION.title,
+      status: 'not_applicable',
+      norm: PERIODIC_PAYMENTS_PRESENTATION.norm_versions[0].norm.primary,
+      message: 'Не исчисляется — взыскание бессрочное',
+      reason: PERIODIC_PAYMENTS_INDEFINITE_REASON,
+    };
+  }
+  return computeSimpleTerm(
+    PERIODIC_PAYMENTS_PRESENTATION,
+    inputs?.periodic_payment_period_end_date,
+  );
+}
+
 // Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
 function computeSimpleTerm(term, anchorDate, overrides = null) {
   const anchor = toISO(anchorDate);
@@ -603,7 +673,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_presentation:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -617,6 +687,7 @@ export function computeIndependentTerms(inputs) {
       inputs?.court_order_issued_date,
       inputs?.enforcement_interruptions,
     ),
+    periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
   };
 }
 

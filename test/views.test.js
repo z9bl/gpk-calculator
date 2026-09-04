@@ -147,22 +147,14 @@ test('пограничное окно: карточка кассации нес�
   assert.equal(cass.deadline, '2024-09-20'); // расчёт — по действующей редакции
 });
 
-test('ИЛ: узел появляется при resolved, несёт заглушки; в pending — отсутствует', () => {
+test('ИЛ: узел появляется при resolved, заглушек рядом не осталось; в pending — отсутствует', () => {
   const resolved = buildView(BASE, { today: '2025-05-01' }); // not_appealed → resolved
   const il = byId(resolved.cards, 'enforcement_presentation');
   assert.ok(il, 'узел ИЛ есть, когда вступление в силу разрешено');
   assert.match(il.norm, /229-ФЗ/);
-  // Приказ раскрыт своим узлом, перерыв срока — сдвигом якоря (ст. 22);
-  // заглушкой остаются только периодические платежи (ч. 4 ст. 21).
-  assert.equal(il.stubs.length, 1);
-  assert.deepEqual(
-    il.stubs.map((s) => s.id),
-    ['periodic_payments'],
-  );
-  assert.ok(
-    !il.stubs.some((s) => s.id === 'interruption'),
-    'заглушка перерыва снята — расчёт поддержан',
-  );
+  // Все три смежных случая раскрыты: судебный приказ и периодические платежи —
+  // отдельными узлами, перерыв срока — сдвигом якоря (ст. 22). Блок пуст.
+  assert.deepEqual(il.stubs, []);
 
   const pending = buildView(BASE, { today: '2025-04-01' }); // pending
   const allIds = [...pending.cards, ...pending.incomplete].map((n) => n.id);
@@ -638,6 +630,39 @@ test('судебный приказ: карточка появляется по 
   assert.deepEqual(co.duration, { value: 3, unit: 'year' });
 });
 
+test('периодические платежи: карточка появляется по дате окончания периода', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('periodic_payments_presentation'));
+
+  const v = buildView(
+    { periodic_payment_period_end_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  const pp = byId(v.cards, 'periodic_payments_presentation');
+  assert.ok(pp);
+  assert.equal(pp.status, 'computed');
+  assert.equal(pp.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
+  assert.match(pp.norm, /ч\. 4 ст\. 21/);
+  assert.deepEqual(pp.duration, { value: 3, unit: 'year' });
+});
+
+test('периодические платежи: бессрочное взыскание — карточка not_applicable без даты', () => {
+  const v = buildView({ periodic_payment_indefinite: true }, { today: '2026-03-01' });
+  const pp = byId(v.cards, 'periodic_payments_presentation');
+  assert.ok(pp, 'карточка остаётся — это содержательный факт, не нехватка данных');
+  assert.equal(pp.status, 'not_applicable');
+  assert.equal(pp.deadline, null);
+  assert.match(pp.message, /бессрочное/);
+  assert.match(pp.details.logic, /бессрочно/);
+  assert.ok(!ids(v.incomplete).includes('periodic_payments_presentation'));
+  // И в .ics не попадает — экспортировать нечего.
+  assert.ok(
+    !icsTermsFromView(v).some((t) =>
+      /периодических платежей/.test(t.title),
+    ),
+  );
+});
+
 // --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
 
 test('перерыв: карточка ИЛ показывает историю событий и норму ст. 22', () => {
@@ -720,6 +745,28 @@ test('перерыв: карточка судебного приказа счи�
   assert.equal(co.base_anchor, '2023-04-12');
   assert.equal(co.restarted_from, '2024-03-05');
   assert.ok(co.interruption_warning);
+});
+
+test('перерыв: карточка периодических платежей его не получает', () => {
+  // Обе фичи включены одним набором входных данных: ИЛ прерван, периодические
+  // платежи (ч. 4 ст. 21) считаются от своей даты и списка перерывов не несут.
+  const v = buildView(
+    {
+      ...BASE,
+      periodic_payment_period_end_date: '2023-04-12',
+      enforcement_interruptions: [{ type: 'presentment', date: '2026-06-01' }],
+    },
+    { today: '2025-05-01' },
+  );
+  const il = byId(v.cards, 'enforcement_presentation');
+  assert.equal(il.deadline, '2029-06-01');
+  assert.ok(il.interruptions);
+
+  const pp = byId(v.cards, 'periodic_payments_presentation');
+  assert.ok(pp, 'узел периодических платежей на месте');
+  assert.equal(pp.deadline, '2026-04-13');
+  assert.equal(pp.interruptible, undefined);
+  assert.equal(pp.interruptions, undefined);
 });
 
 test('перерыв: срок надзора остаётся непрерываемым', () => {
