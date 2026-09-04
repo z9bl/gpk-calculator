@@ -19,6 +19,13 @@ const calendarData = JSON.parse(
   readFileSync(new URL('../calendar_data.json', import.meta.url), 'utf8'),
 );
 
+// Правило-ловушка № 3: перенос, у которого день-донор и день-приёмник дают
+// одинаковое число рабочих/нерабочих дней в месяце (как 20.02→22.02 — оба дня
+// в феврале, просто меняются местами), НЕ ловится проверкой по checksums —
+// сумма work/off за месяц не меняется от того, какой именно день выходной.
+// Совпадение чек-сумм подтверждает только количество дней, но не то, что
+// выбраны правильные конкретные даты — для этого нужна отдельная проверка
+// по датам (см. тест на isWorkingDay('2027-02-20'/'2027-02-22') ниже).
 test('96/96 контрольных месяца совпадают с checksums', () => {
   let monthsChecked = 0;
 
@@ -58,6 +65,12 @@ test('isWorkingDay принимает и Date, и строку', () => {
   assert.equal(isWorkingDay('2021-06-15'), true);
 });
 
+test('isWorkingDay: перенос 20.02→22.02 в 2027 (проект постановления)', () => {
+  // 20.02.2027 — суббота, но её выходной статус перенесён на понедельник 22-е.
+  assert.equal(isWorkingDay('2027-02-20'), true);
+  assert.equal(isWorkingDay('2027-02-22'), false);
+});
+
 test('shiftIfNonWorking переносит на следующий рабочий день (ч. 2 ст. 108)', () => {
   // 12.06.2021 (сб, праздник) → 13 вс → 15.06 вт (14.06 — перенос за 12-е).
   assert.equal(shiftIfNonWorking('2021-06-12'), '2021-06-15');
@@ -91,6 +104,11 @@ test('calendarNote draft (2027): зона включает янв./май + на
   assert.equal(calendarNote('2027-12-31').level, 'draft'); // перенос 03.01 → 31.12
   assert.match(calendarNote('2027-01-10').text, /проект/);
   assert.equal(calendarNote('2027-07-15'), null); // вне зоны
+});
+
+test('calendarNote draft (2027): зона вокруг 23 февраля / 8 марта ловит перенос 20.02→22.02', () => {
+  assert.equal(calendarNote('2027-02-20').level, 'draft');
+  assert.equal(calendarNote('2027-02-22').level, 'draft');
 });
 
 test('calendarNote preliminary (2028+): зона уже — без начала ноября и середины декабря', () => {
