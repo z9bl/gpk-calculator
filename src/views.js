@@ -72,6 +72,7 @@ const INPUT_LABELS = {
   mirovoy_appeal_ruling_reasoned_date:
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
+  cassation_return_ruling_date: 'Дата определения о возврате кассационной жалобы',
   court_order_copy_received_date: 'Дата получения должником копии судебного приказа',
   court_order_issued_date: 'Дата выдачи судебного приказа',
   periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
@@ -797,6 +798,9 @@ function independentNodes(source, today = null) {
     }
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
+  if (terms.cassation_return_ruling_appeal) {
+    cards.push(monthTermCard(terms.cassation_return_ruling_appeal));
+  }
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (terms.court_order_objection) cards.push(courtOrderObjectionCard(terms.court_order_objection));
   if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
