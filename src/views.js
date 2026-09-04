@@ -22,18 +22,11 @@ import {
   reasonedDelayVersionFor,
 } from './chain.js';
 
-// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Судебный
-// приказ раскрыт отдельным узлом (court_order_presentation, своя ситуация в
-// situations.js) и здесь больше не заглушка.
+// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Периодические
+// платежи (ч. 4 ст. 21) раскрыты отдельным узлом (periodic_payments_presentation,
+// своя ситуация в situations.js), как и судебный приказ (court_order_presentation),
+// и здесь больше не заглушка.
 const ENFORCEMENT_STUBS = [
-  {
-    id: 'periodic_payments',
-    title: 'Периодические платежи',
-    explanation:
-      'Исполнительный лист можно предъявить в течение всего срока, на который ' +
-      'присуждены платежи, плюс три года после его окончания.',
-    norm: 'ч. 4 ст. 21 ФЗ № 229-ФЗ',
-  },
   {
     id: 'interruption',
     title: 'Перерыв срока',
@@ -80,6 +73,7 @@ const INPUT_LABELS = {
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
   court_order_issued_date: 'Дата выдачи судебного приказа',
+  periodic_payment_period_end_date: 'Дата окончания срока, на который присуждены платежи',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
@@ -554,6 +548,27 @@ function monthTermCard(term) {
   return card;
 }
 
+// Карточка предъявления документов о взыскании периодических платежей
+// (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
+// ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
+// существует в принципе, и узел приходит уже в состоянии not_applicable (по
+// образцу default_judgment_appeal при отменённом заочном решении).
+function periodicPaymentsCard(term) {
+  if (term.status === 'not_applicable') {
+    return {
+      id: term.id,
+      kind: 'term',
+      title: term.title,
+      status: 'not_applicable',
+      deadline: null,
+      norm: term.norm,
+      message: term.message,
+      details: { collapsed: true, logic: term.reason },
+    };
+  }
+  return monthTermCard(term);
+}
+
 const ENTRY_TITLE = 'Вступление решения в законную силу';
 
 // Узлы «вступление в силу» и «кассация» с учётом достаточности данных.
@@ -714,6 +729,9 @@ function independentNodes(source, today = null) {
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
+  if (terms.periodic_payments_presentation) {
+    cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
+  }
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {
     const dj = defaultJudgmentCards(defaultJudgment);

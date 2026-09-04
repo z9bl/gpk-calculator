@@ -152,10 +152,12 @@ test('ИЛ: узел появляется при resolved, несёт заглу
   const il = byId(resolved.cards, 'enforcement_presentation');
   assert.ok(il, 'узел ИЛ есть, когда вступление в силу разрешено');
   assert.match(il.norm, /229-ФЗ/);
-  assert.equal(il.stubs.length, 2); // периодические платежи, перерыв (приказ раскрыт узлом)
+  // Периодические платежи и судебный приказ раскрыты отдельными узлами —
+  // заглушкой остаётся только перерыв срока.
+  assert.equal(il.stubs.length, 1);
   assert.deepEqual(
     il.stubs.map((s) => s.id),
-    ['periodic_payments', 'interruption'],
+    ['interruption'],
   );
 
   const pending = buildView(BASE, { today: '2025-04-01' }); // pending
@@ -630,6 +632,39 @@ test('судебный приказ: карточка появляется по 
   assert.equal(co.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
   assert.match(co.norm, /ч\. 3 ст\. 21/);
   assert.deepEqual(co.duration, { value: 3, unit: 'year' });
+});
+
+test('периодические платежи: карточка появляется по дате окончания периода', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('periodic_payments_presentation'));
+
+  const v = buildView(
+    { periodic_payment_period_end_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  const pp = byId(v.cards, 'periodic_payments_presentation');
+  assert.ok(pp);
+  assert.equal(pp.status, 'computed');
+  assert.equal(pp.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
+  assert.match(pp.norm, /ч\. 4 ст\. 21/);
+  assert.deepEqual(pp.duration, { value: 3, unit: 'year' });
+});
+
+test('периодические платежи: бессрочное взыскание — карточка not_applicable без даты', () => {
+  const v = buildView({ periodic_payment_indefinite: true }, { today: '2026-03-01' });
+  const pp = byId(v.cards, 'periodic_payments_presentation');
+  assert.ok(pp, 'карточка остаётся — это содержательный факт, не нехватка данных');
+  assert.equal(pp.status, 'not_applicable');
+  assert.equal(pp.deadline, null);
+  assert.match(pp.message, /бессрочное/);
+  assert.match(pp.details.logic, /бессрочно/);
+  assert.ok(!ids(v.incomplete).includes('periodic_payments_presentation'));
+  // И в .ics не попадает — экспортировать нечего.
+  assert.ok(
+    !icsTermsFromView(v).some((t) =>
+      /периодических платежей/.test(t.title),
+    ),
+  );
 });
 
 test('кассация по делам мировых судей: маршрут и пометка о переходном положении', () => {

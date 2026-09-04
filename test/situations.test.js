@@ -37,6 +37,7 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_appeal_ruling_date: '2025-08-15', // принятие → вступление в силу, ИЛ
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
   court_order_issued_date: '2023-04-12',
+  periodic_payment_period_end_date: '2023-04-12',
 };
 
 test('каждый узел из buildView попадает ровно в одну ситуацию', () => {
@@ -83,10 +84,18 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined).id, 'general');
 });
 
-test('все шесть ситуаций на месте и подписаны', () => {
+test('все семь ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
-    ['general', 'mirovoy', 'simplified', 'default_judgment', 'court_order', 'separate'],
+    [
+      'general',
+      'mirovoy',
+      'simplified',
+      'default_judgment',
+      'court_order',
+      'periodic_payments',
+      'separate',
+    ],
   );
   for (const s of SITUATIONS) {
     assert.ok(s.label && s.label.length > 3, `${s.id}: нужна подпись`);

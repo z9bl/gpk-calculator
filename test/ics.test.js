@@ -338,6 +338,8 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
   // судебный приказ (независимый трек, глава 11 ГПК)
   court_order_issued_date: '2023-04-12',
+  // периодические платежи (независимый трек, ч. 4 ст. 21 ФЗ № 229-ФЗ)
+  periodic_payment_period_end_date: '2023-04-12',
 };
 
 // Дата расчёта для проверок полноты экспорта — раньше всех дедлайнов набора.
@@ -437,6 +439,28 @@ test('предъявление судебного приказа уходит в
   const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${co.deadline.replace(/-/g, '')}`));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // как у других трёхлетних сроков
+});
+
+test('предъявление документов о периодических платежах уходит в .ics при заданной дате', () => {
+  const view = buildView(
+    { periodic_payment_period_end_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromView(view);
+  const pp = terms.find((t) => t.title.includes('периодических платежей'));
+  assert.ok(pp, 'срок предъявления документов о взыскании периодических платежей в списке экспорта');
+  assert.deepEqual(pp.duration, { value: 3, unit: 'year' });
+  assert.equal(pp.deadline, '2026-04-13');
+  assert.match(pp.norm, /ч\. 4 ст\. 21/);
+
+  const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${pp.deadline.replace(/-/g, '')}`));
+});
+
+test('периодические платежи: бессрочное взыскание не экспортируется в .ics — нет даты', () => {
+  const view = buildView({ periodic_payment_indefinite: true }, { today: '2026-03-01' });
+  const terms = icsTermsFromView(view);
+  assert.ok(!terms.some((t) => /периодических платежей/.test(t.title)));
 });
 
 // --- Истёкшие сроки и отсечение прошлых напоминаний --------------------------

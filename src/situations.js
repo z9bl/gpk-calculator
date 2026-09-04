@@ -74,6 +74,16 @@ export const SITUATIONS = [
     nodes: ['court_order_presentation'],
   },
   {
+    id: 'periodic_payments',
+    label: 'Периодические платежи',
+    // Предъявление к исполнению документов о взыскании периодических платежей
+    // (ч. 4 ст. 21 ФЗ № 229-ФЗ) — самостоятельный трек, как и судебный приказ:
+    // не часть цепочки обжалования решения суда, своё поле и свой чекбокс
+    // бессрочности вместо даты (взаимоисключающие, см. web/app.js).
+    fields: ['periodic_payment_period_end_date', 'periodic_payment_indefinite'],
+    nodes: ['periodic_payments_presentation'],
+  },
+  {
     id: 'separate',
     label: 'Отдельные сроки (протокол, частная жалоба)',
     fields: ['protocol_signed_date', 'interim_ruling_date'],
