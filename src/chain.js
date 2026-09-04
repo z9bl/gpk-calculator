@@ -370,6 +370,45 @@ export const PRIVATE_COMPLAINT = {
   ],
 };
 
+// Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ).
+//
+// Приказное производство (глава 11 ГПК) — самостоятельный трек, а не часть
+// цепочки обжалования решения суда: у судебного приказа нет ни апелляции, ни
+// вступления в силу по ч. 1 ст. 209, поэтому узел не встроен в computeChain,
+// а считается независимо, по образцу SUPERVISION/PRIVATE_COMPLAINT.
+//
+// Точка отсчёта — дата ВЫДАЧИ приказа взыскателю (второй экземпляр с отметкой
+// о вступлении в силу, ч. 2 ст. 130 ГПК), а не дата вынесения приказа мировым
+// судьёй и не дата истечения десятидневного срока на возражения должника
+// (ст. 128–129 ГПК). Редакций не заводим — часть 3 ст. 21 в этой части не
+// менялась.
+export const COURT_ORDER_PRESENTATION = {
+  id: 'court_order_presentation',
+  title: 'Предъявление судебного приказа к исполнению',
+  duration: { value: 3, unit: 'year' },
+  anchor: { event: 'court_order_issued_date', offset_start: 1 },
+  condition: 'court_order_issued_date',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три года со дня выдачи судебного приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), ' +
+    'а не со дня его вынесения мировым судьёй и не со дня истечения срока на ' +
+    'возражения должника.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'court_order_issued_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 3 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
 // Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
 function computeSimpleTerm(term, anchorDate, overrides = null) {
   const anchor = toISO(anchorDate);
@@ -402,7 +441,7 @@ function computeSimpleTerm(term, anchorDate, overrides = null) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, court_order_presentation:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -411,6 +450,10 @@ export function computeIndependentTerms(inputs) {
     protocol_remarks_review: review,
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
     supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
+    court_order_presentation: computeSimpleTerm(
+      COURT_ORDER_PRESENTATION,
+      inputs?.court_order_issued_date,
+    ),
   };
 }
 

@@ -63,6 +63,17 @@ export const SITUATIONS = [
     ],
   },
   {
+    id: 'court_order',
+    label: 'Судебный приказ',
+    // Приказное производство (глава 11 ГПК) — самостоятельный трек, не часть
+    // цепочки обжалования решения суда: своё поле, как у mirovoy/simplified/
+    // default_judgment, а не primary_field — тот зарезервирован за общей
+    // веткой (см. тест 'по умолчанию выбран общий порядок' в situations.test.js
+    // и статическую разметку общего поля в web/app.js).
+    fields: ['court_order_issued_date'],
+    nodes: ['court_order_presentation'],
+  },
+  {
     id: 'separate',
     label: 'Отдельные сроки (протокол, частная жалоба)',
     fields: ['protocol_signed_date', 'interim_ruling_date'],

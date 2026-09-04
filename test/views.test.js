@@ -152,10 +152,10 @@ test('ИЛ: узел появляется при resolved, несёт заглу
   const il = byId(resolved.cards, 'enforcement_presentation');
   assert.ok(il, 'узел ИЛ есть, когда вступление в силу разрешено');
   assert.match(il.norm, /229-ФЗ/);
-  assert.equal(il.stubs.length, 3); // судебный приказ, периодические платежи, перерыв
+  assert.equal(il.stubs.length, 2); // периодические платежи, перерыв (приказ раскрыт узлом)
   assert.deepEqual(
     il.stubs.map((s) => s.id),
-    ['court_order', 'periodic_payments', 'interruption'],
+    ['periodic_payments', 'interruption'],
   );
 
   const pending = buildView(BASE, { today: '2025-04-01' }); // pending
@@ -618,6 +618,18 @@ test('надзор: карточка появляется по дате опре
   assert.equal(sup.deadline, '2025-12-01');
   assert.match(sup.norm, /391\.2/);
   assert.deepEqual(sup.duration, { value: 3, unit: 'month' });
+});
+
+test('судебный приказ: карточка появляется по дате выдачи приказа', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('court_order_presentation'));
+
+  const v = buildView({ court_order_issued_date: '2023-04-12' }, { today: '2026-03-01' });
+  const co = byId(v.cards, 'court_order_presentation');
+  assert.ok(co);
+  assert.equal(co.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
+  assert.match(co.norm, /ч\. 3 ст\. 21/);
+  assert.deepEqual(co.duration, { value: 3, unit: 'year' });
 });
 
 test('кассация по делам мировых судей: маршрут и пометка о переходном положении', () => {

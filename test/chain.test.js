@@ -1110,6 +1110,35 @@ test('надзор: перенос последнего дня (ч. 2 ст. 108)
   assert.equal(t.shifted, true);
 });
 
+// --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------
+
+test('судебный приказ: 3 года со дня выдачи, перенос через выходные', () => {
+  const t = computeIndependentTerms({ court_order_issued_date: '2023-04-12' })
+    .court_order_presentation;
+  assert.equal(t.anchor, '2023-04-12');
+  assert.equal(t.raw_deadline, '2026-04-12'); // воскресенье
+  assert.equal(t.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
+  assert.equal(t.shifted, true);
+  assert.match(t.norm.primary, /ч\. 3 ст\. 21/);
+});
+
+test('судебный приказ: узла нет без даты выдачи', () => {
+  assert.equal(computeIndependentTerms({}).court_order_presentation, null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).court_order_presentation, null);
+});
+
+test('судебный приказ: узел не зависит от полей общей цепочки', () => {
+  // Приказное производство (глава 11 ГПК) — самостоятельный трек: наличие
+  // court_order_issued_date рядом с датой мотивированного решения не должно
+  // ничего менять ни в одном узле, кроме собственного расчёта.
+  const chain = computeChain(
+    { ...BASE, court_order_issued_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  assert.ok(chain.court_order_presentation);
+  assert.equal(chain.court_order_presentation.deadline, '2026-04-13');
+});
+
 // --- Кассация по делам мировых судей (глава 40.1 ГПК, ФЗ № 79-ФЗ) -----------
 
 const MIR_CASS = {

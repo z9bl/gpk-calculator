@@ -336,6 +336,8 @@ const ALL_BRANCHES_INPUTS = {
   // Мотивированное апелляционное определение районного суда: открывает узел
   // кассации по делам мировых судей, не требуя, чтобы срок апелляции истёк.
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
+  // судебный приказ (независимый трек, глава 11 ГПК)
+  court_order_issued_date: '2023-04-12',
 };
 
 // Дата расчёта для проверок полноты экспорта — раньше всех дедлайнов набора.
@@ -421,6 +423,20 @@ test('надзор уходит в .ics с напоминаниями трёхм
   const ics = buildICS(terms, { referenceDate: '2026-07-26', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${sup.deadline.replace(/-/g, '')}`));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
+});
+
+test('предъявление судебного приказа уходит в .ics (3 года → 2 напоминания)', () => {
+  const view = buildView({ court_order_issued_date: '2023-04-12' }, { today: '2026-03-01' });
+  const terms = icsTermsFromView(view);
+  const co = terms.find((t) => t.title.includes('судебного приказа'));
+  assert.ok(co, 'срок предъявления судебного приказа в списке экспорта');
+  assert.deepEqual(co.duration, { value: 3, unit: 'year' });
+  assert.equal(co.deadline, '2026-04-13');
+  assert.match(co.norm, /ч\. 3 ст\. 21/);
+
+  const ics = buildICS(terms, { referenceDate: '2020-01-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${co.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // как у других трёхлетних сроков
 });
 
 // --- Истёкшие сроки и отсечение прошлых напоминаний --------------------------
