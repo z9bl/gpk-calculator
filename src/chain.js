@@ -228,6 +228,9 @@ export const ENFORCEMENT_PRESENTATION = {
   condition: 'entry_into_force.resolved',
   weekend_shift: true,
   ics: true,
+  // Срок прерывается событиями ст. 22 (ч. 1–3): якорь сдвигается на последнее
+  // из них. Флаг несёт и UI — он же решает, где показывать список перерывов.
+  interruptible: true,
   logic:
     'Три года со дня вступления судебного акта в законную силу. Срок прерывается ' +
     'предъявлением исполнительного листа к исполнению и частичным исполнением; ' +
@@ -266,13 +269,155 @@ export const MIROVOY_ENFORCEMENT_PRESENTATION = {
   id: 'mirovoy_enforcement_presentation',
 };
 
+// --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) ------------------
+//
+// ч. 1: срок прерывается предъявлением исполнительного документа к исполнению
+//   и частичным исполнением документа должником;
+// ч. 2: после перерыва течение возобновляется, время, истёкшее до перерыва, в
+//   новый срок не засчитывается;
+// ч. 3: при возвращении документа взыскателю в связи с невозможностью
+//   взыскания (ч. 1 ст. 46 ФЗ № 229-ФЗ) срок исчисляется со дня направления
+//   постановления об окончании исполнительного производства.
+//
+// У всех трёх оснований одна арифметика: новый трёхлетний срок считается от
+// даты события тем же конвоем, что и от базового якоря. Поэтому перерыв — не
+// самостоятельный узел, а сдвиг точки отсчёта у enforcement_presentation и
+// court_order_presentation.
+//
+// ВНЕ МОДЕЛИ. ч. 3.1 ст. 22 (возврат по заявлению самого взыскателя либо из-за
+// его противодействия исполнению) сюда не входит: там из срока вычитается
+// отрезок, в течение которого велось исполнительное производство, а не
+// начинается новый срок — другая арифметика. Не входит и ч. 4 (отсрочка,
+// приостановление исполнения).
+export const INTERRUPTION_TYPES = [
+  {
+    id: 'presentment',
+    title: 'Предъявление исполнительного документа к исполнению',
+    norm: 'ч. 1 ст. 22 ФЗ № 229-ФЗ',
+  },
+  {
+    id: 'partial_execution',
+    title: 'Частичное исполнение документа должником',
+    norm: 'ч. 1 ст. 22 ФЗ № 229-ФЗ',
+  },
+  {
+    id: 'returned_no_assets',
+    title: 'Возврат документа взыскателю: взыскание невозможно',
+    norm: 'ч. 3 ст. 22 ФЗ № 229-ФЗ (п. 3, 4 ч. 1 ст. 46 ФЗ № 229-ФЗ)',
+  },
+];
+
+const INTERRUPTION_TYPE_IDS = new Set(INTERRUPTION_TYPES.map((t) => t.id));
+
+export const INTERRUPTION_NORM = {
+  primary: 'ч. 1–3 ст. 22 ФЗ от 02.10.2007 № 229-ФЗ',
+  logic:
+    'Срок прерывается предъявлением исполнительного документа к исполнению и ' +
+    'частичным исполнением документа должником (ч. 1); после перерыва срок ' +
+    'течёт заново, время до перерыва в новый срок не засчитывается (ч. 2). При ' +
+    'возвращении документа взыскателю в связи с невозможностью взыскания срок ' +
+    'исчисляется со дня направления постановления об окончании исполнительного ' +
+    'производства (ч. 3). Учитывается последнее по дате событие: это ' +
+    'перезапуск срока, а не сложение перерывов.',
+};
+
+// Предупреждение об основании, которое сюда включать нельзя. Не блокирующее:
+// расчёт по введённым событиям верен, ошибка возможна только в самих событиях.
+export const INTERRUPTION_SCOPE_WARNING = {
+  code: 'interruption_scope',
+  norm: 'ч. 3.1 ст. 22 ФЗ № 229-ФЗ',
+  text:
+    'Учитывайте только возврат по невозможности взыскания (пристав не установил ' +
+    'имущество/местонахождение должника, п. 3, 4 ч. 1 ст. 46 ФЗ № 229-ФЗ). Если ' +
+    'документ был возвращён по заявлению самого взыскателя об окончании ' +
+    'производства либо из-за его противодействия исполнению — применяется другое ' +
+    'правило (ч. 3.1 ст. 22, вычитание, а не полный перезапуск), которое ' +
+    'калькулятор пока не поддерживает; включение такого случая сюда завысит ' +
+    'расчётный срок.',
+};
+
+// Сортировка по дате по возрастанию; события без даты — в конец.
+function compareInterruptions(a, b) {
+  if (a.date == null) return b.date == null ? 0 : 1;
+  if (b.date == null) return -1;
+  if (a.date < b.date) return -1;
+  return a.date > b.date ? 1 : 0;
+}
+
+/**
+ * События-перерывы в расчётной форме, отсортированные по дате по возрастанию.
+ * Порядок ввода хронологии не гарантирует (перерывы вспоминают вразнобой),
+ * поэтому сортировка обязательна.
+ *
+ * Событие помечается ignored, если учесть его нельзя: не указана дата,
+ * неизвестное основание либо дата раньше базового якоря — прерывать ещё не
+ * начавшийся срок нечем, а сдвиг якоря назад дал бы дедлайн раньше базового.
+ * Такие события не выбрасываются молча: они остаются в истории с причиной,
+ * чтобы на карточке было видно, что именно не принято в расчёт.
+ *
+ * @param {Date|string|null} baseAnchorDate — базовая точка отсчёта срока.
+ * @param {Array<{type:string, date:string}>|null|undefined} interruptions
+ * @returns {Array<{type:string|null, date:string|null, ignored?:boolean, ignored_reason?:string}>}
+ */
+export function interruptionEvents(baseAnchorDate, interruptions) {
+  if (!Array.isArray(interruptions) || interruptions.length === 0) return [];
+  const base = toISO(baseAnchorDate);
+  return interruptions
+    .map((raw) => {
+      const type = raw?.type ?? null;
+      const date = toISO(raw?.date);
+      if (date == null) return { type, date: null, ignored: true, ignored_reason: 'no_date' };
+      if (!INTERRUPTION_TYPE_IDS.has(type)) {
+        return { type, date, ignored: true, ignored_reason: 'unknown_type' };
+      }
+      if (base != null && date < base) {
+        return { type, date, ignored: true, ignored_reason: 'before_anchor' };
+      }
+      return { type, date };
+    })
+    .sort(compareInterruptions);
+}
+
+/**
+ * Точка отсчёта срока с учётом перерывов (ч. 1–3 ст. 22 ФЗ № 229-ФЗ): дата
+ * последнего по хронологии учтённого события. Без событий — базовый якорь без
+ * изменений.
+ * @param {Date|string|null} baseAnchorDate
+ * @param {Array<{type:string, date:string}>|null|undefined} interruptions
+ * @returns {Date|string|null} тот же baseAnchorDate либо ISO-дата перерыва.
+ */
+export function applyInterruptions(baseAnchorDate, interruptions) {
+  const applied = interruptionEvents(baseAnchorDate, interruptions).filter((e) => !e.ignored);
+  if (applied.length === 0) return baseAnchorDate;
+  return applied[applied.length - 1].date;
+}
+
+// Исходный якорь на посчитанном сроке: в calc.anchor лежит уже сдвинутая дата,
+// а история перерывов без точки, от которой срок шёл изначально, не читается.
+function withInterruptions(result, baseAnchorISO, events) {
+  if (result == null || events.length === 0) return result;
+  return {
+    ...result,
+    base_anchor: baseAnchorISO,
+    interruptions: events,
+    interruption_norm: INTERRUPTION_NORM.primary,
+    interruption_logic: INTERRUPTION_NORM.logic,
+    interruption_warning: INTERRUPTION_SCOPE_WARNING,
+  };
+}
+
 // Срок предъявления ИЛ — condition: узел появляется только когда вступление в
 // силу разрешено (resolved); в ветви pending его нет. term — узел ветки (общий
 // ENFORCEMENT_PRESENTATION либо его копия с иным id).
-function computeEnforcement(entry, term = ENFORCEMENT_PRESENTATION) {
+//
+// interruptions — события ст. 22 (ч. 1–3): якорь сдвигается на последнее по
+// хронологии событие, базовый остаётся в base_anchor для истории на карточке.
+function computeEnforcement(entry, term = ENFORCEMENT_PRESENTATION, interruptions = null) {
   if (!entry.resolved || entry.date == null) return null;
-  const calc = computeDeadline(term, entry.date);
-  return {
+  const base = toISO(entry.date);
+  const events = interruptionEvents(base, interruptions);
+  const calc = computeDeadline(term, applyInterruptions(base, interruptions));
+  const result = {
     id: term.id,
     title: term.title,
     anchor: calc.anchor,
@@ -284,6 +429,8 @@ function computeEnforcement(entry, term = ENFORCEMENT_PRESENTATION) {
     midnight_rule: term.midnight_rule,
     norm: term.norm_versions[0].norm,
   };
+  if (term.interruptible) result.interruptible = true;
+  return withInterruptions(result, base, events);
 }
 
 // --- Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) -------------------------
@@ -390,6 +537,9 @@ export const COURT_ORDER_PRESENTATION = {
   condition: 'court_order_issued_date',
   weekend_shift: true,
   ics: true,
+  // Перерыв по ст. 22 общий для всех исполнительных документов — судебный
+  // приказ ею тоже охвачен (ч. 1 ст. 22 говорит об исполнительном документе).
+  interruptible: true,
   logic:
     'Три года со дня выдачи судебного приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), ' +
     'а не со дня его вынесения мировым судьёй и не со дня истечения срока на ' +
@@ -500,10 +650,22 @@ function computeSimpleTerm(term, anchorDate, overrides = null) {
     // правил напоминаний .ics.
     duration: term.duration,
   };
+  if (term.interruptible) result.interruptible = true;
   if (calc.first_working_day) result.first_working_day = calc.first_working_day;
   // overrides — для сроков, у которых норма и логика зависят не от редакции, а
   // от субъекта обжалования (заочное решение, ч. 2 ст. 237).
   return overrides ? { ...result, ...overrides } : result;
+}
+
+// Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ: тот же расчёт, что и
+// у computeSimpleTerm, но якорь сдвигается на последнее по хронологии событие
+// (applyInterruptions), а исходный сохраняется в base_anchor для истории.
+function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
+  const base = toISO(baseAnchorDate);
+  if (base == null) return null;
+  const events = interruptionEvents(base, interruptions);
+  const result = computeSimpleTerm(term, applyInterruptions(base, interruptions));
+  return withInterruptions(result, base, events);
 }
 
 /**
@@ -520,9 +682,10 @@ export function computeIndependentTerms(inputs) {
     protocol_remarks_review: review,
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
     supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
-    court_order_presentation: computeSimpleTerm(
+    court_order_presentation: computeInterruptibleTerm(
       COURT_ORDER_PRESENTATION,
       inputs?.court_order_issued_date,
+      inputs?.enforcement_interruptions,
     ),
     periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
   };
@@ -772,7 +935,11 @@ export function computeSimplified(inputs, referenceDate = null) {
   // Предъявление ИЛ — три года со дня вступления решения в силу (ч. 1 ст. 21
   // ФЗ № 229-ФЗ). Норма не различает порядок рассмотрения, поэтому узел тот же,
   // что в общей цепочке, привязанный к событию ст. 232.4 (все три ветви).
-  const enforcement = computeEnforcement(entry, SIMPLIFIED_ENFORCEMENT_PRESENTATION);
+  const enforcement = computeEnforcement(
+    entry,
+    SIMPLIFIED_ENFORCEMENT_PRESENTATION,
+    inputs.enforcement_interruptions,
+  );
 
   // Кассация в КСОЮ (ст. 376.1). Исчерпание способов обжалования (3.7)
   // применяется как в общей цепочке — упрощённое решение обжалуется в апелляцию
@@ -1076,7 +1243,11 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
   // (ч. 1 ст. 21 ФЗ № 229-ФЗ). Привязано к событию ч. 1 ст. 244; в состоянии
   // cancellation_granted вступления в силу не наступает (entry.resolved === false),
   // и computeEnforcement возвращает null — узла нет.
-  const enforcement = computeEnforcement(entry, DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION);
+  const enforcement = computeEnforcement(
+    entry,
+    DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION,
+    inputs.enforcement_interruptions,
+  );
 
   // Кассация в КСОЮ (ст. 376.1). Условие исчерпания у заочного зависит от
   // субъекта: у ответчика нужно ещё и рассмотренное заявление об отмене
@@ -1326,7 +1497,11 @@ export function computeMirovoy(inputs, referenceDate = null) {
 
   // Вступление в силу по ч. 1 ст. 209 (общее правило) и предъявление ИЛ от него.
   const entry = resolveMirovoyEntry(inputs, appeal.deadline, toISO(referenceDate));
-  const enforcement = computeEnforcement(entry, MIROVOY_ENFORCEMENT_PRESENTATION);
+  const enforcement = computeEnforcement(
+    entry,
+    MIROVOY_ENFORCEMENT_PRESENTATION,
+    inputs.enforcement_interruptions,
+  );
 
   return {
     attendance,
@@ -1827,7 +2002,7 @@ export function computeChain(inputs, options = {}) {
   const entry = resolveEntryIntoForce(inputs, appeal.deadline, options.today);
   const cassation = computeCassation(inputs, entry, toISO(options.today));
   const cassationVs = computeVsCassation(inputs, toISO(options.today));
-  const enforcement = computeEnforcement(entry);
+  const enforcement = computeEnforcement(entry, ENFORCEMENT_PRESENTATION, inputs.enforcement_interruptions);
 
   return {
     appeal,

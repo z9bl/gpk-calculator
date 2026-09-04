@@ -9,6 +9,8 @@ import {
   computeSimplified,
   computeDefaultJudgment,
   computeMirovoy,
+  applyInterruptions,
+  interruptionEvents,
 } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
@@ -1181,6 +1183,203 @@ test('периодические платежи: узел не зависит о
   );
   assert.ok(chain.periodic_payments_presentation);
   assert.equal(chain.periodic_payments_presentation.deadline, '2026-04-13');
+});
+
+// --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
+//
+// Базовые ориентиры: BASE + today 01.05.2025 → вступление в силу 12.04.2025,
+// предъявление ИЛ без перерывов — 12.04.2028.
+const ENF_BASE_ANCHOR = '2025-04-12';
+const ENF_BASE_DEADLINE = '2028-04-12';
+
+// Расчёт ИЛ общей цепочки с заданным списком перерывов.
+function enforcementWith(interruptions) {
+  return computeChain(
+    { ...BASE, enforcement_interruptions: interruptions },
+    { today: '2025-05-01' },
+  ).enforcement;
+}
+
+test('applyInterruptions: без событий якорь не меняется', () => {
+  assert.equal(applyInterruptions('2025-04-12', undefined), '2025-04-12');
+  assert.equal(applyInterruptions('2025-04-12', null), '2025-04-12');
+  assert.equal(applyInterruptions('2025-04-12', []), '2025-04-12');
+});
+
+test('applyInterruptions: якорь — последнее по хронологии событие, а не по порядку ввода', () => {
+  const anchor = applyInterruptions('2025-04-12', [
+    { type: 'partial_execution', date: '2027-02-10' },
+    { type: 'presentment', date: '2026-06-01' },
+    { type: 'returned_no_assets', date: '2026-11-30' },
+  ]);
+  assert.equal(anchor, '2027-02-10');
+});
+
+test('перерыв: без событий расчёт ИЛ не меняется (регресс)', () => {
+  const plain = enforcementWith(undefined);
+  assert.equal(plain.anchor, ENF_BASE_ANCHOR);
+  assert.equal(plain.deadline, ENF_BASE_DEADLINE);
+  // Полей перерыва нет вовсе — карточке нечего показывать.
+  assert.equal(plain.interruptions, undefined);
+  assert.equal(plain.base_anchor, undefined);
+  assert.equal(plain.interruption_warning, undefined);
+  assert.deepEqual(enforcementWith([]), plain);
+});
+
+test('перерыв: одно событие — три года от его даты, исходный якорь сохранён', () => {
+  const enf = enforcementWith([{ type: 'presentment', date: '2026-06-01' }]);
+  assert.equal(enf.anchor, '2026-06-01');
+  assert.equal(enf.deadline, '2029-06-01'); // ч. 2 ст. 22: срок течёт заново
+  assert.equal(enf.base_anchor, ENF_BASE_ANCHOR);
+  assert.match(enf.interruption_norm, /ст\. 22/);
+  assert.equal(enf.interruption_warning.norm, 'ч. 3.1 ст. 22 ФЗ № 229-ФЗ');
+});
+
+test('перерыв: несколько событий вразнобой — берётся хронологически последнее', () => {
+  const enf = enforcementWith([
+    { type: 'partial_execution', date: '2027-02-10' },
+    { type: 'presentment', date: '2026-06-01' },
+    { type: 'returned_no_assets', date: '2026-11-30' },
+  ]);
+  // Последнее по дате — 10.02.2027, хотя во вводе оно первое.
+  assert.equal(enf.anchor, '2027-02-10');
+  assert.equal(enf.raw_deadline, '2030-02-10'); // воскресенье
+  assert.equal(enf.deadline, '2030-02-11'); // перенос по ч. 2 ст. 108
+  // Перезапуск, а не накопление: три года ровно, а не 3 × 3.
+  assert.equal(enf.shifted, true);
+  // История отсортирована по дате по возрастанию.
+  assert.deepEqual(
+    enf.interruptions.map((e) => e.date),
+    ['2026-06-01', '2026-11-30', '2027-02-10'],
+  );
+});
+
+test('перерыв: событие раньше базового якоря не учитывается и видно в истории', () => {
+  const enf = enforcementWith([{ type: 'presentment', date: '2025-01-10' }]);
+  // Дедлайн не может оказаться раньше базового: прерывать ещё не начавшийся
+  // срок нечем.
+  assert.equal(enf.anchor, ENF_BASE_ANCHOR);
+  assert.equal(enf.deadline, ENF_BASE_DEADLINE);
+  // Но событие не выброшено молча — оно в истории с причиной.
+  assert.equal(enf.interruptions.length, 1);
+  assert.equal(enf.interruptions[0].ignored, true);
+  assert.equal(enf.interruptions[0].ignored_reason, 'before_anchor');
+});
+
+test('перерыв: раннее событие не отменяет более позднего', () => {
+  const enf = enforcementWith([
+    { type: 'presentment', date: '2025-01-10' }, // раньше якоря — мимо
+    { type: 'partial_execution', date: '2026-06-01' },
+  ]);
+  assert.equal(enf.anchor, '2026-06-01');
+  assert.equal(enf.deadline, '2029-06-01');
+});
+
+test('перерыв: событие без даты и с неизвестным основанием в расчёт не идёт', () => {
+  const events = interruptionEvents(ENF_BASE_ANCHOR, [
+    { type: 'presentment', date: null },
+    { type: 'creditor_request', date: '2026-06-01' }, // ч. 3.1 — вне модели
+  ]);
+  assert.deepEqual(
+    events.map((e) => e.ignored_reason),
+    ['unknown_type', 'no_date'], // события без даты уходят в конец списка
+  );
+  assert.equal(applyInterruptions(ENF_BASE_ANCHOR, [{ type: 'creditor_request', date: '2026-06-01' }]), ENF_BASE_ANCHOR);
+});
+
+test('перерыв: событие в день базового якоря дедлайн не меняет', () => {
+  const enf = enforcementWith([{ type: 'presentment', date: ENF_BASE_ANCHOR }]);
+  assert.equal(enf.deadline, ENF_BASE_DEADLINE);
+  assert.equal(enf.interruptions[0].ignored, undefined);
+});
+
+test('перерыв: судебный приказ считается от последнего события (ч. 1 ст. 22)', () => {
+  const plain = computeIndependentTerms({ court_order_issued_date: '2023-04-12' })
+    .court_order_presentation;
+  assert.equal(plain.deadline, '2026-04-13');
+  assert.equal(plain.interruptions, undefined);
+
+  const interrupted = computeIndependentTerms({
+    court_order_issued_date: '2023-04-12',
+    enforcement_interruptions: [{ type: 'presentment', date: '2024-03-05' }],
+  }).court_order_presentation;
+  assert.equal(interrupted.anchor, '2024-03-05');
+  assert.equal(interrupted.deadline, '2027-03-05');
+  assert.equal(interrupted.base_anchor, '2023-04-12');
+});
+
+test('перерыв: периодические платежи не прерываются (ч. 4 ст. 21 вне объёма ст. 22)', () => {
+  // Список перерывов общий на все узлы предъявления, но у периодических
+  // платежей срок не фиксированная величина — модификатор к нему не применяется.
+  const events = [{ type: 'presentment', date: '2025-06-01' }];
+  const plain = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
+    .periodic_payments_presentation;
+  const withEvents = computeIndependentTerms({
+    periodic_payment_period_end_date: '2023-04-12',
+    enforcement_interruptions: events,
+  }).periodic_payments_presentation;
+  assert.deepEqual(withEvents, plain);
+  assert.equal(withEvents.deadline, '2026-04-13');
+  assert.equal(withEvents.interruptible, undefined);
+  assert.equal(withEvents.interruptions, undefined);
+
+  // Бессрочная ветка тоже не меняется — там дедлайна нет в принципе.
+  const indefinite = computeIndependentTerms({
+    periodic_payment_indefinite: true,
+    enforcement_interruptions: events,
+  }).periodic_payments_presentation;
+  assert.equal(indefinite.status, 'not_applicable');
+  assert.equal(indefinite.interruptions, undefined);
+});
+
+test('обе ветки предъявления считаются вместе и не мешают друг другу', () => {
+  const terms = computeIndependentTerms({
+    court_order_issued_date: '2023-04-12',
+    periodic_payment_period_end_date: '2023-04-12',
+    enforcement_interruptions: [{ type: 'partial_execution', date: '2024-03-05' }],
+  });
+  // Приказ прерван, периодические платежи — нет, при одном и том же вводе.
+  assert.equal(terms.court_order_presentation.deadline, '2027-03-05');
+  assert.equal(terms.periodic_payments_presentation.deadline, '2026-04-13');
+});
+
+test('перерыв: работает во всех ветвях предъявления ИЛ', () => {
+  const events = [{ type: 'returned_no_assets', date: '2027-03-01' }];
+
+  const simplified = computeSimplified(
+    {
+      simplified_resolution_date: '2025-03-11',
+      simplified_appeal_filed_date: '2025-03-20',
+      simplified_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(simplified.anchor, '2027-03-01');
+  assert.equal(simplified.deadline, '2030-03-01');
+
+  const mirovoy = computeMirovoy(
+    {
+      mirovoy_resolution_date: '2025-03-11',
+      mirovoy_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(mirovoy.anchor, '2027-03-01');
+  assert.equal(mirovoy.deadline, '2030-03-01');
+
+  const dj = computeDefaultJudgment(
+    {
+      default_judgment_service_date: '2025-03-11',
+      default_judgment_appeal_filed_date: '2025-04-01',
+      default_judgment_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(dj.anchor, '2027-03-01');
+  assert.equal(dj.deadline, '2030-03-01');
 });
 
 // --- Кассация по делам мировых судей (глава 40.1 ГПК, ФЗ № 79-ФЗ) -----------
