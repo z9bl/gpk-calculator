@@ -22,15 +22,10 @@ import {
   reasonedDelayVersionFor,
 } from './chain.js';
 
-// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ).
+// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Судебный
+// приказ раскрыт отдельным узлом (court_order_presentation, своя ситуация в
+// situations.js) и здесь больше не заглушка.
 const ENFORCEMENT_STUBS = [
-  {
-    id: 'court_order',
-    title: 'Судебный приказ',
-    explanation:
-      'Три года со дня выдачи судебного приказа, а не со дня вступления в силу.',
-    norm: 'ч. 3 ст. 21 ФЗ № 229-ФЗ',
-  },
   {
     id: 'periodic_payments',
     title: 'Периодические платежи',
@@ -84,6 +79,7 @@ const INPUT_LABELS = {
   mirovoy_appeal_ruling_reasoned_date:
     'Дата изготовления мотивированного апелляционного определения районного суда',
   vs_ruling_date: 'Дата вынесения определения Судебной коллегии ВС РФ',
+  court_order_issued_date: 'Дата выдачи судебного приказа',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
@@ -534,7 +530,10 @@ function mirovoyCards(m) {
   return cards;
 }
 
-// Карточка месячного срока, посчитанного через computeSimpleTerm.
+// Карточка простого срока, посчитанного через computeSimpleTerm (название
+// осталось от первого случая применения — надзорной жалобы, но функция не
+// завязана на unit: то же используется для годового срока предъявления
+// судебного приказа).
 function monthTermCard(term) {
   const card = {
     id: term.id,
@@ -714,6 +713,7 @@ function independentNodes(source, today = null) {
   }
   if (terms.private_complaint) cards.push(workingDayCard(terms.private_complaint));
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
+  if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {
     const dj = defaultJudgmentCards(defaultJudgment);

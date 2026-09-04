@@ -18,6 +18,7 @@ import {
   CASSATION_KSOYU,
   CASSATION_VS,
   ENFORCEMENT_PRESENTATION,
+  COURT_ORDER_PRESENTATION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
   SIMPLIFIED_REASONED_REQUEST,
@@ -342,6 +343,18 @@ export function icsTermsFromChain(chain) {
       norm: chain.private_complaint.norm.primary,
       ics: PRIVATE_COMPLAINT.ics,
       duration: PRIVATE_COMPLAINT.duration,
+    });
+  }
+  // Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ) —
+  // независимый узел (глава 11 ГПК вне цепочки обжалования), считается по
+  // своему input (court_order_issued_date).
+  if (chain && chain.court_order_presentation && chain.court_order_presentation.deadline) {
+    terms.push({
+      title: chain.court_order_presentation.title,
+      deadline: chain.court_order_presentation.deadline,
+      norm: chain.court_order_presentation.norm.primary,
+      ics: COURT_ORDER_PRESENTATION.ics,
+      duration: COURT_ORDER_PRESENTATION.duration,
     });
   }
   // Упрощённое производство: заявление о мотивированном решении и апелляция.
