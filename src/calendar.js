@@ -213,7 +213,14 @@ export function getYearInfo(year) {
 function isInRiskZone(month, day, draft) {
   const januaryVicinity = (month === 1 && day <= 15) || (month === 12 && day >= 25);
   const mayVicinity = (month === 5 && day <= 15) || (month === 4 && day >= 25);
-  if (januaryVicinity || mayVicinity) return true;
+  // Окрестность 23 февраля и 8 марта — одним окном, по аналогии с mayVicinity
+  // (у неё окно 25.04–15.05 покрывает сразу 1 и 9 мая). Между праздниками
+  // 13 дней — предпраздничная суббота/воскресенье может стать донором или
+  // приёмником переноса на любой стороне (см. 20.02→22.02 в 2021 и 2027),
+  // поэтому граница не привязана к самим 23.02/08.03, а взята с запасом.
+  // Безусловная зона: разрыв структурный, не завязан на конкретный год.
+  const defenderWomensVicinity = (month === 2 && day >= 15) || (month === 3 && day <= 15);
+  if (januaryVicinity || mayVicinity || defenderWomensVicinity) return true;
   if (draft) {
     const novemberVicinity = month === 11 && day <= 10;
     const decemberVicinity = month === 12 && day >= 20;
