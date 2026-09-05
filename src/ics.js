@@ -25,7 +25,9 @@ import {
   PRIVATE_COMPLAINT,
   CHILD_RETURN_APPEAL,
   CHILD_RETURN_PRIVATE_COMPLAINT,
+  ADOPTION_APPEAL,
   CASSATION_RETURN_RULING_APPEAL,
+  ARBITRATION_COMPETENCE_APPEAL,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
@@ -394,6 +396,17 @@ export function icsTermsFromChain(chain) {
       duration: CHILD_RETURN_PRIVATE_COMPLAINT.duration,
     });
   }
+  // Дела об усыновлении (глава 29 ГПК) — независимый узел: апелляция от
+  // решения в окончательной форме (ч. 2.1 ст. 274), рабочие дни.
+  if (chain && chain.adoption_appeal && chain.adoption_appeal.deadline) {
+    terms.push({
+      title: chain.adoption_appeal.title,
+      deadline: chain.adoption_appeal.deadline,
+      norm: chain.adoption_appeal.norm.primary,
+      ics: ADOPTION_APPEAL.ics,
+      duration: ADOPTION_APPEAL.duration,
+    });
+  }
   // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2
   // ГПК) — независимый узел стадии кассации: считается по своему input
   // (cassation_return_ruling_date) и не привязан к категории дела.
@@ -408,6 +421,23 @@ export function icsTermsFromChain(chain) {
       norm: chain.cassation_return_ruling_appeal.norm.primary,
       ics: CASSATION_RETURN_RULING_APPEAL.ics,
       duration: CASSATION_RETURN_RULING_APPEAL.duration,
+    });
+  }
+  // Отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1
+  // ГПК) — независимый узел: считается по своему input
+  // (arbitration_competence_ruling_received_date), не привязан к категории
+  // дела. Якорь — дата получения постановления стороной, а не вынесения.
+  if (
+    chain &&
+    chain.arbitration_competence_appeal &&
+    chain.arbitration_competence_appeal.deadline
+  ) {
+    terms.push({
+      title: chain.arbitration_competence_appeal.title,
+      deadline: chain.arbitration_competence_appeal.deadline,
+      norm: chain.arbitration_competence_appeal.norm.primary,
+      ics: ARBITRATION_COMPETENCE_APPEAL.ics,
+      duration: ARBITRATION_COMPETENCE_APPEAL.duration,
     });
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —

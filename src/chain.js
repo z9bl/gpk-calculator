@@ -757,6 +757,50 @@ export const CHILD_RETURN_PRIVATE_COMPLAINT = {
   ],
 };
 
+// Дела об усыновлении (удочерении) ребёнка (глава 29 ГПК) — отдельная
+// категория дел, как и возвращение ребёнка выше. Независимый узел: не
+// встроен в computeChain, а считается по своему input, как child_return_appeal.
+//
+// Норма — ч. 2.1 ст. 274 ГПК РФ (не «ст. 274.1» — такой статьи в кодексе
+// нет): десять дней со дня принятия решения суда в окончательной форме,
+// короче месячного срока общего порядка (ст. 321). Действует только при
+// удовлетворении заявления об усыновлении; при отказе в удовлетворении срок
+// общий — этот случай уже покрыт основной цепочкой, отдельного узла не
+// требуется.
+//
+// Единица — рабочие дни: слова «рабочих» в тексте статьи нет, но по абз. 2
+// ч. 3 ст. 107 нерабочие дни в срок, исчисляемый днями, не входят — так же,
+// как у CHILD_RETURN_APPEAL и COURT_ORDER_OBJECTION.
+export const ADOPTION_APPEAL = {
+  id: 'adoption_appeal',
+  title: 'Апелляционная жалоба по делу об усыновлении ребёнка',
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { event: 'adoption_reasoned_decision_date', offset_start: 1 },
+  condition: 'adoption_reasoned_decision_date',
+  ics: true,
+  logic:
+    'Десять дней со дня принятия решения суда в окончательной форме (ч. 2.1 ' +
+    'ст. 274 ГПК РФ) — короче месячного срока общего порядка (ст. 321). ' +
+    'Применяется только к решению об удовлетворении заявления об усыновлении; ' +
+    'при отказе действует общий срок. Срок исчисляется днями — нерабочие дни ' +
+    'не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ); течение начинается со дня, ' +
+    'следующего за принятием решения в окончательной форме, а если он ' +
+    'нерабочий — с первого рабочего дня.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'adoption_reasoned_decision_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 2.1 ст. 274 ГПК РФ',
+        calculation: ['ч. 3 (абз. 2) ст. 107 ГПК РФ'],
+      },
+    },
+  ],
+};
+
 // Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
 function computeSimpleTerm(term, anchorDate, overrides = null) {
   const anchor = toISO(anchorDate);
@@ -801,7 +845,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -817,6 +861,14 @@ export function computeIndependentTerms(inputs) {
     cassation_return_ruling_appeal: computeSimpleTerm(
       CASSATION_RETURN_RULING_APPEAL,
       inputs?.cassation_return_ruling_date,
+    ),
+    // Отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1):
+    // процессуальное событие, не привязанное к категории дела, — независимый
+    // узел, как cassation_return_ruling_appeal выше. Якорь — дата получения
+    // постановления стороной, а не дата его вынесения третейским судом.
+    arbitration_competence_appeal: computeSimpleTerm(
+      ARBITRATION_COMPETENCE_APPEAL,
+      inputs?.arbitration_competence_ruling_received_date,
     ),
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
@@ -845,6 +897,13 @@ export function computeIndependentTerms(inputs) {
     child_return_private_complaint: computeSimpleTerm(
       CHILD_RETURN_PRIVATE_COMPLAINT,
       inputs?.child_return_interim_ruling_date,
+    ),
+    // Дела об усыновлении (глава 29): независимый узел по той же логике, что
+    // и child_return_appeal выше — отдельная категория дел со своим сроком
+    // апелляции.
+    adoption_appeal: computeSimpleTerm(
+      ADOPTION_APPEAL,
+      inputs?.adoption_reasoned_decision_date,
     ),
     // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
     // независим от цепочки обжалования и от категории дела, считается по
@@ -960,6 +1019,50 @@ export const CASSATION_RETURN_RULING_APPEAL = {
         clarification:
           'ч. 2 ст. 379.2 ГПК РФ (при отмене определения жалоба считается поданной ' +
           'в день первоначального обращения в суд)',
+      },
+    },
+  ],
+};
+
+// Отмена постановления третейского суда о наличии компетенции
+// (ч. 2 ст. 422.1 ГПК РФ) — предварительный вопрос, а не итоговое решение
+// третейского суда по существу спора. Не категория дела и не стадия
+// обжалования, а процессуальное событие, возможное независимо от того, какое
+// дело рассматривается государственным судом, — поэтому узел независимый, по
+// образцу CASSATION_RETURN_RULING_APPEAL.
+//
+// Точка отсчёта — день ПОЛУЧЕНИЯ стороной постановления, а не день его
+// вынесения третейским судом. Это единственный узел в модели с таким типом
+// якоря: постановление выносит третейский, а не государственный суд, и
+// государственный суд не располагает датой его вынесения — известна только
+// дата, которую называет сторона (дата получения). Не путать с
+// CASSATION_RETURN_RULING_APPEAL, где отсчёт идёт от дня вынесения.
+export const ARBITRATION_COMPETENCE_APPEAL = {
+  id: 'arbitration_competence_appeal',
+  title: 'Отмена постановления третейского суда о наличии компетенции',
+  duration: { value: 1, unit: 'month' },
+  anchor: { event: 'arbitration_competence_ruling_received_date', offset_start: 1 },
+  condition: 'arbitration_competence_ruling_received_date',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Один месяц со дня получения стороной постановления третейского суда ' +
+    'предварительного характера о наличии у него компетенции (ч. 2 ст. 422.1 ' +
+    'ГПК РФ). Отсчёт идёт от дня получения постановления стороной, а не от дня ' +
+    'его вынесения третейским судом — государственный суд не располагает датой ' +
+    'вынесения, известна только дата получения. Касается только предварительного ' +
+    'вопроса о компетенции; итоговое решение третейского суда по существу спора ' +
+    'этим сроком не охватывается.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'arbitration_competence_ruling_received_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 2 ст. 422.1 ГПК РФ',
+        calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
     },
   ],
