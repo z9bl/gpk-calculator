@@ -225,7 +225,7 @@ test('третейский суд (ч. 2 ст. 422.1): узел в незави�
   );
 });
 
-test('мировое соглашение в исполнении: узел в независимом пуле, а не в ветви категории', () => {
+test('утверждение мирового соглашения: узел в независимом пуле, а не в ветви категории', () => {
   const separate = SITUATIONS.find((s) => s.id === 'separate');
   assert.ok(
     separate.nodes.includes('settlement_approval_cassation_appeal'),

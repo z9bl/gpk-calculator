@@ -558,7 +558,7 @@ test('заочное, иные лица: карточка апелляции с 
   assert.match(appeal.note, /не подавал/);
 });
 
-test('мировое соглашение в исполнении: карточка месячного срока (ч. 11 ст. 153.10)', () => {
+test('утверждение мирового соглашения: карточка месячного срока (ч. 11 ст. 153.10)', () => {
   const v = buildView({ settlement_approval_ruling_date: '2025-09-01' }, { today: '2025-09-10' });
   const card = byId(v.cards, 'settlement_approval_cassation_appeal');
   assert.ok(card);

@@ -76,7 +76,7 @@ const INPUT_LABELS = {
   arbitration_competence_ruling_received_date:
     'Дата получения постановления третейского суда о компетенции',
   settlement_approval_ruling_date:
-    'Дата определения об утверждении мирового соглашения (в исполнении)',
+    'Дата определения об утверждении мирового соглашения',
   foreign_state_default_judgment_service_date:
     'Дата вручения иностранному государству копии заочного решения',
   foreign_state_default_judgment_cancellation_request_date:
