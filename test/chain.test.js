@@ -12,6 +12,7 @@ import {
   applyInterruptions,
   interruptionEvents,
   CASSATION_RETURN_RULING_APPEAL,
+  ARBITRATION_COMPETENCE_APPEAL,
   REVIEW_GROUNDS,
 } from '../src/chain.js';
 
@@ -1213,6 +1214,59 @@ test('возврат кассационной жалобы: контекст в 
   );
 });
 
+// --- Отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1) --
+
+test('третейский суд: 1 месяц со дня получения постановления (ч. 2 ст. 422.1)', () => {
+  const t = computeIndependentTerms({
+    arbitration_competence_ruling_received_date: '2025-09-01',
+  }).arbitration_competence_appeal;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-10-01');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 2 ст\. 422\.1/);
+});
+
+test('третейский суд: перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 14.02.2026 + 1 месяц = 14.03.2026 (суббота) → 16.03.2026 (понедельник).
+  const t = computeIndependentTerms({
+    arbitration_competence_ruling_received_date: '2026-02-14',
+  }).arbitration_competence_appeal;
+  assert.equal(t.raw_deadline, '2026-03-14');
+  assert.equal(t.deadline, '2026-03-16');
+  assert.equal(t.shifted, true);
+});
+
+test('третейский суд: узла нет без даты получения постановления', () => {
+  assert.equal(computeIndependentTerms({}).arbitration_competence_appeal, null);
+  assert.equal(computeChain(BASE, { today: '2025-09-10' }).arbitration_competence_appeal, null);
+});
+
+test('третейский суд: узел независим от категории дела и ветви цепочки', () => {
+  const alone = computeIndependentTerms({
+    arbitration_competence_ruling_received_date: '2025-09-01',
+  }).arbitration_competence_appeal;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const chain = computeChain(
+    { ...BASE, arbitration_competence_ruling_received_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.arbitration_competence_appeal.deadline, alone.deadline);
+});
+
+test('третейский суд: точка отсчёта — получение постановления, а не его вынесение', () => {
+  assert.equal(
+    ARBITRATION_COMPETENCE_APPEAL.anchor.event,
+    'arbitration_competence_ruling_received_date',
+  );
+  const t = computeIndependentTerms({
+    arbitration_competence_ruling_received_date: '2025-09-01',
+  }).arbitration_competence_appeal;
+  assert.match(t.logic, /получения/);
+  assert.match(t.logic, /не от дня[\s\S]*вынесения/);
+});
+
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------
 
 test('судебный приказ: 3 года со дня выдачи, перенос через выходные', () => {
@@ -1464,6 +1518,49 @@ test('глава 22.2: узлы доступны и через computeChain', ()
   assert.equal(chain.child_return_private_complaint.deadline, '2026-03-10');
   assert.match(chain.child_return_appeal.midnight_rule, /ч\. 3 ст\. 108/);
   assert.match(chain.child_return_private_complaint.midnight_rule, /ч\. 3 ст\. 108/);
+});
+
+// --- Усыновление (удочерение) ребёнка (глава 29 ГПК) -------------------------
+
+test('усыновление: апелляция — 10 рабочих дней со дня решения в окончательной форме', () => {
+  const t = computeIndependentTerms({ adoption_reasoned_decision_date: '2026-03-02' })
+    .adoption_appeal;
+  assert.equal(t.anchor, '2026-03-02');
+  assert.equal(t.first_working_day, '2026-03-03'); // течение со следующего дня
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.shifted, false); // ч. 2 ст. 108 к срокам в рабочих днях не применяется
+  assert.match(t.norm.primary, /ч\. 2\.1 ст\. 274/);
+  assert.deepEqual(t.norm.calculation, ['ч. 3 (абз. 2) ст. 107 ГПК РФ']);
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+});
+
+test('усыновление: рабочие дни, а не календарные — перенос через каникулы', () => {
+  // Решение в окончательной форме 26.12.2025 (пятница). Течение — с 29.12;
+  // 31.12.2025 и 01–09.01.2026 нерабочие, поэтому десятый рабочий день —
+  // 21.01.2026, а не 05.01.2026, как было бы при календарном счёте.
+  const t = computeIndependentTerms({ adoption_reasoned_decision_date: '2025-12-26' })
+    .adoption_appeal;
+  assert.equal(t.first_working_day, '2025-12-29');
+  assert.equal(t.deadline, '2026-01-21');
+});
+
+test('усыновление: узла нет без даты решения в окончательной форме', () => {
+  assert.equal(computeIndependentTerms({}).adoption_appeal, null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).adoption_appeal, null);
+  // Дата решения общей ветви этот узел не открывает — у главы 29 своё поле.
+  assert.equal(
+    computeIndependentTerms({ reasoned_decision_date: '2026-03-02' }).adoption_appeal,
+    null,
+  );
+});
+
+test('усыновление: узел доступен и через computeChain', () => {
+  const chain = computeChain(
+    { ...BASE, adoption_reasoned_decision_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  assert.equal(chain.adoption_appeal.deadline, '2026-03-17');
+  assert.match(chain.adoption_appeal.midnight_rule, /ч\. 3 ст\. 108/);
 });
 
 // --- Периодические платежи: предъявление к исполнению (ч. 4 ст. 21 229-ФЗ) --

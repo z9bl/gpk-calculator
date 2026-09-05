@@ -88,6 +88,9 @@ const INPUT_LABELS = {
     'Дата решения суда в окончательной форме (глава 22.2 ГПК)',
   child_return_interim_ruling_date:
     'Дата определения суда первой инстанции (глава 22.2 ГПК)',
+  adoption_reasoned_decision_date: 'Дата решения суда в окончательной форме (усыновление)',
+  arbitration_competence_ruling_received_date:
+    'Дата получения постановления третейского суда о компетенции',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
   review_ground: 'Основание пересмотра (глава 42 ГПК)',
   review_circumstance_date: 'Дата обстоятельства (зависит от основания)',
@@ -853,6 +856,14 @@ function independentNodes(source, today = null) {
   if (terms.child_return_appeal) cards.push(workingDayCard(terms.child_return_appeal));
   if (terms.child_return_private_complaint) {
     cards.push(workingDayCard(terms.child_return_private_complaint));
+  }
+  // Глава 29 (усыновление): десять рабочих дней, тот же рендерер, что и у
+  // child_return_appeal выше.
+  if (terms.adoption_appeal) cards.push(workingDayCard(terms.adoption_appeal));
+  // Отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1):
+  // месячный срок, тот же рендерер, что и у cassation_return_ruling_appeal.
+  if (terms.arbitration_competence_appeal) {
+    cards.push(monthTermCard(terms.arbitration_competence_appeal));
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже

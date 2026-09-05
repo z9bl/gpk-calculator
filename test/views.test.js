@@ -654,6 +654,20 @@ test('возврат кассационной жалобы: правило о д
   assert.match(card.details.midnight_rule, /ч\. 3 ст\. 108/);
 });
 
+test('третейский суд: карточка месячного срока (ч. 2 ст. 422.1)', () => {
+  const v = buildView(
+    { arbitration_competence_ruling_received_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  const card = byId(v.cards, 'arbitration_competence_appeal');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.status, 'computed');
+  assert.equal(card.deadline, '2025-10-01');
+  assert.match(card.norm, /ч\. 2 ст\. 422\.1/);
+  assert.deepEqual(card.duration, { value: 1, unit: 'month' });
+});
+
 test('возврат кассационной жалобы: узел доступен в любой ветви, без данных цепочки', () => {
   // Возвратить жалобу кассационный суд может по делу любой категории — карточка
   // не должна зависеть ни от одной из ветвей и от их полей.
@@ -947,6 +961,24 @@ test('глава 22.2: карточки появляются по своим д�
   assert.equal(priv.deadline, '2026-03-10');
   assert.match(priv.norm, /ч\. 1 ст\. 244\.18/);
   assert.deepEqual(priv.duration, { value: 10, unit: 'working_day' });
+});
+
+test('усыновление: карточка появляется по своей дате', () => {
+  const without = buildView({}, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('adoption_appeal'));
+
+  const v = buildView(
+    { adoption_reasoned_decision_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  const appeal = byId(v.cards, 'adoption_appeal');
+  assert.ok(appeal);
+  assert.equal(appeal.status, 'computed');
+  assert.equal(appeal.unit, 'working_day');
+  assert.equal(appeal.first_working_day, '2026-03-03');
+  assert.equal(appeal.deadline, '2026-03-17');
+  assert.match(appeal.norm, /ч\. 2\.1 ст\. 274/);
+  assert.deepEqual(appeal.duration, { value: 10, unit: 'working_day' });
 });
 
 test('глава 22.2: два узла ситуации независимы друг от друга', () => {

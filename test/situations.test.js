@@ -42,6 +42,8 @@ const ALL_BRANCHES_INPUTS = {
   periodic_payment_period_end_date: '2023-04-12',
   child_return_reasoned_decision_date: '2025-07-02',
   child_return_interim_ruling_date: '2025-07-08',
+  adoption_reasoned_decision_date: '2025-07-02',
+  arbitration_competence_ruling_received_date: '2025-07-08',
   review_ground: 'newly_discovered_fact',
   review_circumstance_date: '2025-07-02',
 };
@@ -143,6 +145,29 @@ test('возвращение ребёнка: оба узла ситуации у
   }
 });
 
+test('усыновление: узел ситуации учтён в разбиении', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'adoption');
+  assert.deepEqual(situation.nodes, ['adoption_appeal']);
+  assert.deepEqual(situation.fields, ['adoption_reasoned_decision_date']);
+  // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  const v = buildView(
+    { adoption_reasoned_decision_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['adoption_appeal'],
+  );
+
+  // Узел главы 29 не должен просачиваться в другие ветви.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'adoption')) {
+    assert.ok(!s.nodes.includes('adoption_appeal'), `${s.id}: узел не отсюда`);
+    assert.ok(!s.fields.includes('adoption_reasoned_decision_date'), `${s.id}: поле не отсюда`);
+  }
+});
+
 test('возврат кассационной жалобы: узел в независимом пуле, а не в ветви категории', () => {
   const separate = SITUATIONS.find((s) => s.id === 'separate');
   assert.ok(
@@ -167,6 +192,36 @@ test('возврат кассационной жалобы: узел в неза
   );
 });
 
+test('третейский суд (ч. 2 ст. 422.1): узел в независимом пуле, а не в ветви категории', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(
+    separate.nodes.includes('arbitration_competence_appeal'),
+    'узел должен лежать в пуле отдельных сроков — рядом с возвратом кассационной жалобы',
+  );
+  assert.ok(separate.fields.includes('arbitration_competence_ruling_received_date'));
+  // Ни в одной ветви конкретной категории дела узла быть не должно.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(
+      !s.nodes.includes('arbitration_competence_appeal'),
+      `${s.id}: узел не привязан к категории дела`,
+    );
+    assert.ok(
+      !s.fields.includes('arbitration_competence_ruling_received_date'),
+      `${s.id}: поле не отсюда`,
+    );
+  }
+
+  // Одной своей даты достаточно: узел появляется без данных любой ветви.
+  const v = buildView(
+    { arbitration_competence_ruling_received_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['arbitration_competence_appeal'],
+  );
+});
+
 test('по умолчанию выбран общий порядок', () => {
   assert.equal(DEFAULT_SITUATION, 'general');
   assert.equal(situationById(DEFAULT_SITUATION).label, 'Решение суда в общем порядке');
@@ -180,7 +235,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined).id, 'general');
 });
 
-test('все девять ситуаций на месте и подписаны', () => {
+test('все десять ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -191,6 +246,7 @@ test('все девять ситуаций на месте и подписаны
       'court_order',
       'periodic_payments',
       'child_return',
+      'adoption',
       'separate',
       'review_new_circumstances',
     ],

@@ -349,6 +349,12 @@ const ALL_BRANCHES_INPUTS = {
   // суда первой инстанции (ч. 1 ст. 244.18) — два независимых узла
   child_return_reasoned_decision_date: '2025-07-02',
   child_return_interim_ruling_date: '2025-07-08',
+  // усыновление (глава 29 ГПК): независимый узел, апелляция от решения в
+  // окончательной форме (ч. 2.1 ст. 274)
+  adoption_reasoned_decision_date: '2025-07-02',
+  // отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1):
+  // независимый узел, якорь — дата получения постановления стороной
+  arbitration_competence_ruling_received_date: '2025-07-08',
   // пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // независимый трек, считается по своим двум input (основание + дата)
   review_ground: 'newly_discovered_fact',
@@ -440,6 +446,34 @@ test('надзор уходит в .ics с напоминаниями трёхм
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
 });
 
+test('усыновление: апелляция уходит в .ics (10 рабочих дней)', () => {
+  const view = buildView(
+    { adoption_reasoned_decision_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('усыновлении'));
+  assert.ok(t, 'апелляция по делу об усыновлении в списке экспорта');
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+  assert.equal(t.deadline, '2026-03-17');
+  assert.match(t.norm, /ч\. 2\.1 ст\. 274/);
+
+  const ics = buildICS(terms, { referenceDate: '2026-03-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+});
+
+test('усыновление: тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    { reasoned_decision_date: '2025-03-11', adoption_reasoned_decision_date: '2026-03-02' },
+    { today: '2026-03-01' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('усыновлении'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2026-03-17');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+});
+
 test('возврат кассационной жалобы уходит в .ics (1 месяц → напоминания за 3 и 7 дней)', () => {
   const view = buildView({ cassation_return_ruling_date: '2027-09-01' }, { today: '2026-07-26' });
   const terms = icsTermsFromView(view);
@@ -459,6 +493,38 @@ test('возврат кассационной жалобы: тот же срок
     { today: '2026-07-26' },
   );
   const t = icsTermsFromChain(chain).find((x) => x.title.includes('возврате кассационной жалобы'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-10-01');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('третейский суд уходит в .ics (1 месяц → напоминания за 3 и 7 дней)', () => {
+  const view = buildView(
+    { arbitration_competence_ruling_received_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('третейского суда'));
+  assert.ok(t, 'срок отмены постановления третейского суда в списке экспорта');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.equal(t.deadline, '2027-10-01');
+  assert.match(t.norm, /ч\. 2 ст\. 422\.1/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 7 дней
+});
+
+test('третейский суд: тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      arbitration_competence_ruling_received_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('третейского суда'));
   assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
   assert.equal(t.deadline, '2027-10-01');
   assert.equal(t.ics, true);
