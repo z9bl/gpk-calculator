@@ -72,6 +72,22 @@ export const SITUATIONS = [
     ],
   },
   {
+    id: 'default_judgment_foreign_state',
+    label: 'Заочное решение против иностранного государства',
+    // Глава 45.1 ГПК (ст. 417.10): та же механика главы 22, что и у обычного
+    // заочного решения (default_judgment), но с другими числами (2/1/2 месяца
+    // вместо 7 рабочих дней/1 месяца) и без деления по субъекту — поэтому
+    // отдельная ситуация, а не вариант default_judgment.
+    fields: ['foreign_state_default_judgment_service_date'],
+    nodes: [
+      'foreign_state_default_judgment_cancellation_request',
+      'foreign_state_default_judgment_appeal',
+      'foreign_state_default_judgment_entry_into_force',
+      'foreign_state_default_judgment_cassation_ksoyu',
+      'foreign_state_default_judgment_enforcement_presentation',
+    ],
+  },
+  {
     id: 'court_order',
     label: 'Судебный приказ',
     // Приказное производство (глава 11 ГПК) — самостоятельный трек, не часть
@@ -134,14 +150,20 @@ export const SITUATIONS = [
     // возможное по делу любой категории, поэтому оно здесь, а не в ветви
     // конкретного производства. Отмена постановления третейского суда о
     // компетенции (ч. 2 ст. 422.1) — тоже не привязанное к категории дела
-    // событие, здесь же. Единицы сроков в пуле разные: замечания на протокол и
-    // частная жалоба — рабочие дни, возврат кассационной жалобы и отмена
-    // постановления третейского суда — месяц (ч. 1, 2 ст. 108).
+    // событие, здесь же. Обжалование определения об утверждении мирового
+    // соглашения, заключаемого в процессе исполнения судебного акта
+    // (ч. 11 ст. 153.10) — по той же логике: акт, для которого апелляция не
+    // предусмотрена, обжалуется сразу в кассацию, независимо от категории
+    // дела. Единицы сроков в пуле разные: замечания на протокол и частная
+    // жалоба — рабочие дни, возврат кассационной жалобы, отмена постановления
+    // третейского суда и обжалование определения об утверждении мирового
+    // соглашения — месяц (ч. 1, 2 ст. 108).
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
       'cassation_return_ruling_date',
       'arbitration_competence_ruling_received_date',
+      'settlement_approval_ruling_date',
     ],
     nodes: [
       'protocol_remarks',
@@ -149,6 +171,7 @@ export const SITUATIONS = [
       'private_complaint',
       'cassation_return_ruling_appeal',
       'arbitration_competence_appeal',
+      'settlement_approval_cassation_appeal',
     ],
   },
   {

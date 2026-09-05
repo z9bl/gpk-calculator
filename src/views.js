@@ -18,6 +18,7 @@ import {
   computeIndependentTerms,
   computeSimplified,
   computeDefaultJudgment,
+  computeDefaultJudgmentForeignState,
   computeMirovoy,
   reasonedDelayVersionFor,
   INTERRUPTION_TYPES,
@@ -91,6 +92,20 @@ const INPUT_LABELS = {
   adoption_reasoned_decision_date: 'Дата решения суда в окончательной форме (усыновление)',
   arbitration_competence_ruling_received_date:
     'Дата получения постановления третейского суда о компетенции',
+  settlement_approval_ruling_date:
+    'Дата определения об утверждении мирового соглашения (в исполнении)',
+  foreign_state_default_judgment_service_date:
+    'Дата вручения иностранному государству копии заочного решения',
+  foreign_state_default_judgment_cancellation_request_date:
+    'Дата подачи заявления об отмене заочного решения (иностранное государство)',
+  foreign_state_default_judgment_refusal_date:
+    'Дата определения об отказе в отмене заочного решения (иностранное государство)',
+  foreign_state_default_judgment_cancellation_date:
+    'Дата определения об отмене заочного решения (заявление удовлетворено, иностранное государство)',
+  foreign_state_default_judgment_appeal_filed_date:
+    'Дата подачи апелляционной жалобы (заочное решение против иностранного государства)',
+  foreign_state_default_judgment_appeal_ruling_date:
+    'Дата определения апелляционной инстанции (заочное решение против иностранного государства)',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
   review_ground: 'Основание пересмотра (глава 42 ГПК)',
   review_circumstance_date: 'Дата обстоятельства (зависит от основания)',
@@ -535,6 +550,93 @@ function defaultJudgmentCards(dj) {
   return { cards, incomplete };
 }
 
+// Карточки заочного решения против иностранного государства (ч. 1–4
+// ст. 417.10): та же структура, что и defaultJudgmentCards, с двумя отличиями —
+// заявление об отмене здесь 2 месяца (monthTermCard, не workingDayCard), и
+// апелляция без деления по субъекту (ч. 4 говорит просто «сторонами»), поэтому
+// без поля subject и с общей формулировкой заметки.
+function foreignStateDefaultJudgmentCards(dj) {
+  const cards = [];
+  const incomplete = [];
+
+  cards.push(monthTermCard(dj.cancellation_request));
+
+  if (dj.appeal) {
+    const card = {
+      id: dj.appeal.id,
+      kind: 'term',
+      title: dj.appeal.title,
+      status: 'computed',
+      deadline: dj.appeal.deadline,
+      norm: dj.appeal.norm.primary,
+      duration: dj.appeal.duration,
+      details: {
+        collapsed: true,
+        logic: dj.appeal.logic,
+        calculation: dj.appeal.norm.calculation,
+        midnight_rule: dj.appeal.midnight_rule,
+      },
+      note:
+        dj.appeal.anchor_kind === 'request_deadline'
+          ? 'Заявление об отмене не подавалось — отсчёт по истечении срока его подачи.'
+          : 'Отсчёт со дня вынесения определения об отказе в отмене заочного решения.',
+    };
+    attachCalendarWarning(card);
+    cards.push(card);
+  } else if (dj.appeal_not_applicable) {
+    cards.push({
+      id: 'foreign_state_default_judgment_appeal',
+      kind: 'term',
+      title: 'Апелляционная жалоба (заочное решение против иностранного государства)',
+      status: 'not_applicable',
+      deadline: null,
+      norm: dj.appeal_not_applicable.norm,
+      message: dj.appeal_not_applicable.message,
+      details: { collapsed: true, logic: dj.appeal_not_applicable.reason },
+    });
+  } else if (dj.appeal_blocked) {
+    incomplete.push(
+      incompleteNode(
+        'foreign_state_default_judgment_appeal',
+        'term',
+        'Апелляционная жалоба (заочное решение против иностранного государства) — ' +
+          `${dj.appeal_blocked.norm}`,
+        dj.appeal_blocked.reason,
+        missingInputs(dj.appeal_blocked.missing, {}),
+      ),
+    );
+  }
+
+  // Вступление в силу — своё событие по ч. 1 ст. 244 (инкорпорирована ч. 1
+  // ст. 417.10) с тремя ветвями.
+  const entry = dj.entry_into_force;
+  const entryCard = {
+    id: 'foreign_state_default_judgment_entry_into_force',
+    kind: 'event',
+    title: 'Вступление заочного решения в законную силу (иностранное государство)',
+    subject: 'Заочное решение',
+    status: entry.resolved ? 'resolved' : entry.applicable === false ? 'not_applicable' : 'pending',
+    norm: entry.norm,
+    date: entry.date,
+    branch: entry.branch,
+    details: { collapsed: true, logic: entry.logic },
+  };
+  if (entry.message) entryCard.message = entry.message;
+  if (entry.note) entryCard.note = entry.note;
+  attachCalendarWarning(entryCard, entry.date);
+  cards.push(entryCard);
+
+  // Кассация в КСОЮ — после вступления заочного решения в силу (ст. 376.1,
+  // инкорпорирована ч. 1 ст. 417.10). Условие исчерпания — общее (3.7).
+  if (dj.cassation) cards.push(cassationCard(dj.cassation));
+
+  // Предъявление ИЛ — после вступления заочного решения в силу (ч. 1 ст. 21
+  // ФЗ № 229-ФЗ, дополнительно подтверждено ст. 417.12).
+  if (dj.enforcement) cards.push(enforcementCard(dj.enforcement));
+
+  return { cards, incomplete };
+}
+
 // Карточки ветки мирового судьи (ч. 3–5 ст. 199).
 function mirovoyCards(m) {
   const cards = [];
@@ -831,6 +933,9 @@ function independentNodes(source, today = null) {
   const defaultJudgment = fromChain
     ? source.default_judgment
     : computeDefaultJudgment(source, today);
+  const foreignStateDefaultJudgment = fromChain
+    ? source.default_judgment_foreign_state
+    : computeDefaultJudgmentForeignState(source, today);
   const mirovoy = fromChain ? source.mirovoy : computeMirovoy(source, today);
 
   const cards = [];
@@ -865,6 +970,14 @@ function independentNodes(source, today = null) {
   if (terms.arbitration_competence_appeal) {
     cards.push(monthTermCard(terms.arbitration_competence_appeal));
   }
+  // Обжалование определения об утверждении мирового соглашения, заключаемого
+  // в процессе исполнения судебного акта (ч. 11 ст. 153.10): месячный срок,
+  // тот же рендерер, что и у cassation_return_ruling_appeal/
+  // arbitration_competence_appeal выше — обжалуется сразу в кассацию, минуя
+  // апелляцию.
+  if (terms.settlement_approval_cassation_appeal) {
+    cards.push(monthTermCard(terms.settlement_approval_cassation_appeal));
+  }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже
   // выбраны по основанию внутри computeReviewNewCircumstancesResult. У
@@ -896,6 +1009,11 @@ function independentNodes(source, today = null) {
     cards.push(...dj.cards);
     incomplete.push(...dj.incomplete);
   }
+  if (foreignStateDefaultJudgment) {
+    const fdj = foreignStateDefaultJudgmentCards(foreignStateDefaultJudgment);
+    cards.push(...fdj.cards);
+    incomplete.push(...fdj.incomplete);
+  }
   if (mirovoy) cards.push(...mirovoyCards(mirovoy));
   return { cards, incomplete };
 }
@@ -923,6 +1041,9 @@ export const ACTION_FACT_INPUT = {
   simplified_appeal: 'simplified_appeal_filed_date',
   default_judgment_cancellation_request: 'default_judgment_cancellation_request_date',
   default_judgment_appeal: 'default_judgment_appeal_filed_date',
+  foreign_state_default_judgment_cancellation_request:
+    'foreign_state_default_judgment_cancellation_request_date',
+  foreign_state_default_judgment_appeal: 'foreign_state_default_judgment_appeal_filed_date',
   mirovoy_reasoned_request: 'mirovoy_request_date',
   mirovoy_reasoned_making: 'mirovoy_reasoned_date',
   mirovoy_appeal: 'mirovoy_appeal_ruling_reasoned_date',
@@ -946,6 +1067,8 @@ const MISSED_FROM_FILING = new Set([
   'simplified_appeal',
   'default_judgment_cancellation_request',
   'default_judgment_appeal',
+  'foreign_state_default_judgment_cancellation_request',
+  'foreign_state_default_judgment_appeal',
   'mirovoy_reasoned_request',
   'mirovoy_cassation',
 ]);

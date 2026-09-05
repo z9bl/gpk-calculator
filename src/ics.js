@@ -28,11 +28,13 @@ import {
   ADOPTION_APPEAL,
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
+  SETTLEMENT_APPROVAL_CASSATION_APPEAL,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
   DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
   DEFAULT_JUDGMENT_APPEAL,
+  FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
   MIROVOY_REASONED_REQUEST,
   MIROVOY_APPEAL,
 } from './chain.js';
@@ -440,6 +442,24 @@ export function icsTermsFromChain(chain) {
       duration: ARBITRATION_COMPETENCE_APPEAL.duration,
     });
   }
+  // Обжалование определения об утверждении мирового соглашения, заключаемого
+  // в процессе исполнения судебного акта (ч. 11 ст. 153.10 ГПК) — независимый
+  // узел: акт, для которого апелляционное обжалование не предусмотрено,
+  // обжалуется сразу в кассацию, считается по своему input
+  // (settlement_approval_ruling_date), не привязан к категории дела.
+  if (
+    chain &&
+    chain.settlement_approval_cassation_appeal &&
+    chain.settlement_approval_cassation_appeal.deadline
+  ) {
+    terms.push({
+      title: chain.settlement_approval_cassation_appeal.title,
+      deadline: chain.settlement_approval_cassation_appeal.deadline,
+      norm: chain.settlement_approval_cassation_appeal.norm.primary,
+      ics: SETTLEMENT_APPROVAL_CASSATION_APPEAL.ics,
+      duration: SETTLEMENT_APPROVAL_CASSATION_APPEAL.duration,
+    });
+  }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —
   // независимый узел: считается по своим input (review_ground + дата(-ы)),
   // норма в экспорте — та, что соответствует выбранному основанию (см.
@@ -540,6 +560,31 @@ export function icsTermsFromChain(chain) {
         norm: dj.appeal.norm.primary,
         ics: DEFAULT_JUDGMENT_APPEAL.ics,
         duration: DEFAULT_JUDGMENT_APPEAL.duration,
+      });
+    }
+  }
+  // Заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
+  // заявление об отмене и апелляция — та же структура, что у обычного
+  // заочного решения выше, с другими числами.
+  if (chain && chain.default_judgment_foreign_state) {
+    const fdj = chain.default_judgment_foreign_state;
+    terms.push({
+      title: fdj.cancellation_request.title,
+      deadline: fdj.cancellation_request.deadline,
+      norm: fdj.cancellation_request.norm.primary,
+      ics: FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST.ics,
+      duration: FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST.duration,
+    });
+    if (fdj.appeal) {
+      terms.push({
+        title: fdj.appeal.title,
+        deadline: fdj.appeal.deadline,
+        norm: fdj.appeal.norm.primary,
+        ics: true,
+        // Длительность зависит от режима (1 или 2 месяца, ч. 4 ст. 417.10) —
+        // берём фактическую, не статичную константу (как у mirovoy.reasoned_request
+        // выше — там тоже длительность зависит от явки, а не фиксирована).
+        duration: fdj.appeal.duration,
       });
     }
   }

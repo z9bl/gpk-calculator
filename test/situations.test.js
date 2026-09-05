@@ -44,6 +44,9 @@ const ALL_BRANCHES_INPUTS = {
   child_return_interim_ruling_date: '2025-07-08',
   adoption_reasoned_decision_date: '2025-07-02',
   arbitration_competence_ruling_received_date: '2025-07-08',
+  settlement_approval_ruling_date: '2025-07-08',
+  foreign_state_default_judgment_service_date: '2025-07-05',
+  foreign_state_default_judgment_refusal_date: '2025-08-10',
   review_ground: 'newly_discovered_fact',
   review_circumstance_date: '2025-07-02',
 };
@@ -222,6 +225,58 @@ test('третейский суд (ч. 2 ст. 422.1): узел в незави�
   );
 });
 
+test('мировое соглашение в исполнении: узел в независимом пуле, а не в ветви категории', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(
+    separate.nodes.includes('settlement_approval_cassation_appeal'),
+    'узел должен лежать в пуле отдельных сроков — рядом с возвратом кассационной жалобы',
+  );
+  assert.ok(separate.fields.includes('settlement_approval_ruling_date'));
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(
+      !s.nodes.includes('settlement_approval_cassation_appeal'),
+      `${s.id}: узел не привязан к категории дела`,
+    );
+    assert.ok(!s.fields.includes('settlement_approval_ruling_date'), `${s.id}: поле не отсюда`);
+  }
+
+  // Одной своей даты достаточно: узел появляется без данных любой ветви.
+  const v = buildView({ settlement_approval_ruling_date: '2025-07-08' }, { today: '2025-07-01' });
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['settlement_approval_cassation_appeal'],
+  );
+});
+
+test('заочное решение против иностранного государства: своя ситуация, узлы появляются по дате вручения', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'default_judgment_foreign_state');
+  assert.deepEqual(situation.fields, ['foreign_state_default_judgment_service_date']);
+  assert.deepEqual(situation.nodes, [
+    'foreign_state_default_judgment_cancellation_request',
+    'foreign_state_default_judgment_appeal',
+    'foreign_state_default_judgment_entry_into_force',
+    'foreign_state_default_judgment_cassation_ksoyu',
+    'foreign_state_default_judgment_enforcement_presentation',
+  ]);
+  // Своя ситуация, а не модификация default_judgment: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  const v = buildView(
+    { foreign_state_default_judgment_service_date: '2025-12-22' },
+    { today: '2026-01-01' },
+  );
+  assert.ok(
+    v.cards.map((c) => c.id).includes('foreign_state_default_judgment_cancellation_request'),
+  );
+
+  // Узлы этой ситуации не должны просачиваться в default_judgment и обратно.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'default_judgment_foreign_state')) {
+    for (const id of situation.nodes) {
+      assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} не отсюда`);
+    }
+  }
+});
+
 test('по умолчанию выбран общий порядок', () => {
   assert.equal(DEFAULT_SITUATION, 'general');
   assert.equal(situationById(DEFAULT_SITUATION).label, 'Решение суда в общем порядке');
@@ -235,7 +290,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined).id, 'general');
 });
 
-test('все десять ситуаций на месте и подписаны', () => {
+test('все одиннадцать ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -243,6 +298,7 @@ test('все десять ситуаций на месте и подписаны
       'mirovoy',
       'simplified',
       'default_judgment',
+      'default_judgment_foreign_state',
       'court_order',
       'periodic_payments',
       'child_return',
