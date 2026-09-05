@@ -647,6 +647,27 @@ test('пересмотр по вновь открывшимся/новым об�
   assert.deepEqual(meta.duration, { value: 3, unit: 'month' });
 });
 
+test('восстановление пропущенного срока пересмотра (ч. 2 ст. 394) уходит в .ics', () => {
+  const meta = TERM_REGISTRY.review_new_circumstances_restoration;
+  assert.ok(meta, 'узел должен быть в реестре — иначе выпадет из .ics молча');
+  assert.equal(meta.ics, true);
+  assert.deepEqual(meta.duration, { value: 6, unit: 'month' });
+
+  const view = buildView(
+    { review_ground: 'ks_ruling', review_circumstance_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('восстановлении срока'));
+  assert.ok(t, 'срок восстановления должен быть в списке экспорта');
+  assert.deepEqual(t.duration, { value: 6, unit: 'month' });
+  assert.equal(t.deadline, '2028-03-01');
+  assert.match(t.norm, /ч\. 2 ст\. 394/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+});
+
 test('практика ВС уходит в .ics: трёхмесячный компонент контролирует → 2 напоминания за 3/14 дней', () => {
   const view = buildView(
     {

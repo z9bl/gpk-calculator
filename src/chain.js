@@ -845,7 +845,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -920,6 +920,9 @@ export function computeIndependentTerms(inputs) {
     // оснований всегда null, узла без данных там нет вовсе.
     review_new_circumstances_filing: reviewResult.term,
     review_new_circumstances_missing: reviewResult.missing,
+    review_new_circumstances_restoration: computeReviewNewCircumstancesRestoration(
+      reviewResult.term,
+    ),
   };
 }
 
@@ -1138,9 +1141,10 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
 // законную силу судебному постановлению, поэтому он считается независимо, по
 // образцу SUPERVISION/CASSATION_RETURN_RULING_APPEAL.
 //
-// Не включено (см. §11.3 SPEC.md):
-// — восстановление пропущенного срока (ч. 2 ст. 394, шестимесячный резервный
-//   срок) — отдельный восстановительный механизм, а не основание пересмотра.
+// Восстановление пропущенного срока подачи заявления (ч. 2 ст. 394) —
+// отдельный восстановительный механизм, а не основание пересмотра; см.
+// REVIEW_NEW_CIRCUMSTANCES_RESTORATION и computeReviewNewCircumstancesRestoration
+// ниже.
 export const REVIEW_NEW_CIRCUMSTANCES_DURATION = { value: 3, unit: 'month' };
 
 const VS_PRACTICE_CHANGE_GROUND_ID = 'vs_practice_change';
@@ -1167,10 +1171,19 @@ export const REVIEW_GROUNDS = [
     logic:
       'Три месяца со дня вступления в законную силу приговора по уголовному делу ' +
       '(пп. 2, 3 ч. 3 ст. 392, п. 2 ст. 395, ч. 1 ст. 394 ГПК РФ). Норма также ' +
-      'допускает вместо приговора иные акты по ч. 3.1 ст. 392 (определение или ' +
-      'постановление о прекращении уголовного дела, о применении судебного штрафа, ' +
-      'постановление дознавателя или следователя) — в модели одно поле даты ' +
-      '«приговора/постановления», отдельная ветка под каждый вид акта не заведена.',
+      'допускает вместо приговора иные акты по ч. 3.1 ст. 392 ' +
+      '(введена ФЗ от 15.12.2025 № 485-ФЗ): постановление об отказе в ' +
+      'возбуждении уголовного дела, определение или постановление о ' +
+      'прекращении уголовного дела или уголовного преследования — в связи с ' +
+      'истечением срока давности, устранением преступности и наказуемости ' +
+      'деяния новым законом, возмещением ущерба, назначением судебного штрафа, ' +
+      'применением принудительных мер воспитательного либо медицинского ' +
+      'характера, смертью обвиняемого, недостижением возраста уголовной ' +
+      'ответственности или отставанием несовершеннолетнего в психическом ' +
+      'развитии, деятельным раскаянием, примирением сторон, освобождением по ' +
+      'ч. 1 ст. 78.1 УК РФ либо применением акта об амнистии — в модели одно ' +
+      'поле даты «приговора/постановления», отдельная ветка под каждый вид ' +
+      'акта не заведена.',
     norm: {
       primary: 'пп. 2, 3 ч. 3 ст. 392, п. 2 ст. 395, ч. 1 ст. 394 ГПК РФ',
       calculation: ['ч. 3.1 ст. 392 ГПК РФ', 'ч. 1 ст. 394 ГПК РФ'],
@@ -1430,6 +1443,69 @@ function computeReviewNewCircumstancesResult(inputs) {
     review_ground: ground.id,
   });
   return { term, missing: null };
+}
+
+// Восстановление пропущенного срока подачи заявления о пересмотре
+// (ч. 2 ст. 394 ГПК РФ) — шесть месяцев со дня открытия или появления
+// обстоятельств, ЯВЛЯЮЩИХСЯ ОСНОВАНИЕМ ДЛЯ ПЕРЕСМОТРА. Это та же самая точка
+// отсчёта, что и у основного срока (ч. 1 ст. 394), независимо от того, какое
+// из семи оснований выбрано: для шести простых оснований — дата
+// обстоятельства (review_circumstance_date), для vs_practice_change — дата
+// КОНТРОЛИРУЮЩЕГО компонента (трёхмесячного либо шестимесячного потолка,
+// см. computeVsPracticeChangeTerm). Поэтому отдельного поля ввода и
+// ветвления по основанию здесь нет — якорь просто берётся с уже
+// посчитанного primaryTerm.anchor.
+export const REVIEW_NEW_CIRCUMSTANCES_RESTORATION = {
+  id: 'review_new_circumstances_restoration',
+  title: 'Ходатайство о восстановлении срока подачи заявления о пересмотре',
+  duration: { value: 6, unit: 'month' },
+  anchor: { offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Если срок подачи заявления о пересмотре (ч. 1 ст. 394 ГПК РФ) пропущен, ' +
+    'суд может восстановить его по ходатайству заявителя — при условии, что ' +
+    'причины пропуска признаны уважительными. Ходатайство о восстановлении ' +
+    'подаётся не позднее шести месяцев со дня открытия или появления ' +
+    'обстоятельств, являющихся основанием для пересмотра (ч. 2 ст. 394 ГПК ' +
+    'РФ) — от той же даты, что и сам срок подачи заявления, независимо от ' +
+    'того, какое из семи оснований выбрано. Рассматривается в порядке, ' +
+    'установленном ст. 112 ГПК РФ.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { offset_start: 1 },
+      norm: {
+        primary: 'ч. 2 ст. 394 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Ч. 2 ст. 394: шесть месяцев от той же точки отсчёта, что и у основного
+// срока пересмотра (ч. 1 ст. 394) — не отдельный якорь, поэтому просто берём
+// уже вычисленный primaryTerm.anchor, каким бы способом та дата ни была
+// получена (для vs_practice_change это дата контролирующего компонента).
+function computeReviewNewCircumstancesRestoration(primaryTerm) {
+  if (primaryTerm == null) return null;
+  const calc = computeDeadline(REVIEW_NEW_CIRCUMSTANCES_RESTORATION, primaryTerm.anchor);
+  return {
+    id: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.id,
+    title: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.title,
+    anchor: calc.anchor,
+    offset_start: calc.offset_start,
+    raw_deadline: calc.raw_deadline,
+    deadline: calc.deadline,
+    shifted: calc.shifted,
+    duration: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.duration,
+    norm: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.norm_versions[0].norm,
+    logic: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.logic,
+    midnight_rule: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.midnight_rule,
+  };
 }
 
 // Замечания на протокол (ч. 1 ст. 231) + рассмотрение судьёй (ч. 2 ст. 232).

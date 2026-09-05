@@ -793,6 +793,29 @@ test('пересмотр по вновь открывшимся/новым об�
   assert.match(card.norm, /ч\. 1 ст\. 394/);
 });
 
+test('восстановление пропущенного срока пересмотра (ч. 2 ст. 394): карточка сразу после основной, с пометкой о резервном характере', () => {
+  const v = buildView(
+    { review_ground: 'newly_discovered_fact', review_circumstance_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  const filingIndex = v.cards.findIndex((c) => c.id === 'review_new_circumstances_filing');
+  const restorationIndex = v.cards.findIndex(
+    (c) => c.id === 'review_new_circumstances_restoration',
+  );
+  assert.ok(filingIndex >= 0);
+  assert.equal(restorationIndex, filingIndex + 1, 'карточка восстановления должна идти сразу после основной');
+
+  const restoration = v.cards[restorationIndex];
+  assert.equal(restoration.kind, 'term');
+  assert.equal(restoration.status, 'computed');
+  assert.deepEqual(restoration.duration, { value: 6, unit: 'month' });
+  // 01.09.2025 + 6 мес. = 01.03.2026 (воскресенье) → 02.03.2026 (понедельник).
+  assert.equal(restoration.deadline, '2026-03-02');
+  assert.match(restoration.norm, /ч\. 2 ст\. 394/);
+  assert.match(restoration.note, /резервный|восстановительный/);
+  assert.match(restoration.note, /уважительными/);
+});
+
 // Шесть оснований с единым якорем — vs_practice_change (седьмое) устроено
 // иначе и проверяется отдельными тестами ниже.
 const SIMPLE_REVIEW_GROUND_IDS = [
