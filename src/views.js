@@ -985,6 +985,19 @@ function independentNodes(source, today = null) {
   // даты и контролирующую — reviewNewCircumstancesCard добавляет их в details.
   if (terms.review_new_circumstances_filing) {
     cards.push(reviewNewCircumstancesCard(terms.review_new_circumstances_filing));
+    // Восстановление пропущенного срока (ч. 2 ст. 394) — не отдельный срок
+    // пересмотра, а резервный механизм: показывается всегда рядом с основной
+    // карточкой (планирующий сценарий — пользователь заранее видит запасной
+    // вариант), но применяется, только если основной срок пропущен и суд
+    // признаёт причины пропуска уважительными.
+    if (terms.review_new_circumstances_restoration) {
+      const restorationCard = monthTermCard(terms.review_new_circumstances_restoration);
+      restorationCard.note =
+        'Не отдельный срок пересмотра, а восстановительный механизм: ' +
+        'применяется, только если основной срок подачи заявления пропущен, и ' +
+        'только если суд признает причины пропуска уважительными.';
+      cards.push(restorationCard);
+    }
   } else if (terms.review_new_circumstances_missing) {
     // Только у практики ВС: там полей три (toggle решает, какая из двух
     // взаимоисключающих используется, плюс всегда нужна дата потолка), и

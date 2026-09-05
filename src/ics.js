@@ -30,6 +30,7 @@ import {
   ARBITRATION_COMPETENCE_APPEAL,
   SETTLEMENT_APPROVAL_CASSATION_APPEAL,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
+  REVIEW_NEW_CIRCUMSTANCES_RESTORATION,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
   DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
@@ -480,6 +481,22 @@ export function icsTermsFromChain(chain) {
       norm: chain.review_new_circumstances_filing.norm.primary,
       ics: REVIEW_NEW_CIRCUMSTANCES_FILING.ics,
       duration: chain.review_new_circumstances_filing.duration,
+    });
+  }
+  // Восстановление пропущенного срока подачи заявления о пересмотре
+  // (ч. 2 ст. 394 ГПК) — независимый резервный узел, считается от того же
+  // якоря, что и review_new_circumstances_filing (см. chain.js).
+  if (
+    chain &&
+    chain.review_new_circumstances_restoration &&
+    chain.review_new_circumstances_restoration.deadline
+  ) {
+    terms.push({
+      title: chain.review_new_circumstances_restoration.title,
+      deadline: chain.review_new_circumstances_restoration.deadline,
+      norm: chain.review_new_circumstances_restoration.norm.primary,
+      ics: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.ics,
+      duration: REVIEW_NEW_CIRCUMSTANCES_RESTORATION.duration,
     });
   }
   // Возражения должника относительно исполнения судебного приказа (ст. 128

@@ -2520,3 +2520,81 @@ test('практика ВС: узел независим от цепочки о�
   assert.equal(chain.review_new_circumstances_filing.deadline, alone.deadline);
   assert.equal(chain.review_new_circumstances_filing.controlling, alone.controlling);
 });
+
+// --- Восстановление пропущенного срока подачи заявления о пересмотре (ч. 2 ст. 394) ---
+
+test('восстановление срока пересмотра: узла нет, если основной срок не посчитан', () => {
+  assert.equal(computeIndependentTerms({}).review_new_circumstances_restoration, null);
+  assert.equal(
+    computeIndependentTerms({ review_ground: 'newly_discovered_fact' })
+      .review_new_circumstances_restoration,
+    null,
+  );
+});
+
+test('восстановление срока пересмотра: шесть месяцев от того же якоря, что и основной срок (простое основание)', () => {
+  const terms = computeIndependentTerms({
+    review_ground: 'newly_discovered_fact',
+    review_circumstance_date: '2025-09-01',
+  });
+  const restoration = terms.review_new_circumstances_restoration;
+  assert.ok(restoration);
+  // Якорь восстановления — тот же, что и у основного срока (не его дедлайн).
+  assert.equal(restoration.anchor, terms.review_new_circumstances_filing.anchor);
+  assert.equal(restoration.anchor, '2025-09-01');
+  assert.deepEqual(restoration.duration, { value: 6, unit: 'month' });
+  // 01.09.2025 + 6 мес. = 01.03.2026 (воскресенье) → 02.03.2026 (понедельник).
+  assert.equal(restoration.raw_deadline, '2026-03-01');
+  assert.equal(restoration.deadline, '2026-03-02');
+  assert.equal(restoration.shifted, true);
+  assert.equal(restoration.norm.primary, 'ч. 2 ст. 394 ГПК РФ');
+});
+
+test('восстановление срока пересмотра: одинаковый якорь для любого из шести простых оснований', () => {
+  for (const groundId of SIMPLE_REVIEW_GROUND_IDS) {
+    const terms = computeIndependentTerms({
+      review_ground: groundId,
+      review_circumstance_date: '2025-09-01',
+    });
+    const restoration = terms.review_new_circumstances_restoration;
+    assert.ok(restoration, `основание ${groundId}: узел восстановления должен считаться`);
+    assert.equal(restoration.anchor, '2025-09-01');
+    assert.equal(restoration.deadline, '2026-03-02');
+  }
+});
+
+test('восстановление срока пересмотра: практика ВС — якорь берётся от КОНТРОЛИРУЮЩЕГО компонента (трёхмесячный)', () => {
+  // Тот же кейс, что и «обычный случай — трёхмесячный компонент раньше
+  // потолка»: контролирует трёхмесячный компонент, его якорь — 2025-09-01
+  // (дата публикации), а не якорь шестимесячного потолка (2025-08-01).
+  const terms = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-09-01',
+    review_last_act_entry_into_force_date: '2025-08-01',
+  });
+  const primary = terms.review_new_circumstances_filing;
+  const restoration = terms.review_new_circumstances_restoration;
+  assert.equal(primary.controlling, 'three_month');
+  assert.ok(restoration);
+  assert.equal(restoration.anchor, primary.anchor);
+  assert.equal(restoration.anchor, '2025-09-01');
+  assert.equal(restoration.deadline, '2026-03-02');
+});
+
+test('восстановление срока пересмотра: практика ВС — якорь берётся от КОНТРОЛИРУЮЩЕГО компонента (шестимесячный потолок)', () => {
+  // Тот же кейс, что и «шестимесячный потолок раньше»: контролирует потолок,
+  // его якорь — 2025-01-01 (дата вступления в силу последнего акта), а не
+  // якорь трёхмесячного компонента (2025-09-01, дата публикации).
+  const terms = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-09-01',
+    review_last_act_entry_into_force_date: '2025-01-01',
+  });
+  const primary = terms.review_new_circumstances_filing;
+  const restoration = terms.review_new_circumstances_restoration;
+  assert.equal(primary.controlling, 'six_month');
+  assert.ok(restoration);
+  assert.equal(restoration.anchor, primary.anchor);
+  assert.equal(restoration.anchor, '2025-01-01');
+  assert.equal(restoration.deadline, '2025-07-01');
+});

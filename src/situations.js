@@ -202,7 +202,7 @@ export const SITUATIONS = [
       'review_refusal_ruling_received_date',
       'review_last_act_entry_into_force_date',
     ],
-    nodes: ['review_new_circumstances_filing'],
+    nodes: ['review_new_circumstances_filing', 'review_new_circumstances_restoration'],
   },
 ];
 

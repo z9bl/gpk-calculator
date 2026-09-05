@@ -315,7 +315,10 @@ test('все одиннадцать ситуаций на месте и подп
 
 test('пересмотр по вновь открывшимся/новым обстоятельствам: узел и поля учтены в разбиении', () => {
   const situation = SITUATIONS.find((s) => s.id === 'review_new_circumstances');
-  assert.deepEqual(situation.nodes, ['review_new_circumstances_filing']);
+  assert.deepEqual(situation.nodes, [
+    'review_new_circumstances_filing',
+    'review_new_circumstances_restoration',
+  ]);
   assert.deepEqual(situation.fields, [
     'review_ground',
     'review_circumstance_date',
@@ -343,7 +346,7 @@ test('пересмотр по вновь открывшимся/новым об�
   );
   assert.deepEqual(
     withGround.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
-    ['review_new_circumstances_filing'],
+    ['review_new_circumstances_filing', 'review_new_circumstances_restoration'],
   );
 });
 
@@ -361,7 +364,7 @@ test('практика ВС (седьмое основание): та же си�
   );
   assert.deepEqual(
     v.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
-    ['review_new_circumstances_filing'],
+    ['review_new_circumstances_filing', 'review_new_circumstances_restoration'],
   );
 
   // Не хватает потолка — карточки нет, но и в orphan-узлы не проваливается
@@ -374,4 +377,46 @@ test('практика ВС (седьмое основание): та же си�
     incomplete.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
     [],
   );
+});
+
+test('восстановление срока пересмотра (ч. 2 ст. 394): появляется в buildView для любого из семи оснований, без новых полей ввода', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'review_new_circumstances');
+  // Никаких новых input не добавлено — тот же набор fields, что и раньше.
+  assert.deepEqual(situation.fields, [
+    'review_ground',
+    'review_circumstance_date',
+    'review_discovered_during_cassation',
+    'review_publication_date',
+    'review_refusal_ruling_received_date',
+    'review_last_act_entry_into_force_date',
+  ]);
+
+  const SIMPLE_GROUNDS = [
+    'newly_discovered_fact',
+    'false_testimony_or_crime',
+    'annulled_underlying_act',
+    'transaction_invalidated',
+    'ks_ruling',
+    'unauthorized_construction',
+  ];
+  for (const groundId of SIMPLE_GROUNDS) {
+    const v = buildView(
+      { review_ground: groundId, review_circumstance_date: '2025-07-02' },
+      { today: '2025-07-01' },
+    );
+    assert.ok(
+      v.cards.some((c) => c.id === 'review_new_circumstances_restoration'),
+      `основание ${groundId}: должен быть узел восстановления срока`,
+    );
+  }
+
+  const vsPractice = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2025-09-01',
+      review_last_act_entry_into_force_date: '2024-01-01',
+    },
+    { today: '2025-07-01' },
+  );
+  assert.ok(vsPractice.cards.some((c) => c.id === 'review_new_circumstances_restoration'));
 });
