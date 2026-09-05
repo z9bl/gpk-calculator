@@ -204,7 +204,14 @@ test('все девять ситуаций на месте и подписаны
 test('пересмотр по вновь открывшимся/новым обстоятельствам: узел и поля учтены в разбиении', () => {
   const situation = SITUATIONS.find((s) => s.id === 'review_new_circumstances');
   assert.deepEqual(situation.nodes, ['review_new_circumstances_filing']);
-  assert.deepEqual(situation.fields, ['review_ground', 'review_circumstance_date']);
+  assert.deepEqual(situation.fields, [
+    'review_ground',
+    'review_circumstance_date',
+    'review_discovered_during_cassation',
+    'review_publication_date',
+    'review_refusal_ruling_received_date',
+    'review_last_act_entry_into_force_date',
+  ]);
   // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
   assert.equal(situation.primary_field, undefined);
 
@@ -225,5 +232,34 @@ test('пересмотр по вновь открывшимся/новым об�
   assert.deepEqual(
     withGround.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
     ['review_new_circumstances_filing'],
+  );
+});
+
+test('практика ВС (седьмое основание): та же ситуация, тот же узел, свои поля', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'review_new_circumstances');
+
+  // Обычная (неоткрытая при кассации) ветвь.
+  const v = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2025-09-01',
+      review_last_act_entry_into_force_date: '2024-01-01',
+    },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['review_new_circumstances_filing'],
+  );
+
+  // Не хватает потолка — карточки нет, но и в orphan-узлы не проваливается
+  // (missing-механизм — отдельная задача UI, не структурного теста).
+  const incomplete = buildView(
+    { review_ground: 'vs_practice_change', review_publication_date: '2025-09-01' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    incomplete.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    [],
   );
 });

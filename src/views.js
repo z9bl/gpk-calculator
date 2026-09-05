@@ -23,6 +23,7 @@ import {
   INTERRUPTION_TYPES,
   INTERRUPTION_SCOPE_WARNING,
   REVIEW_GROUNDS,
+  REVIEW_NEW_CIRCUMSTANCES_FILING,
 } from './chain.js';
 
 // Перерыв срока (ст. 22 ФЗ № 229-ФЗ) — константы модели нужны и интерфейсу:
@@ -90,6 +91,14 @@ const INPUT_LABELS = {
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
   review_ground: 'Основание пересмотра (глава 42 ГПК)',
   review_circumstance_date: 'Дата обстоятельства (зависит от основания)',
+  review_discovered_during_cassation:
+    'Обнаружено при рассмотрении кассационной/надзорной жалобы, представления',
+  review_publication_date:
+    'Дата опубликования постановления Пленума/Президиума ВС РФ в сети «Интернет»',
+  review_refusal_ruling_received_date:
+    'Дата получения копии определения об отказе в передаче жалобы для рассмотрения',
+  review_last_act_entry_into_force_date:
+    'Дата вступления в силу последнего судебного постановления по делу',
 };
 
 // Подписи оснований перерыва — для выпадающего списка в UI и для истории на
@@ -613,6 +622,25 @@ function monthTermCard(term) {
   return card;
 }
 
+// Карточка пересмотра по вновь открывшимся/новым обстоятельствам: обычный
+// monthTermCard плюс, у практики ВС (vs_practice_change), обе промежуточные
+// даты и явное указание, какая из них контролирует — иначе на карточке был
+// бы только финальный ответ без объяснения, откуда он взялся (ч. 1, ч. 3
+// ст. 394 ГПК РФ, минимум из трёхмесячного компонента и шестимесячного
+// потолка, см. computeVsPracticeChangeTerm в chain.js).
+function reviewNewCircumstancesCard(term) {
+  const card = monthTermCard(term);
+  if (term.vs_practice_change) {
+    card.details.vs_practice_change = {
+      controlling: term.controlling,
+      discovered_during_cassation: term.vs_practice_change.discovered_during_cassation,
+      three_month: term.vs_practice_change.three_month,
+      six_month_cap: term.vs_practice_change.six_month_cap,
+    };
+  }
+  return card;
+}
+
 // Карточка предъявления документов о взыскании периодических платежей
 // (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
 // ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
@@ -828,9 +856,28 @@ function independentNodes(source, today = null) {
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже
-  // выбраны по основанию внутри computeReviewNewCircumstances.
+  // выбраны по основанию внутри computeReviewNewCircumstancesResult. У
+  // практики ВС (vs_practice_change) карточка несёт ещё обе промежуточные
+  // даты и контролирующую — reviewNewCircumstancesCard добавляет их в details.
   if (terms.review_new_circumstances_filing) {
-    cards.push(monthTermCard(terms.review_new_circumstances_filing));
+    cards.push(reviewNewCircumstancesCard(terms.review_new_circumstances_filing));
+  } else if (terms.review_new_circumstances_missing) {
+    // Только у практики ВС: там полей три (toggle решает, какая из двух
+    // взаимоисключающих используется, плюс всегда нужна дата потолка), и
+    // молчаливое отсутствие узла было бы менее понятно, чем у остальных
+    // шести оснований с одним полем — поэтому unresolved с точным списком
+    // недостающих input (missingInputs(ids, {}) — id уже посчитаны в chain.js,
+    // фильтровать по inputs не нужно, тот же приём, что у dj.appeal_blocked).
+    incomplete.push(
+      incompleteNode(
+        REVIEW_NEW_CIRCUMSTANCES_FILING.id,
+        'term',
+        REVIEW_NEW_CIRCUMSTANCES_FILING.title,
+        'Основание «изменение практики ВС» выбрано, но не хватает данных для расчёта ' +
+          '(п. 5 ч. 4 ст. 392, ч. 1 и ч. 3 ст. 394 ГПК РФ).',
+        missingInputs(terms.review_new_circumstances_missing, {}),
+      ),
+    );
   }
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {

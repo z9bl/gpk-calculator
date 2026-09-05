@@ -506,6 +506,74 @@ test('пересмотр по вновь открывшимся/новым об�
   assert.deepEqual(meta.duration, { value: 3, unit: 'month' });
 });
 
+test('практика ВС уходит в .ics: трёхмесячный компонент контролирует → 2 напоминания за 3/14 дней', () => {
+  const view = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2027-09-01',
+      // Последний акт вступил в силу незадолго до публикации — потолок
+      // (+6 мес. от него) наступает позже трёхмесячного компонента.
+      review_last_act_entry_into_force_date: '2027-08-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('пересмотре по вновь открывшимся'));
+  assert.ok(t, 'срок должен уйти в экспорт');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  // Норма отражает оба основания расчёта — и трёхмесячный компонент (ч. 1
+  // ст. 394), и шестимесячный потолок (ч. 3 ст. 394), не только контролирующий.
+  assert.match(t.norm, /п\. 5 ч\. 4 ст\. 392/);
+  assert.match(t.norm, /ч\. 1 ст\. 394/);
+  assert.match(t.norm, /ч\. 3 ст\. 394/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней, как у других трёхмесячных
+});
+
+test('практика ВС уходит в .ics: шестимесячный потолок контролирует → длительность и напоминания по нему', () => {
+  const view = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2027-09-01', // трёхмесячный компонент далеко впереди
+      review_last_act_entry_into_force_date: '2026-01-01',
+    },
+    { today: '2026-01-02' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('пересмотре по вновь открывшимся'));
+  assert.ok(t);
+  assert.deepEqual(t.duration, { value: 6, unit: 'month' });
+  assert.equal(t.deadline, '2026-07-01');
+
+  const ics = buildICS([t], { referenceDate: '2026-01-02', now: NOW });
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 30 дней — новое правило для 6 месяцев
+  // 3 дня до 01.07.2026 = 28.06 (воскресенье) → перенос назад на 26.06 (пятница).
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260626T090000Z'));
+  assert.ok(ics.includes('TRIGGER;VALUE=DATE-TIME:20260601T090000Z')); // 30 дней до 01.07, без переноса
+});
+
+test('практика ВС: тот же срок и та же (не статическая) длительность через icsTermsFromChain', () => {
+  // Регрессия: раньше duration в этой ветке ics.js бралась из статической
+  // константы REVIEW_NEW_CIRCUMSTANCES_FILING.duration (всегда 3 месяца) —
+  // для практики ВС это могло быть неверно, если контролирует потолок.
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2027-09-01',
+      review_last_act_entry_into_force_date: '2026-01-01',
+    },
+    { today: '2026-01-02' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('пересмотре по вновь открывшимся'));
+  assert.ok(t);
+  assert.equal(t.deadline, '2026-07-01');
+  assert.deepEqual(t.duration, { value: 6, unit: 'month' }); // не 3 — потолок контролирует
+});
+
 test('предъявление судебного приказа уходит в .ics (3 года → 2 напоминания)', () => {
   const view = buildView({ court_order_issued_date: '2023-04-12' }, { today: '2026-03-01' });
   const terms = icsTermsFromView(view);
