@@ -7,6 +7,7 @@ import {
   INTERRUPTION_TYPES,
   INTERRUPTION_TYPE_LABELS,
   INTERRUPTION_SCOPE_WARNING,
+  REVIEW_GROUNDS,
 } from '../src/views.js';
 import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
 import {
@@ -72,6 +73,10 @@ const INPUT_LABELS = {
   child_return_interim_ruling_date:
     'Дата определения суда первой инстанции (глава 22.2 ГПК)',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
+  review_ground: 'Основание пересмотра',
+  // Заглушка на случай прямого рендера без выбранного основания — на экране
+  // фактическая подпись всегда приходит из REVIEW_GROUNDS (см. renderReviewGroundFields).
+  review_circumstance_date: 'Дата обстоятельства (выберите основание выше)',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подана, укажите дату',
@@ -145,6 +150,9 @@ const INPUT_HINTS = {
   enforcement_interruptions:
     'Каждое событие перезапускает трёхлетний срок: он идёт заново от последнего по дате ' +
     '(ч. 1–3 ст. 22 ФЗ № 229-ФЗ), время до перерыва не засчитывается',
+  review_circumstance_date:
+    'Три месяца со дня, указанного в норме карточки ниже (ч. 1 ст. 394 ГПК РФ) — точка ' +
+    'отсчёта зависит от выбранного основания',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -196,10 +204,16 @@ function todayISO() {
 // isoToRu/ruToISO живут в src/date-field.js — они нужны и тестам.
 
 // Название поля для фразы «Укажите …»: подписи начинаются с «Дата», а дальше
-// уже идёт родительный падеж — остаётся отбросить уточнение в скобках.
+// уже идёт родительный падеж — остаётся отбросить уточнение в скобках. Поля не
+// про дату (dropdown вроде review_ground) такого начала не имеют — для них
+// просто снижаем регистр первой буквы, чтобы фраза не спотыкалась о заглавную
+// букву посреди предложения («Укажите основание пересмотра», а не «… Основание …»).
 function askFor(id) {
   const label = INPUT_LABELS[id] ?? '';
-  return label.replace(/^Дата /, 'дату ').replace(/\s*\([^)]*\)$/, '');
+  if (/^Дата /.test(label)) {
+    return label.replace(/^Дата /, 'дату ').replace(/\s*\([^)]*\)$/, '');
+  }
+  return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
 function pluralDays(n) {
@@ -738,9 +752,12 @@ function renderEvent(card, opts = {}) {
 }
 
 // Поле-приглашение уточнить (одно из недостающих input).
-function renderInviteField(id) {
+// labelOverride — для полей, чья подпись зависит не от самого поля, а от
+// другого выбора на экране (дата обстоятельства пересмотра — от основания,
+// review_ground; см. renderReviewGroundFields).
+function renderInviteField(id, labelOverride) {
   const wrap = el('div', 'field');
-  const lab = el('label', null, INPUT_LABELS[id]);
+  const lab = el('label', null, labelOverride ?? INPUT_LABELS[id]);
   lab.setAttribute('for', `in-${id}`);
   wrap.appendChild(lab);
   const input = el('input');
@@ -1535,6 +1552,19 @@ function renderSituationFields(situation, primaryFilled) {
       ),
     );
   }
+  if (situation.id === 'review_new_circumstances') {
+    root.appendChild(
+      el(
+        'p',
+        null,
+        'Заявление о пересмотре вступившего в законную силу постановления по вновь ' +
+          'открывшимся или новым обстоятельствам (глава 42 ГПК): один и тот же трёхмесячный ' +
+          'срок для всех оснований (ч. 1 ст. 394 ГПК), но точка отсчёта зависит от основания ' +
+          '(ст. 395). Практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) в список не входит — ' +
+          'у неё другая механика (минимум из двух дат, шестимесячный потолок).',
+      ),
+    );
+  }
   const box = el('div', 'invite');
   if (situation.id === 'periodic_payments') {
     // Дата окончания периода и чекбокс бессрочности — взаимоисключающие: при
@@ -1555,10 +1585,42 @@ function renderSituationFields(situation, primaryFilled) {
     } else {
       box.appendChild(inviteFieldOrPointer('periodic_payment_period_end_date'));
     }
+  } else if (situation.id === 'review_new_circumstances') {
+    renderReviewGroundFields(box);
   } else {
     for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
   }
   root.appendChild(reveal(`sitfields:${situation.id}`, box));
+}
+
+// Поля ситуации «Пересмотр по вновь открывшимся/новым обстоятельствам» (глава
+// 42 ГПК): dropdown с основанием + одно поле даты. Подпись поля даты и норма
+// на карточке ниже зависят от выбранного основания (REVIEW_GROUNDS, chain.js)
+// — по тому же образцу, что и подпись основания перерыва в renderInterruptionRow.
+const REVIEW_GROUND_PLACEHOLDER = '';
+
+function renderReviewGroundFields(box) {
+  const current = state.inputs.review_ground || REVIEW_GROUND_PLACEHOLDER;
+  box.appendChild(
+    renderChoiceField(
+      'review_ground',
+      [
+        { value: REVIEW_GROUND_PLACEHOLDER, label: 'Выберите основание' },
+        ...REVIEW_GROUNDS.map((g) => ({ value: g.id, label: g.label })),
+      ],
+      current,
+    ),
+  );
+  const ground = REVIEW_GROUNDS.find((g) => g.id === current) || null;
+  box.appendChild(
+    reveal(
+      'review-date',
+      renderInviteField(
+        'review_circumstance_date',
+        ground ? ground.date_label : INPUT_LABELS.review_circumstance_date,
+      ).wrap,
+    ),
+  );
 }
 
 // --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------

@@ -12,6 +12,7 @@ import {
   applyInterruptions,
   interruptionEvents,
   CASSATION_RETURN_RULING_APPEAL,
+  REVIEW_GROUNDS,
 } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
@@ -1891,4 +1892,128 @@ test('ст. 237: при удовлетворении заявления апел
   });
   assert.equal(withRefusal.appeal, null);
   assert.ok(withRefusal.appeal_not_applicable);
+});
+
+// --- Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) ---
+
+const REVIEW_NORM_PATTERNS = {
+  newly_discovered_fact: /п\. 1 ч\. 3 ст\. 392/,
+  false_testimony_or_crime: /пп\. 2, 3 ч\. 3 ст\. 392/,
+  annulled_underlying_act: /п\. 1 ч\. 4 ст\. 392/,
+  transaction_invalidated: /п\. 2 ч\. 4 ст\. 392/,
+  ks_ruling: /п\. 3 ч\. 4 ст\. 392/,
+  unauthorized_construction: /п\. 6 ч\. 4/,
+};
+
+test('пересмотр: шесть оснований на месте, п. 5 ч. 4 ст. 392 (практика ВС) отсутствует', () => {
+  assert.deepEqual(
+    REVIEW_GROUNDS.map((g) => g.id),
+    [
+      'newly_discovered_fact',
+      'false_testimony_or_crime',
+      'annulled_underlying_act',
+      'transaction_invalidated',
+      'ks_ruling',
+      'unauthorized_construction',
+    ],
+  );
+  // Регрессия: практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) — другая
+  // механика (минимум из двух дат, шестимесячный потолок), отдельная задача.
+  // Место зарезервировано — этот тест должен упасть, если её добавят молча.
+  for (const g of REVIEW_GROUNDS) {
+    assert.doesNotMatch(g.label, /Пленум|Президиум/i);
+  }
+  assert.equal(REVIEW_GROUNDS.length, 6);
+});
+
+test('пересмотр: три месяца от даты обстоятельства для каждого из шести оснований (ч. 1 ст. 394)', () => {
+  for (const ground of REVIEW_GROUNDS) {
+    const t = computeIndependentTerms({
+      review_ground: ground.id,
+      review_circumstance_date: '2025-09-01',
+    }).review_new_circumstances_filing;
+    assert.ok(t, `основание ${ground.id}: узел должен считаться`);
+    assert.equal(t.anchor, '2025-09-01');
+    assert.equal(t.offset_start, 1);
+    assert.equal(t.deadline, '2025-12-01');
+    assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+    assert.match(t.norm.primary, REVIEW_NORM_PATTERNS[ground.id]);
+    assert.match(t.norm.primary, /ч\. 1 ст\. 394/);
+  }
+});
+
+test('пересмотр: перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 11.01.2026 + 3 месяца = 11.04.2026 (суббота) → 13.04.2026 (понедельник).
+  const t = computeIndependentTerms({
+    review_ground: 'newly_discovered_fact',
+    review_circumstance_date: '2026-01-11',
+  }).review_new_circumstances_filing;
+  assert.equal(t.raw_deadline, '2026-04-11');
+  assert.equal(t.deadline, '2026-04-13');
+  assert.equal(t.shifted, true);
+});
+
+test('пересмотр: узла нет без основания, без даты либо с нераспознанным основанием', () => {
+  assert.equal(computeIndependentTerms({}).review_new_circumstances_filing, null);
+  assert.equal(
+    computeIndependentTerms({ review_circumstance_date: '2025-09-01' })
+      .review_new_circumstances_filing,
+    null,
+  );
+  assert.equal(
+    computeIndependentTerms({ review_ground: 'newly_discovered_fact' })
+      .review_new_circumstances_filing,
+    null,
+  );
+  // Практика Пленума/Президиума ВС в dropdown не входит — нераспознанное
+  // основание не должно молча посчитаться по какой-то из шести норм.
+  assert.equal(
+    computeIndependentTerms({
+      review_ground: 'plenum_practice',
+      review_circumstance_date: '2025-09-01',
+    }).review_new_circumstances_filing,
+    null,
+  );
+});
+
+test('пересмотр: узел независим от цепочки обжалования и от категории дела', () => {
+  const alone = computeIndependentTerms({
+    review_ground: 'ks_ruling',
+    review_circumstance_date: '2025-09-01',
+  }).review_new_circumstances_filing;
+  assert.ok(alone);
+
+  const withBranches = computeIndependentTerms({
+    review_ground: 'ks_ruling',
+    review_circumstance_date: '2025-09-01',
+    reasoned_decision_date: '2025-03-11',
+    mirovoy_resolution_date: '2025-07-06',
+    default_judgment_service_date: '2025-07-05',
+    simplified_resolution_date: '2025-07-03',
+  }).review_new_circumstances_filing;
+  assert.equal(withBranches.deadline, alone.deadline);
+  assert.equal(withBranches.anchor, alone.anchor);
+
+  const chain = computeChain(
+    { ...BASE, review_ground: 'ks_ruling', review_circumstance_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.review_new_circumstances_filing.deadline, alone.deadline);
+  assert.equal(computeChain(BASE, { today: '2025-09-10' }).review_new_circumstances_filing, null);
+});
+
+test('пересмотр: заведомо ложные показания — logic упоминает ч. 3.1 ст. 392, но не заводит вторую дату', () => {
+  const t = computeIndependentTerms({
+    review_ground: 'false_testimony_or_crime',
+    review_circumstance_date: '2025-09-01',
+  }).review_new_circumstances_filing;
+  assert.match(t.logic, /ч\. 3\.1 ст\. 392/);
+});
+
+test('пересмотр: самовольная постройка — logic поясняет, почему ст. 395 не указана', () => {
+  const t = computeIndependentTerms({
+    review_ground: 'unauthorized_construction',
+    review_circumstance_date: '2025-09-01',
+  }).review_new_circumstances_filing;
+  assert.match(t.logic, /395.*не перечисляет/);
 });

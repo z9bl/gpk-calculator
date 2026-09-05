@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildView } from '../src/views.js';
+import { buildView, REVIEW_GROUNDS } from '../src/views.js';
 import { icsTermsFromView } from '../src/ics.js';
 
 const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция → 11.04.2025
@@ -674,6 +674,92 @@ test('возврат кассационной жалобы: узел досту�
     const card = byId(v.cards, 'cassation_return_ruling_appeal');
     assert.ok(card, `узел пропал в ветви ${Object.keys(branch)[0]}`);
     assert.equal(card.deadline, '2025-10-01');
+  }
+});
+
+test('пересмотр по вновь открывшимся/новым обстоятельствам: карточка по основанию и дате', () => {
+  const withoutGround = buildView(
+    { review_circumstance_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.ok(
+    !ids(withoutGround.cards).includes('review_new_circumstances_filing'),
+    'без выбранного основания узла нет',
+  );
+
+  const withoutDate = buildView({ review_ground: 'newly_discovered_fact' }, { today: '2025-09-10' });
+  assert.ok(
+    !ids(withoutDate.cards).includes('review_new_circumstances_filing'),
+    'без даты обстоятельства узла нет',
+  );
+
+  const v = buildView(
+    { review_ground: 'newly_discovered_fact', review_circumstance_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  const card = byId(v.cards, 'review_new_circumstances_filing');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.status, 'computed');
+  assert.equal(card.title, 'Заявление о пересмотре по вновь открывшимся/новым обстоятельствам');
+  assert.equal(card.deadline, '2025-12-01');
+  assert.deepEqual(card.duration, { value: 3, unit: 'month' });
+  assert.match(card.norm, /ч\. 1 ст\. 394/);
+});
+
+test('пересмотр: норма и логика на карточке соответствуют каждому из шести оснований', () => {
+  const NORM_PATTERNS = {
+    newly_discovered_fact: /п\. 1 ч\. 3 ст\. 392/,
+    false_testimony_or_crime: /пп\. 2, 3 ч\. 3 ст\. 392/,
+    annulled_underlying_act: /п\. 1 ч\. 4 ст\. 392/,
+    transaction_invalidated: /п\. 2 ч\. 4 ст\. 392/,
+    ks_ruling: /п\. 3 ч\. 4 ст\. 392/,
+    unauthorized_construction: /п\. 6 ч\. 4/,
+  };
+  for (const ground of REVIEW_GROUNDS) {
+    const v = buildView(
+      { review_ground: ground.id, review_circumstance_date: '2025-09-01' },
+      { today: '2025-09-10' },
+    );
+    const card = byId(v.cards, 'review_new_circumstances_filing');
+    assert.ok(card, `основание ${ground.id}: карточка должна появиться`);
+    assert.match(card.norm, NORM_PATTERNS[ground.id]);
+    assert.match(card.details.logic, NORM_PATTERNS[ground.id]);
+  }
+});
+
+test('пересмотр: практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) в список оснований не входит', () => {
+  // Регрессия: у этого основания другая механика (минимум из двух дат,
+  // шестимесячный потолок) — отдельная задача, дропдаун его не должен получить
+  // молча вместе с каким-нибудь рефакторингом REVIEW_GROUNDS.
+  assert.equal(REVIEW_GROUNDS.length, 6);
+  assert.ok(!REVIEW_GROUNDS.some((g) => g.id === 'plenum_practice'));
+  for (const g of REVIEW_GROUNDS) {
+    assert.doesNotMatch(g.label, /Пленум|Президиум/i);
+  }
+});
+
+test('пересмотр: узел доступен в любой ветви, без данных цепочки', () => {
+  const alone = buildView(
+    { review_ground: 'ks_ruling', review_circumstance_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.ok(byId(alone.cards, 'review_new_circumstances_filing'));
+
+  for (const branch of [
+    { reasoned_decision_date: '2025-03-11' },
+    { mirovoy_resolution_date: '2025-07-06' },
+    { simplified_resolution_date: '2025-07-03' },
+    { default_judgment_service_date: '2025-07-05' },
+    { court_order_issued_date: '2023-04-12' },
+  ]) {
+    const v = buildView(
+      { ...branch, review_ground: 'ks_ruling', review_circumstance_date: '2025-09-01' },
+      { today: '2025-09-10' },
+    );
+    const card = byId(v.cards, 'review_new_circumstances_filing');
+    assert.ok(card, `узел пропал в ветви ${Object.keys(branch)[0]}`);
+    assert.equal(card.deadline, '2025-12-01');
   }
 });
 

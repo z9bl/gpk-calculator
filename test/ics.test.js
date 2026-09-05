@@ -349,6 +349,10 @@ const ALL_BRANCHES_INPUTS = {
   // суда первой инстанции (ч. 1 ст. 244.18) — два независимых узла
   child_return_reasoned_decision_date: '2025-07-02',
   child_return_interim_ruling_date: '2025-07-08',
+  // пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
+  // независимый трек, считается по своим двум input (основание + дата)
+  review_ground: 'newly_discovered_fact',
+  review_circumstance_date: '2025-07-02',
 };
 
 // Дата расчёта для проверок полноты экспорта — раньше всех дедлайнов набора.
@@ -459,6 +463,47 @@ test('возврат кассационной жалобы: тот же срок
   assert.equal(t.deadline, '2027-10-01');
   assert.equal(t.ics, true);
   assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('пересмотр по вновь открывшимся/новым обстоятельствам уходит в .ics (3 месяца → 2 напоминания)', () => {
+  const view = buildView(
+    { review_ground: 'ks_ruling', review_circumstance_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('пересмотре по вновь открывшимся'));
+  assert.ok(t, 'срок подачи заявления о пересмотре в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  assert.match(t.norm, /п\. 3 ч\. 4 ст\. 392/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней, как у других трёхмесячных
+});
+
+test('пересмотр по вновь открывшимся/новым обстоятельствам: тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      review_ground: 'ks_ruling',
+      review_circumstance_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('пересмотре по вновь открывшимся'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.match(t.norm, /п\. 3 ч\. 4 ст\. 392/);
+});
+
+test('пересмотр по вновь открывшимся/новым обстоятельствам: в TERM_REGISTRY по id узла', () => {
+  const meta = TERM_REGISTRY.review_new_circumstances_filing;
+  assert.ok(meta, 'узел должен быть в реестре — иначе выпадет из .ics молча');
+  assert.equal(meta.ics, true);
+  assert.deepEqual(meta.duration, { value: 3, unit: 'month' });
 });
 
 test('предъявление судебного приказа уходит в .ics (3 года → 2 напоминания)', () => {

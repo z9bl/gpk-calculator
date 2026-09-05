@@ -801,7 +801,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, review_new_circumstances_filing:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -845,6 +845,10 @@ export function computeIndependentTerms(inputs) {
       CHILD_RETURN_PRIVATE_COMPLAINT,
       inputs?.child_return_interim_ruling_date,
     ),
+    // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
+    // независим от цепочки обжалования и от категории дела, считается по
+    // своим двум input (основание + дата), см. computeReviewNewCircumstances.
+    review_new_circumstances_filing: computeReviewNewCircumstances(inputs ?? {}),
   };
 }
 
@@ -956,6 +960,165 @@ export const CASSATION_RETURN_RULING_APPEAL = {
     },
   ],
 };
+
+// Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК,
+// ст. 392–395 — §11.3 SPEC.md). Шесть оснований без особых развилок: срок один
+// и тот же для всех — три месяца (ч. 1 ст. 394 ГПК РФ, «в течение трёх месяцев
+// со дня открытия или появления обстоятельств»), но точка отсчёта зависит от
+// основания (ст. 395, кроме иначе указанного). Узел не привязан ни к цепочке
+// обжалования, ни к категории дела — подать такое заявление можно по любому
+// вступившему в законную силу судебному постановлению, поэтому он считается
+// независимо, по образцу SUPERVISION/CASSATION_RETURN_RULING_APPEAL.
+//
+// Не включено (см. §11.3 SPEC.md — отдельные задачи):
+// — п. 5 ч. 4 ст. 392 (новая практика Пленума/Президиума ВС) — другая
+//   механика: точка отсчёта — со дня опубликования постановления в сети
+//   «Интернет» (п. 7 ст. 395), при этом есть вторая возможная дата и берётся
+//   минимум из двух, плюс дополнительный шестимесячный потолок (ч. 4 ст. 397).
+//   Место в dropdown под это основание намеренно не заведено;
+// — восстановление пропущенного срока (ч. 2 ст. 394, шестимесячный резервный
+//   срок) — отдельный восстановительный механизм, а не основание пересмотра.
+export const REVIEW_NEW_CIRCUMSTANCES_DURATION = { value: 3, unit: 'month' };
+
+export const REVIEW_GROUNDS = [
+  {
+    id: 'newly_discovered_fact',
+    label: 'Существенные для дела обстоятельства, не известные заявителю',
+    date_label: 'Дата открытия обстоятельств',
+    logic:
+      'Три месяца со дня открытия существенных для дела обстоятельств ' +
+      '(п. 1 ч. 3 ст. 392, п. 1 ст. 395, ч. 1 ст. 394 ГПК РФ).',
+    norm: {
+      primary: 'п. 1 ч. 3 ст. 392, п. 1 ст. 395, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+  {
+    id: 'false_testimony_or_crime',
+    label:
+      'Заведомо ложные показания/заключение/перевод, фальсификация доказательств либо ' +
+      'преступления участников процесса — установлены приговором',
+    date_label: 'Дата вступления в силу приговора (постановления) по уголовному делу',
+    logic:
+      'Три месяца со дня вступления в законную силу приговора по уголовному делу ' +
+      '(пп. 2, 3 ч. 3 ст. 392, п. 2 ст. 395, ч. 1 ст. 394 ГПК РФ). Норма также ' +
+      'допускает вместо приговора иные акты по ч. 3.1 ст. 392 (определение или ' +
+      'постановление о прекращении уголовного дела, о применении судебного штрафа, ' +
+      'постановление дознавателя или следователя) — в модели одно поле даты ' +
+      '«приговора/постановления», отдельная ветка под каждый вид акта не заведена.',
+    norm: {
+      primary: 'пп. 2, 3 ч. 3 ст. 392, п. 2 ст. 395, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 3.1 ст. 392 ГПК РФ', 'ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+  {
+    id: 'annulled_underlying_act',
+    label: 'Отмена постановления, послужившего основанием для вынесенного акта',
+    date_label: 'Дата вступления в силу постановления об отмене',
+    logic:
+      'Три месяца со дня вступления в законную силу постановления, которое отменяет ' +
+      'ранее вынесенное (п. 1 ч. 4 ст. 392, п. 3 ст. 395, ч. 1 ст. 394 ГПК РФ).',
+    norm: {
+      primary: 'п. 1 ч. 4 ст. 392, п. 3 ст. 395, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+  {
+    id: 'transaction_invalidated',
+    label: 'Признание недействительной сделки, на которой основан судебный акт',
+    date_label: 'Дата вступления в силу постановления о недействительности сделки',
+    logic:
+      'Три месяца со дня вступления в законную силу постановления о ' +
+      'недействительности сделки (п. 2 ч. 4 ст. 392, п. 4 ст. 395, ч. 1 ст. 394 ГПК РФ).',
+    norm: {
+      primary: 'п. 2 ч. 4 ст. 392, п. 4 ст. 395, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+  {
+    id: 'ks_ruling',
+    label: 'Признание Конституционным Судом РФ закона неконституционным',
+    date_label: 'Дата вступления в силу решения Конституционного Суда РФ',
+    logic:
+      'Три месяца со дня вступления в силу соответствующего решения ' +
+      'Конституционного Суда РФ (п. 3 ч. 4 ст. 392, п. 5 ст. 395, ч. 1 ст. 394 ГПК РФ).',
+    norm: {
+      primary: 'п. 3 ч. 4 ст. 392, п. 5 ст. 395, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+  {
+    id: 'unauthorized_construction',
+    label:
+      'Снос самовольной постройки либо приведение её в соответствие с установленными требованиями',
+    date_label: 'Дата появления обстоятельства',
+    logic:
+      'Три месяца со дня появления обстоятельства (п. 6 ч. 4 ст. 392 ГПК РФ). ' +
+      'Статья 395 это основание не перечисляет — применяется общее правило ' +
+      'ч. 1 ст. 394 («со дня появления обстоятельств»), специальной точки отсчёта ' +
+      'у него нет.',
+    norm: {
+      primary: 'п. 6 ч. 4, ч. 1 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ'],
+    },
+  },
+];
+
+const REVIEW_GROUND_BY_ID = new Map(REVIEW_GROUNDS.map((g) => [g.id, g]));
+
+export function reviewGroundById(id) {
+  return REVIEW_GROUND_BY_ID.get(id) ?? null;
+}
+
+// Метаданные узла для .ics-реестра (см. TERM_REGISTRY в ics.js): он собирается
+// автоматически из экспортов chain.js по id/duration/ics, а полная норма у
+// этого узла зависит от выбранного основания и строится на лету в
+// reviewTermFor — этой константы для расчёта не хватает, только для реестра.
+export const REVIEW_NEW_CIRCUMSTANCES_FILING = {
+  id: 'review_new_circumstances_filing',
+  title: 'Заявление о пересмотре по вновь открывшимся/новым обстоятельствам',
+  duration: REVIEW_NEW_CIRCUMSTANCES_DURATION,
+  ics: true,
+};
+
+// Общая норма срока одна на все основания (ч. 1 ст. 394 ГПК РФ) — длительность,
+// offset_start и weekend_shift от основания не зависят; зависят только точка
+// отсчёта, текст нормы и логики (REVIEW_GROUNDS выше).
+function reviewTermFor(ground) {
+  return {
+    id: REVIEW_NEW_CIRCUMSTANCES_FILING.id,
+    title: REVIEW_NEW_CIRCUMSTANCES_FILING.title,
+    duration: REVIEW_NEW_CIRCUMSTANCES_DURATION,
+    anchor: { event: 'review_circumstance_date', offset_start: 1 },
+    condition: 'review_ground && review_circumstance_date',
+    weekend_shift: true,
+    ics: true,
+    logic: ground.logic,
+    midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+    norm_versions: [
+      {
+        id: 'current',
+        from: null,
+        to: null,
+        anchor: { event: 'review_circumstance_date', offset_start: 1 },
+        norm: ground.norm,
+      },
+    ],
+  };
+}
+
+// Узел появляется только когда выбрано основание (review_ground — один из
+// REVIEW_GROUNDS выше; п. 5 ч. 4 ст. 392 сюда не входит) и введена дата.
+// Без основания или без даты узла нет вовсе — как у SUPERVISION и
+// CASSATION_RETURN_RULING_APPEAL, приглашение ввести данные рисует UI
+// (situations.js), incomplete-механизм buildView здесь не задействован.
+function computeReviewNewCircumstances(inputs) {
+  const ground = reviewGroundById(inputs?.review_ground);
+  if (!ground) return null;
+  return computeSimpleTerm(reviewTermFor(ground), inputs?.review_circumstance_date, {
+    review_ground: ground.id,
+  });
+}
 
 // Замечания на протокол (ч. 1 ст. 231) + рассмотрение судьёй (ч. 2 ст. 232).
 // Рассмотрение считается от фактической даты подачи замечаний, если она введена;
