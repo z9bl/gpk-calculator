@@ -355,6 +355,13 @@ const ALL_BRANCHES_INPUTS = {
   // отмена постановления третейского суда о компетенции (ч. 2 ст. 422.1):
   // независимый узел, якорь — дата получения постановления стороной
   arbitration_competence_ruling_received_date: '2025-07-08',
+  // обжалование определения об утверждении мирового соглашения в исполнении
+  // (ч. 11 ст. 153.10): независимый узел, якорь — дата вынесения определения
+  settlement_approval_ruling_date: '2025-07-08',
+  // заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
+  // своя ветка, свои поля — заявление об отмене 2 месяца, апелляция 1/2 месяца
+  foreign_state_default_judgment_service_date: '2025-07-05',
+  foreign_state_default_judgment_refusal_date: '2025-08-10',
   // пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // независимый трек, считается по своим двум input (основание + дата)
   review_ground: 'newly_discovered_fact',
@@ -529,6 +536,74 @@ test('третейский суд: тот же срок и через icsTermsFr
   assert.equal(t.deadline, '2027-10-01');
   assert.equal(t.ics, true);
   assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('мировое соглашение в исполнении уходит в .ics (1 месяц → напоминания за 3 и 7 дней)', () => {
+  const view = buildView(
+    { settlement_approval_ruling_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('мирового соглашения'));
+  assert.ok(t, 'срок обжалования определения об утверждении мирового соглашения в списке экспорта');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.equal(t.deadline, '2027-10-01');
+  assert.match(t.norm, /ч\. 11 ст\. 153\.10/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 7 дней
+});
+
+test('мировое соглашение в исполнении: тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    { reasoned_decision_date: '2025-03-11', settlement_approval_ruling_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('мирового соглашения'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-10-01');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('заочное (иностранное государство): заявление об отмене и апелляция уходят в .ics', () => {
+  const view = buildView(
+    {
+      foreign_state_default_judgment_service_date: '2025-12-22',
+      foreign_state_default_judgment_cancellation_request_date: '2025-12-30',
+      foreign_state_default_judgment_refusal_date: '2026-02-10',
+    },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromView(view);
+
+  const request = terms.find((t) => t.title.includes('Заявление иностранного государства'));
+  assert.ok(request, 'заявление иностранного государства об отмене в списке экспорта');
+  assert.deepEqual(request.duration, { value: 2, unit: 'month' });
+  assert.match(request.norm, /ч\. 3 ст\. 417\.10/);
+
+  const appeal = terms.find((t) => t.title.includes('против иностранного государства'));
+  assert.ok(appeal, 'апелляция по заочному решению против иностранного государства в списке экспорта');
+  // Регрессия: длительность зависит от режима (2 месяца после отклонённого
+  // заявления об отмене) — берётся фактическая, а не статическая константа.
+  assert.deepEqual(appeal.duration, { value: 2, unit: 'month' });
+  assert.equal(appeal.deadline, '2026-04-10');
+
+  const ics = buildICS(terms, { referenceDate: '2026-01-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${request.deadline.replace(/-/g, '')}`));
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${appeal.deadline.replace(/-/g, '')}`));
+});
+
+test('заочное (иностранное государство): тот же экспорт и через icsTermsFromChain, режим no_request — 1 месяц', () => {
+  const chain = computeChain(
+    { reasoned_decision_date: '2025-03-11', foreign_state_default_judgment_service_date: '2025-12-22' },
+    { today: '2026-03-01' },
+  );
+  const terms = icsTermsFromChain(chain);
+  const appeal = terms.find((t) => t.title.includes('против иностранного государства'));
+  assert.ok(appeal, 'апелляция не должна выпадать из экспорта по цепочке');
+  assert.deepEqual(appeal.duration, { value: 1, unit: 'month' });
 });
 
 test('пересмотр по вновь открывшимся/новым обстоятельствам уходит в .ics (3 месяца → 2 напоминания)', () => {

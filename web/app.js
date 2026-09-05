@@ -75,6 +75,22 @@ const INPUT_LABELS = {
   adoption_reasoned_decision_date: 'Дата решения суда в окончательной форме (усыновление)',
   arbitration_competence_ruling_received_date:
     'Дата получения постановления третейского суда о компетенции',
+  settlement_approval_ruling_date:
+    'Дата определения об утверждении мирового соглашения (в исполнении)',
+  foreign_state_default_judgment_service_date:
+    'Дата вручения иностранному государству копии заочного решения',
+  foreign_state_default_judgment_cancellation_request_date:
+    'Дата подачи заявления об отмене заочного решения (иностранное государство)',
+  foreign_state_default_judgment_refusal_date:
+    'Дата определения об отказе в отмене заочного решения (иностранное государство)',
+  foreign_state_default_judgment_cancellation_date:
+    'Дата определения об отмене заочного решения (заявление удовлетворено, иностранное государство)',
+  foreign_state_default_judgment_appeal_filed_date:
+    'Дата подачи апелляционной жалобы (заочное решение против иностранного государства)',
+  foreign_state_default_judgment_appeal_ruling_date:
+    'Дата определения апелляционной инстанции (заочное решение против иностранного государства)',
+  foreign_state_default_judgment_appeal_ruling_reasoned_date:
+    'Дата изготовления мотивированного апелляционного определения (заочное решение против иностранного государства)',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
   review_ground: 'Основание пересмотра',
   // Заглушка на случай прямого рендера без выбранного основания — на экране
@@ -166,6 +182,24 @@ const INPUT_HINTS = {
     'Один месяц со дня получения (не вынесения!) постановления третейского ' +
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
+  settlement_approval_ruling_date:
+    'Один месяц на кассационное обжалование (ч. 11 ст. 153.10) — минуя ' +
+    'апелляцию, определение об утверждении мирового соглашения ею не ' +
+    'обжалуется. Срок суда на рассмотрение вопроса об утверждении (месяц со ' +
+    'дня поступления заявления, ч. 4 ст. 153.10) в модель не входит — это ' +
+    'не срок участника',
+  foreign_state_default_judgment_service_date:
+    'Дело в отсутствие представителя иностранного государства рассматривается ' +
+    'по правилам главы 22 ГПК РФ (заочное производство), но с другими сроками ' +
+    '(ч. 1–4 ст. 417.10)',
+  foreign_state_default_judgment_cancellation_request_date:
+    'Два месяца со дня вручения копии решения (ч. 3 ст. 417.10) — не семь ' +
+    'рабочих дней общего порядка (ст. 237)',
+  foreign_state_default_judgment_refusal_date:
+    'От неё считается двухмесячный (не месячный!) срок апелляции, если ' +
+    'заявление об отмене подавалось (ч. 4 ст. 417.10)',
+  foreign_state_default_judgment_appeal_filed_date:
+    'Дата вступления решения в силу, если оно не отменено',
   enforcement_interruptions:
     'Каждое событие перезапускает трёхлетний срок: он идёт заново от последнего по дате ' +
     '(ч. 1–3 ст. 22 ФЗ № 229-ФЗ), время до перерыва не засчитывается',
@@ -1356,6 +1390,35 @@ const FOLLOW_UP_FIELDS = {
       },
     ],
   },
+  // Заочное решение против иностранного государства (ч. 1–4 ст. 417.10): те же
+  // два узла, что у обычного заочного решения выше, но БЕЗ выбора субъекта —
+  // этого поля здесь нет вообще, ч. 4 ст. 417.10 не делит право обжалования
+  // («сторонами», единое право).
+  foreign_state_default_judgment_cancellation_request: {
+    prompt: 'Заявление об отмене подано? Укажите дату.',
+    fields: [
+      { id: 'foreign_state_default_judgment_cancellation_request_date' },
+      { id: 'foreign_state_default_judgment_refusal_date' },
+      {
+        id: 'foreign_state_default_judgment_cancellation_date',
+        when: () => Boolean(state.inputs.foreign_state_default_judgment_cancellation_request_date),
+      },
+    ],
+  },
+  foreign_state_default_judgment_entry_into_force: {
+    prompt: 'Заочное решение обжаловано в апелляции? Укажите дату подачи жалобы (ч. 1 ст. 244).',
+    fields: [
+      { id: 'foreign_state_default_judgment_appeal_filed_date' },
+      {
+        id: 'foreign_state_default_judgment_appeal_ruling_date',
+        when: () => Boolean(state.inputs.foreign_state_default_judgment_appeal_filed_date),
+      },
+      {
+        id: 'foreign_state_default_judgment_appeal_ruling_reasoned_date',
+        when: () => Boolean(state.inputs.foreign_state_default_judgment_appeal_filed_date),
+      },
+    ],
+  },
   mirovoy_reasoned_request: {
     prompt: 'Заявление уже подано? Укажите дату — появится срок составления решения.',
     fields: [{ id: 'mirovoy_request_date' }],
@@ -1623,7 +1686,10 @@ function renderSituationFields(situation, primaryFilled) {
           '(абз. 2 ч. 3 ст. 107 ГПК), обжалование определения о возврате кассационной ' +
           'жалобы — месяц со дня его вынесения (ч. 1 ст. 379.2 ГПК), отмена постановления ' +
           'третейского суда о компетенции — месяц со дня его ПОЛУЧЕНИЯ стороной, а не ' +
-          'вынесения (ч. 2 ст. 422.1 ГПК). Заполните нужную дату.',
+          'вынесения (ч. 2 ст. 422.1 ГПК), обжалование определения об утверждении ' +
+          'мирового соглашения, заключаемого в процессе исполнения судебного акта, — ' +
+          'месяц со дня его вынесения, сразу в кассацию, минуя апелляцию ' +
+          '(ч. 11 ст. 153.10 ГПК). Заполните нужную дату.',
       ),
     );
   }

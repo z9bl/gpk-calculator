@@ -8,11 +8,13 @@ import {
   computeIndependentTerms,
   computeSimplified,
   computeDefaultJudgment,
+  computeDefaultJudgmentForeignState,
   computeMirovoy,
   applyInterruptions,
   interruptionEvents,
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
+  SETTLEMENT_APPROVAL_CASSATION_APPEAL,
   REVIEW_GROUNDS,
 } from '../src/chain.js';
 
@@ -999,6 +1001,202 @@ test('заочное: кассации нет при удовлетворённ�
   assert.equal(d.cassation, null);
 });
 
+// --- Заочное решение против иностранного государства (ч. 1–4 ст. 417.10) ---
+// Полный клон ветки default_judgment: та же механика главы 22, другие числа
+// (2/1/2 месяца вместо 7 рабочих дней/1 месяца), без деления по субъекту.
+
+const FDJ = { foreign_state_default_judgment_service_date: '2025-12-22' };
+
+test('заочное (иностранное государство): узла нет без даты вручения копии', () => {
+  assert.equal(computeDefaultJudgmentForeignState({}), null);
+  assert.equal(computeChain(BASE, { today: '2026-03-01' }).default_judgment_foreign_state, null);
+});
+
+test('заочное (иностранное государство): 2 месяца на заявление об отмене (ч. 3 ст. 417.10)', () => {
+  const d = computeDefaultJudgmentForeignState(FDJ);
+  assert.equal(d.cancellation_request.anchor, '2025-12-22');
+  assert.deepEqual(d.cancellation_request.duration, { value: 2, unit: 'month' });
+  assert.equal(d.cancellation_request.deadline, '2026-02-24'); // вс 22.02 → пн 23.02... фактически 24.02
+  assert.match(d.cancellation_request.norm.primary, /ч\. 3 ст\. 417\.10/);
+  assert.doesNotMatch(d.cancellation_request.norm.primary, /ст\. 237/);
+});
+
+test('заочное (иностранное государство), режим no_request: месяц по истечении срока подачи', () => {
+  const d = computeDefaultJudgmentForeignState(FDJ);
+  assert.equal(d.appeal.anchor_kind, 'request_deadline');
+  assert.equal(d.appeal.anchor, d.cancellation_request.deadline);
+  assert.deepEqual(d.appeal.duration, { value: 1, unit: 'month' });
+  assert.equal(d.appeal.deadline, '2026-03-24');
+  assert.match(d.appeal.norm.primary, /ч\. 4 ст\. 417\.10/);
+});
+
+// Регрессия: у обычного заочного решения оба субъекта делят один и тот же
+// месячный срок (DEFAULT_JUDGMENT_APPEAL_MODES), поэтому computeSimpleTerm с
+// overrides там корректен. Здесь длительность различается по существу — не
+// только норма/якорь, а сам расчёт (computeForeignStateAppealTerm), и это
+// самое важное здесь: ровно 2 месяца, а не 1.
+test('заочное (иностранное государство), режим after_request: РОВНО 2 месяца, а не 1', () => {
+  const d = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_cancellation_request_date: '2025-12-30',
+    foreign_state_default_judgment_refusal_date: '2026-02-10',
+  });
+  assert.equal(d.appeal.anchor_kind, 'refusal');
+  assert.equal(d.appeal.anchor, '2026-02-10');
+  assert.deepEqual(d.appeal.duration, { value: 2, unit: 'month' });
+  assert.equal(d.appeal.deadline, '2026-04-10'); // 10.02 + 2 месяца, не 10.03 (+1 месяц)
+  assert.match(d.appeal.norm.primary, /ч\. 4 ст\. 417\.10/);
+  assert.match(d.appeal.logic, /два месяца/i);
+  assert.match(d.appeal.logic, /не один месяц общего порядка/);
+
+  // Убеждаемся, что это не совпадение и не эффект переноса выходного: без
+  // заявления срок был бы другим (от dj.cancellation_request.deadline, месяц).
+  const noRequest = computeDefaultJudgmentForeignState(FDJ);
+  assert.notEqual(d.appeal.deadline, noRequest.appeal.deadline);
+});
+
+test('заочное (иностранное государство): appeal_not_applicable при удовлетворённом заявлении', () => {
+  const d = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_cancellation_request_date: '2026-01-09',
+    foreign_state_default_judgment_cancellation_date: '2026-01-20',
+  });
+  assert.equal(d.appeal, null);
+  assert.match(d.appeal_not_applicable.norm, /ч\. 4 ст\. 417\.10/);
+  assert.match(d.appeal_not_applicable.reason, /ч\. 1 ст\. 241/);
+});
+
+test('заочное (иностранное государство), ст. 244: все четыре ветви цитируют ч. 4 ст. 417.10, не ст. 237', () => {
+  // Ветвь 1: не обжаловано.
+  const notAppealed = computeDefaultJudgmentForeignState(FDJ);
+  const e1 = notAppealed.entry_into_force;
+  assert.equal(e1.branch, 'not_appealed');
+  assert.equal(e1.resolved, true);
+  assert.match(e1.logic, /ч\. 4 ст\. 417\.10/);
+  assert.doesNotMatch(e1.logic, /ст\. 237/);
+
+  // Ветвь 2: заявление подано, отказано, апелляции не было.
+  const refused = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_cancellation_request_date: '2025-12-30',
+    foreign_state_default_judgment_refusal_date: '2026-02-10',
+  });
+  const e2 = refused.entry_into_force;
+  assert.equal(e2.branch, 'refused_not_appealed');
+  assert.equal(e2.resolved, true);
+  assert.equal(e2.date, '2026-04-11'); // дедлайн апелляции 10.04 + 1
+  assert.match(e2.logic, /ч\. 4 ст\. 417\.10/);
+  assert.doesNotMatch(e2.logic, /ст\. 237/);
+
+  // Ветвь 3: обжаловано — с датой определения и без.
+  const appealedNoRuling = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_refusal_date: '2026-02-10',
+    foreign_state_default_judgment_appeal_filed_date: '2026-03-02',
+  });
+  const e3 = appealedNoRuling.entry_into_force;
+  assert.equal(e3.branch, 'appealed');
+  assert.equal(e3.resolved, false);
+  assert.deepEqual(e3.missing_inputs, ['foreign_state_default_judgment_appeal_ruling_date']);
+
+  const appealedWithRuling = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_refusal_date: '2026-02-10',
+    foreign_state_default_judgment_appeal_filed_date: '2026-03-02',
+    foreign_state_default_judgment_appeal_ruling_date: '2026-06-15',
+  });
+  const e3r = appealedWithRuling.entry_into_force;
+  assert.equal(e3r.resolved, true);
+  assert.equal(e3r.date, '2026-06-15');
+
+  // Ветвь 4 (cancellation_granted): удовлетворено — вступления в силу нет.
+  const cancelled = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_cancellation_request_date: '2026-01-09',
+    foreign_state_default_judgment_cancellation_date: '2026-01-20',
+  });
+  const e4 = cancelled.entry_into_force;
+  assert.equal(e4.branch, 'cancellation_granted');
+  assert.equal(e4.resolved, false);
+  assert.equal(e4.date, null);
+  assert.match(e4.logic, /ч\. 1 ст\. 241/);
+});
+
+// Регрессия: в отличие от default_judgment (где у ответчика предупреждение
+// зависит ещё и от рассмотренного заявления об отмене, 3.7), здесь право
+// «сторонами» единое (ч. 4 ст. 417.10) — исчерпание считается ОБЩИМ правилом
+// (generalExhaustion): предупреждение есть при !appealed независимо от того,
+// подавалось ли заявление об отмене, и снимается при appealed независимо от
+// того, было ли оно подано и рассмотрено.
+test('заочное (иностранное государство): исчерпание — общее правило, не как у default_judgment', () => {
+  // Не обжаловано, заявление об отмене вовсе не подавалось — предупреждение есть.
+  const notAppealedNoRequest = computeDefaultJudgmentForeignState(FDJ, '2026-05-01');
+  assert.ok(notAppealedNoRequest.cassation.exhaustion_warning);
+  // И общий текст про апелляцию, а не про заявление об отмене (ст. 237) —
+  // как это было бы у ответчика default_judgment.
+  assert.doesNotMatch(notAppealedNoRequest.cassation.exhaustion_warning.text, /заявление об отмене/);
+
+  // Обжаловано — предупреждения нет, ДАЖЕ БЕЗ поданного заявления об отмене.
+  // У default_judgment для subject: 'defendant' в этой ситуации предупреждение
+  // осталось бы (нужно ещё рассмотренное заявление, см. defaultJudgmentExhaustion).
+  const appealedNoRequest = computeDefaultJudgmentForeignState(
+    {
+      ...FDJ,
+      foreign_state_default_judgment_appeal_filed_date: '2026-01-20',
+      foreign_state_default_judgment_appeal_ruling_date: '2026-05-10',
+      foreign_state_default_judgment_appeal_ruling_reasoned_date: '2026-05-15',
+    },
+    '2026-06-01',
+  );
+  assert.equal(appealedNoRequest.entry_into_force.branch, 'appealed');
+  assert.equal(appealedNoRequest.cassation.exhaustion_warning, undefined);
+});
+
+test('заочное (иностранное государство): кассация — базовый расчёт после вступления в силу', () => {
+  const d = computeDefaultJudgmentForeignState(
+    { ...FDJ, foreign_state_default_judgment_refusal_date: '2026-02-10' },
+    '2026-05-01',
+  );
+  assert.ok(d.cassation);
+  assert.equal(d.cassation.id, 'foreign_state_default_judgment_cassation_ksoyu');
+  assert.equal(d.cassation.anchor, d.entry_into_force.date);
+  assert.match(d.cassation.norm.primary, /ст\. 376\.1/);
+});
+
+test('заочное (иностранное государство): кассации нет при удовлетворённом заявлении об отмене', () => {
+  const d = computeDefaultJudgmentForeignState(
+    {
+      ...FDJ,
+      foreign_state_default_judgment_cancellation_request_date: '2026-01-09',
+      foreign_state_default_judgment_cancellation_date: '2026-01-20',
+    },
+    '2026-04-01',
+  );
+  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(d.cassation, null);
+});
+
+test('заочное (иностранное государство): предъявление ИЛ — 3 года со дня вступления в силу', () => {
+  const d = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_refusal_date: '2026-02-10',
+  });
+  assert.ok(d.enforcement);
+  assert.equal(d.enforcement.id, 'foreign_state_default_judgment_enforcement_presentation');
+  assert.equal(d.enforcement.anchor, d.entry_into_force.date);
+  assert.match(d.enforcement.norm.primary, /229-ФЗ/);
+});
+
+test('заочное (иностранное государство): ИЛ отсутствует при удовлетворённом заявлении об отмене', () => {
+  const d = computeDefaultJudgmentForeignState({
+    ...FDJ,
+    foreign_state_default_judgment_cancellation_request_date: '2026-01-09',
+    foreign_state_default_judgment_cancellation_date: '2026-01-20',
+  });
+  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(d.enforcement, null);
+});
+
 // --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199) -------------
 
 const MIR = { mirovoy_resolution_date: '2025-12-22' };
@@ -1265,6 +1463,60 @@ test('третейский суд: точка отсчёта — получен�
   }).arbitration_competence_appeal;
   assert.match(t.logic, /получения/);
   assert.match(t.logic, /не от дня[\s\S]*вынесения/);
+});
+
+// --- Мировое соглашение в исполнении: кассация (ч. 11 ст. 153.10) ----------
+
+test('мировое соглашение в исполнении: 1 месяц со дня вынесения определения (ч. 11 ст. 153.10)', () => {
+  const t = computeIndependentTerms({
+    settlement_approval_ruling_date: '2025-09-01',
+  }).settlement_approval_cassation_appeal;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-10-01');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 11 ст\. 153\.10/);
+});
+
+test('мировое соглашение в исполнении: перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 14.02.2026 + 1 месяц = 14.03.2026 (суббота) → 16.03.2026 (понедельник).
+  const t = computeIndependentTerms({
+    settlement_approval_ruling_date: '2026-02-14',
+  }).settlement_approval_cassation_appeal;
+  assert.equal(t.raw_deadline, '2026-03-14');
+  assert.equal(t.deadline, '2026-03-16');
+  assert.equal(t.shifted, true);
+});
+
+test('мировое соглашение в исполнении: узла нет без даты определения', () => {
+  assert.equal(computeIndependentTerms({}).settlement_approval_cassation_appeal, null);
+  assert.equal(
+    computeChain(BASE, { today: '2025-09-10' }).settlement_approval_cassation_appeal,
+    null,
+  );
+});
+
+test('мировое соглашение в исполнении: узел независим от категории дела и ветви цепочки', () => {
+  const alone = computeIndependentTerms({
+    settlement_approval_ruling_date: '2025-09-01',
+  }).settlement_approval_cassation_appeal;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const chain = computeChain(
+    { ...BASE, settlement_approval_ruling_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.settlement_approval_cassation_appeal.deadline, alone.deadline);
+});
+
+test('мировое соглашение в исполнении: обжалуется сразу в кассацию, минуя апелляцию', () => {
+  const t = computeIndependentTerms({
+    settlement_approval_ruling_date: '2025-09-01',
+  }).settlement_approval_cassation_appeal;
+  assert.match(t.logic, /минуя апелляцию/);
+  // Часть 4 ст. 153.10 (месячный срок суда на рассмотрение вопроса об
+  // утверждении) сознательно не реализована — это срок суда, а не участника.
+  assert.equal(SETTLEMENT_APPROVAL_CASSATION_APPEAL.norm_versions.length, 1);
 });
 
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------

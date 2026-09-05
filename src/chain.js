@@ -845,7 +845,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -869,6 +869,14 @@ export function computeIndependentTerms(inputs) {
     arbitration_competence_appeal: computeSimpleTerm(
       ARBITRATION_COMPETENCE_APPEAL,
       inputs?.arbitration_competence_ruling_received_date,
+    ),
+    // Обжалование определения об утверждении мирового соглашения, заключаемого
+    // в процессе исполнения судебного акта (ч. 11 ст. 153.10): акт, для
+    // которого апелляционное обжалование не предусмотрено, — обжалуется сразу
+    // в кассацию, независимый узел по тому же образцу, что и два выше.
+    settlement_approval_cassation_appeal: computeSimpleTerm(
+      SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+      inputs?.settlement_approval_ruling_date,
     ),
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
@@ -1063,6 +1071,57 @@ export const ARBITRATION_COMPETENCE_APPEAL = {
       norm: {
         primary: 'ч. 2 ст. 422.1 ГПК РФ',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Обжалование определения об утверждении мирового соглашения, заключаемого в
+// процессе исполнения судебного акта (ч. 11 ст. 153.10 ГПК РФ) — независимый
+// узел, по образцу CASSATION_RETURN_RULING_APPEAL/ARBITRATION_COMPETENCE_APPEAL
+// выше: процессуальное событие, возможное на стадии исполнения по делу любой
+// категории, а не привязанное к конкретной ветви цепочки.
+//
+// Определение об утверждении мирового соглашения — акт, для которого
+// апелляционное обжалование не предусмотрено (п. 3 ПП ВС РФ от 22.06.2021 № 17,
+// сверено дословно, см. раздел 9 SPEC.md; там же оно прямо названо в перечне
+// таких актов, наравне с судебным приказом) — поэтому обжалуется сразу в суд
+// кассационной инстанции, минуя апелляцию, месяц со дня вынесения определения.
+//
+// Сознательно НЕ реализован месячный срок суда на рассмотрение вопроса об
+// утверждении мирового соглашения (ч. 4 ст. 153.10 ГПК РФ, «рассматривается
+// судом в срок, не превышающий одного месяца со дня поступления в суд
+// заявления о его утверждении») — это срок суда, а не участника, по тому же
+// основанию, по которому в модели не заведены отдельными узлами пятидневный
+// срок высылки копии судебного приказа (ст. 128) и десятидневный срок
+// рассмотрения жалобы по ч. 2 ст. 379.2 (см. 3.6 SPEC.md): участнику самому
+// ничего подавать не надо, узел с .ics-напоминанием вводил бы в заблуждение.
+export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
+  id: 'settlement_approval_cassation_appeal',
+  title: 'Обжалование определения об утверждении мирового соглашения (в исполнении)',
+  duration: { value: 1, unit: 'month' },
+  anchor: { event: 'settlement_approval_ruling_date', offset_start: 1 },
+  condition: 'settlement_approval_ruling_date',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Один месяц со дня вынесения определения об утверждении мирового ' +
+    'соглашения, заключаемого в процессе исполнения судебного акта (ч. 11 ' +
+    'ст. 153.10 ГПК РФ). Обжалуется сразу в суд кассационной инстанции, минуя ' +
+    'апелляцию: определение об утверждении мирового соглашения — акт, для ' +
+    'которого апелляционное обжалование не предусмотрено (п. 3 ПП ВС РФ от ' +
+    '22.06.2021 № 17). Определение подлежит немедленному исполнению (ч. 11 ' +
+    'ст. 153.10) — на срок обжалования это не влияет.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'settlement_approval_ruling_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 11 ст. 153.10 ГПК РФ',
+        calculation: ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
     },
   ],
@@ -1909,6 +1968,324 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
   };
 }
 
+// --- Заочное решение против иностранного государства (ч. 1–4 ст. 417.10) ---
+//
+// Ч. 1 ст. 417.10 отсылает к главе 22 ГПК (заочное производство) целиком:
+// «Суд по правилам, установленным главой 22 настоящего Кодекса, вправе
+// рассмотреть гражданское дело в отсутствие представителя иностранного
+// государства...». Это не аналогия, а текстовая инкорпорация уже реализованной
+// ветки default_judgment — вступление в силу (ст. 244), отмена (ст. 241),
+// кассация (ст. 376.1) и предъявление ИЛ (ст. 21 ФЗ № 229-ФЗ, дополнительно
+// подтверждено ст. 417.12) применяются той же механикой, меняются лишь числа
+// (ч. 2.1–4 ст. 417.10) и отсутствует деление по субъекту — ч. 4 говорит
+// просто «сторонами», без различения ответчика и иных лиц.
+//
+// Апелляция считается вручную через computeDeadline (computeForeignStateAppealTerm),
+// а не через computeSimpleTerm(term, anchor, overrides), как у
+// DEFAULT_JUDGMENT_APPEAL_MODES: там оба субъекта делят один и тот же
+// месячный срок, и overrides подменяют только норму/логику при неизменном
+// расчёте. Здесь же длительность различается по существу — месяц без
+// поданного заявления об отмене (ч. 4 ст. 417.10), но ДВА месяца при поданном
+// и отклонённом заявлении, а не один месяц общего порядка (ч. 2 ст. 237). Раз
+// сам расчёт (calc = computeDeadline(term, anchor)) выполняется в
+// computeSimpleTerm ДО применения overrides, тот же приём здесь дал бы неверную
+// длительность — нужны два независимых расчёта, по образцу
+// computeVsPracticeChangeTerm выше.
+//
+// resolveDefaultJudgmentEntry (вступление в силу default_judgment) хардкодит
+// цитаты «ч. 2 ст. 237» / «абз. 1 ч. 2 ст. 237» в текстах logic/note/message —
+// переиспользование дало бы карточкам неверную норму при верной дате. Поэтому
+// ниже отдельная копия resolveForeignStateDefaultJudgmentEntry с той же
+// структурой ветвей, но с адресными цитатами ч. 4 ст. 417.10 и с именами полей
+// foreign_state_default_judgment_* в missing_inputs — не параметризация общей
+// функции (риск регресса в уже протестированной ветке default_judgment).
+//
+// computeEnforcement и computeCassationTerm уже субъект-агностичны — переиспользованы
+// без изменений, с новым branch-ключом и константами-копиями узлов.
+
+export const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
+  id: 'foreign_state_default_judgment_cancellation_request',
+  title: 'Заявление иностранного государства об отмене заочного решения',
+  duration: { value: 2, unit: 'month' },
+  anchor: { event: 'foreign_state_default_judgment_service_date', offset_start: 1 },
+  condition: 'foreign_state_default_judgment_service_date',
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Два месяца со дня вручения иностранному государству в порядке ст. 417.6 ' +
+    'ГПК РФ копии заочного решения (ч. 3 ст. 417.10 ГПК РФ) — не семь рабочих ' +
+    'дней общего порядка (ч. 1 ст. 237). Дело в отсутствие представителя ' +
+    'иностранного государства рассматривается по правилам главы 22 ГПК РФ ' +
+    '(ч. 1 ст. 417.10).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'foreign_state_default_judgment_service_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 3 ст. 417.10 ГПК РФ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Реестровая запись срока апелляции для TERM_REGISTRY (ics.js, автосборка по
+// экспортам chain.js) — по образцу REVIEW_NEW_CIRCUMSTANCES_FILING: duration
+// здесь заглушка (нужны только id/ics для реестра), фактическая длительность
+// всегда берётся с самого посчитанного узла (computeForeignStateAppealTerm),
+// потому что режимы дают 1 либо 2 месяца — см. преамбулу выше. Без этой
+// константы узел не имел бы записи в реестре и молча выпадал бы из .ics при
+// экспорте через кнопку «Скачать» (icsTermsFromView), которая строится по
+// TERM_REGISTRY, а не по ручному списку icsTermsFromChain.
+export const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL = {
+  id: 'foreign_state_default_judgment_appeal',
+  title: 'Апелляционная жалоба (заочное решение против иностранного государства)',
+  duration: { value: 1, unit: 'month' },
+  ics: true,
+};
+
+const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE =
+  'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня';
+const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_NORM = {
+  primary: 'ч. 4 ст. 417.10 ГПК РФ',
+  calculation: ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'],
+};
+
+// Разная длительность по режимам (см. преамбулу выше) — поэтому не через
+// computeSimpleTerm(term, anchor, overrides), а через computeForeignStateAppealTerm.
+const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MODES = {
+  no_request: {
+    anchor_kind: 'request_deadline',
+    duration: { value: 1, unit: 'month' },
+    logic:
+      'Заявление об отмене заочного решения не подавалось — месяц по ' +
+      'истечении двухмесячного срока на его подачу (ч. 4 ст. 417.10 ГПК РФ).',
+  },
+  after_request: {
+    anchor_kind: 'refusal',
+    duration: { value: 2, unit: 'month' },
+    logic:
+      'Заявление об отмене заочного решения подано и в его удовлетворении ' +
+      'отказано — два месяца со дня вынесения определения об отказе ' +
+      '(ч. 4 ст. 417.10 ГПК РФ) — не один месяц общего порядка (ч. 2 ст. 237).',
+  },
+};
+
+// Расчёт апелляционного срока вручную (см. преамбулу): длительность зависит от
+// режима по существу, а не только норма/логика, поэтому не через
+// computeSimpleTerm с overrides.
+function computeForeignStateAppealTerm(mode, anchorDate) {
+  const anchor = toISO(anchorDate);
+  if (anchor == null) return null;
+  const calc = computeDeadline(
+    { duration: mode.duration, anchor: { offset_start: 1 }, weekend_shift: true },
+    anchor,
+  );
+  return {
+    id: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL.id,
+    title: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL.title,
+    anchor: calc.anchor,
+    offset_start: calc.offset_start,
+    raw_deadline: calc.raw_deadline,
+    deadline: calc.deadline,
+    shifted: calc.shifted,
+    duration: mode.duration,
+    norm: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_NORM,
+    logic: mode.logic,
+    anchor_kind: mode.anchor_kind,
+    midnight_rule: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE,
+  };
+}
+
+// Копии узлов кассации/исполнения — норма (ст. 376.1 / ч. 1 ст. 21 ФЗ № 229-ФЗ)
+// не меняется, меняется только точка отсчёта (эта ветка) и id/название.
+export const FOREIGN_STATE_DEFAULT_JUDGMENT_CASSATION_KSOYU = {
+  ...CASSATION_KSOYU,
+  id: 'foreign_state_default_judgment_cassation_ksoyu',
+};
+export const FOREIGN_STATE_DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION = {
+  ...ENFORCEMENT_PRESENTATION,
+  id: 'foreign_state_default_judgment_enforcement_presentation',
+  title:
+    'Предъявление исполнительного листа к исполнению ' +
+    '(заочное решение против иностранного государства)',
+};
+
+export const FOREIGN_STATE_DEFAULT_JUDGMENT_ENTRY_NORM = 'ч. 1 ст. 244 ГПК РФ';
+
+const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLED_REASON =
+  'Ч. 4 ст. 417.10 отсчитывает срок апелляции при поданном заявлении от ' +
+  'определения об ОТКАЗЕ в его удовлетворении. При удовлетворении заявления ' +
+  'такого определения нет: заочное решение отменено, рассмотрение дела ' +
+  'возобновляется по существу (ч. 1 ст. 241 ГПК РФ, инкорпорирована ч. 1 ' +
+  'ст. 417.10) — срока апелляционного обжалования не возникает.';
+
+// Копия resolveDefaultJudgmentEntry с адресными цитатами ч. 4 ст. 417.10
+// вместо ч. 2 ст. 237 — см. преамбулу выше, почему не параметризуем общую функцию.
+function resolveForeignStateDefaultJudgmentEntry(facts) {
+  const { cancelled, appealFiled, appealRuling, requestFiled, refusal, appealDeadline } = facts;
+
+  if (cancelled != null) {
+    return {
+      branch: 'cancellation_granted',
+      resolved: false,
+      applicable: false,
+      date: null,
+      message: 'Не наступает — заочное решение отменено',
+      logic:
+        'Заявление об отмене заочного решения удовлетворено, решение отменено и ' +
+        'рассмотрение дела по существу возобновляется (ч. 1 ст. 241 ГПК РФ). ' +
+        'Правило ч. 1 ст. 244 о вступлении заочного решения в законную силу к ' +
+        'отменённому решению не применяется — даты вступления в силу не возникает.',
+    };
+  }
+
+  if (appealFiled != null) {
+    const base = {
+      branch: 'appealed',
+      applicable: true,
+      logic:
+        'Заочное решение обжаловано в апелляционном порядке — вступает в законную ' +
+        'силу после рассмотрения жалобы судом апелляционной инстанции, если оно не ' +
+        'отменено.',
+    };
+    if (appealRuling != null) return { ...base, resolved: true, date: appealRuling };
+    return {
+      ...base,
+      resolved: false,
+      date: null,
+      message: 'Вступит в силу после рассмотрения апелляционной жалобы, если не будет отменено',
+      missing_inputs: ['foreign_state_default_judgment_appeal_ruling_date'],
+      note: 'Укажите дату определения апелляционной инстанции — тогда дата будет рассчитана.',
+    };
+  }
+
+  const base =
+    requestFiled != null || refusal != null
+      ? {
+          branch: 'refused_not_appealed',
+          applicable: true,
+          logic:
+            'Заявление об отмене заочного решения подано, в его удовлетворении ' +
+            'отказано, апелляционная жалоба не подавалась — решение вступает в ' +
+            'законную силу по истечении срока апелляционного обжалования, ' +
+            'предусмотренного ч. 4 ст. 417.10 ГПК РФ.',
+        }
+      : {
+          branch: 'not_appealed',
+          applicable: true,
+          logic:
+            'Заочное решение не обжаловано — вступает в законную силу по истечении ' +
+            'срока обжалования, предусмотренного ч. 4 ст. 417.10 ГПК РФ.',
+        };
+
+  if (appealDeadline == null) {
+    return {
+      ...base,
+      resolved: false,
+      date: null,
+      message: 'Вступит в силу по истечении срока апелляционного обжалования',
+      missing_inputs: ['foreign_state_default_judgment_refusal_date'],
+      note:
+        'Срок обжалования по ч. 4 ст. 417.10 считается со дня определения об ' +
+        'отказе в отмене заочного решения — нужна его дата.',
+    };
+  }
+
+  return { ...base, resolved: true, date: toISO(addDays(appealDeadline, 1)) };
+}
+
+/**
+ * Заочное решение против иностранного государства (ч. 1–4 ст. 417.10 ГПК РФ).
+ * Независимая ветка по своим inputs — механика главы 22 (вступление в силу,
+ * отмена, кассация, исполнение) инкорпорирована ч. 1 ст. 417.10 целиком,
+ * меняются только числа и отсутствует деление по субъекту (ч. 4 — «сторонами»).
+ * @param {object} inputs
+ * @param {string|null} referenceDate
+ * @returns {object|null} null, если не введена дата вручения копии решения.
+ */
+export function computeDefaultJudgmentForeignState(inputs, referenceDate = null) {
+  const service = toISO(inputs?.foreign_state_default_judgment_service_date);
+  if (service == null) return null;
+
+  const requestFiled = toISO(inputs.foreign_state_default_judgment_cancellation_request_date);
+  const refusal = toISO(inputs.foreign_state_default_judgment_refusal_date);
+  const cancelled = toISO(inputs.foreign_state_default_judgment_cancellation_date);
+
+  const request = computeSimpleTerm(FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST, service);
+
+  const modeKey = requestFiled != null ? 'after_request' : 'no_request';
+  const mode = FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MODES[modeKey];
+
+  let appeal = null;
+  let appealBlocked = null;
+  let appealNotApplicable = null;
+  if (cancelled != null) {
+    appealNotApplicable = {
+      norm: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_NORM.primary,
+      message: 'Не исчисляется — заочное решение отменено',
+      reason: FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLED_REASON,
+    };
+  } else if (mode.anchor_kind === 'refusal') {
+    if (refusal != null) {
+      appeal = computeForeignStateAppealTerm(mode, refusal);
+    } else {
+      appealBlocked = {
+        reason:
+          'Срок считается со дня вынесения определения об отказе в удовлетворении ' +
+          'заявления об отмене заочного решения — нужна его дата.',
+        missing: ['foreign_state_default_judgment_refusal_date'],
+        norm: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_NORM.primary,
+      };
+    }
+  } else {
+    appeal = computeForeignStateAppealTerm(mode, request.deadline);
+  }
+
+  const entry = resolveForeignStateDefaultJudgmentEntry({
+    cancelled,
+    appealFiled: toISO(inputs.foreign_state_default_judgment_appeal_filed_date),
+    appealRuling: toISO(inputs.foreign_state_default_judgment_appeal_ruling_date),
+    requestFiled,
+    refusal,
+    appealDeadline: appeal ? appeal.deadline : null,
+  });
+
+  const enforcement = computeEnforcement(
+    entry,
+    FOREIGN_STATE_DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION,
+    inputs.enforcement_interruptions,
+  );
+
+  // Условие исчерпания — ОБЩЕЕ (generalExhaustion), а не defaultJudgmentExhaustion:
+  // правило «ответчик обязан сперва подать заявление об отмене» обосновано для
+  // ст. 237 практикой ВС РФ, сверенной по цитирующей публикации (3.7 SPEC.md,
+  // НЕ дословно) — для главы 45.1 эта практика не проверена, и переносить её
+  // сюда нельзя. К тому же ч. 4 ст. 417.10 не выделяет ответчика отдельно —
+  // право «сторонами» единое.
+  const cassation = computeCassationTerm(
+    FOREIGN_STATE_DEFAULT_JUDGMENT_CASSATION_KSOYU,
+    inputs,
+    entry,
+    'foreign_state_default_judgment',
+    referenceDate,
+    { exhaustion: generalExhaustion },
+  );
+
+  return {
+    cancellation_request: request,
+    appeal,
+    appeal_blocked: appealBlocked,
+    appeal_not_applicable: appealNotApplicable,
+    entry_into_force: { norm: FOREIGN_STATE_DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
+    enforcement,
+    cassation,
+  };
+}
+
 // --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199 ГПК) ---------
 //
 // Мировой судья вправе не составлять мотивированное решение (ч. 3 ст. 199).
@@ -2406,6 +2783,10 @@ const CASSATION_ANCHOR_FIELDS = {
     reasoned: 'default_judgment_appeal_ruling_reasoned_date',
     ruling: 'default_judgment_appeal_ruling_date',
   },
+  foreign_state_default_judgment: {
+    reasoned: 'foreign_state_default_judgment_appeal_ruling_reasoned_date',
+    ruling: 'foreign_state_default_judgment_appeal_ruling_date',
+  },
 };
 
 // Точка отсчёта кассационного срока в ВС (ст. 390.3) для выбранной редакции.
@@ -2652,6 +3033,12 @@ export function computeChain(inputs, options = {}) {
     simplified: computeSimplified(inputs, toISO(options.today)),
     // Заочное решение — своя ветка со своим вступлением в силу.
     default_judgment: computeDefaultJudgment(inputs, toISO(options.today)),
+    // Заочное решение против иностранного государства (ч. 1–4 ст. 417.10) —
+    // своя ветка: та же механика главы 22, другие числа, без деления по субъекту.
+    default_judgment_foreign_state: computeDefaultJudgmentForeignState(
+      inputs,
+      toISO(options.today),
+    ),
     // Мировой судья без мотивированного решения — своя ветка.
     mirovoy: computeMirovoy(inputs, toISO(options.today)),
   };

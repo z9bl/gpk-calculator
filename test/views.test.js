@@ -558,6 +558,78 @@ test('заочное, иные лица: карточка апелляции с 
   assert.match(appeal.note, /не подавал/);
 });
 
+test('мировое соглашение в исполнении: карточка месячного срока (ч. 11 ст. 153.10)', () => {
+  const v = buildView({ settlement_approval_ruling_date: '2025-09-01' }, { today: '2025-09-10' });
+  const card = byId(v.cards, 'settlement_approval_cassation_appeal');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.status, 'computed');
+  assert.equal(card.deadline, '2025-10-01');
+  assert.match(card.norm, /ч\. 11 ст\. 153\.10/);
+  assert.deepEqual(card.duration, { value: 1, unit: 'month' });
+});
+
+test('заочное решение против иностранного государства: карточки ветки', () => {
+  const v = buildView(
+    {
+      foreign_state_default_judgment_service_date: '2025-12-22',
+      foreign_state_default_judgment_refusal_date: '2026-02-10',
+    },
+    { today: '2026-03-01' },
+  );
+  assert.deepEqual(ids(v.cards), [
+    'foreign_state_default_judgment_cancellation_request',
+    'foreign_state_default_judgment_appeal',
+    'foreign_state_default_judgment_entry_into_force',
+    'foreign_state_default_judgment_cassation_ksoyu',
+    'foreign_state_default_judgment_enforcement_presentation',
+  ]);
+
+  // Заявление об отмене — 2 месяца, не 7 рабочих дней: рендерится
+  // monthTermCard, а не workingDayCard.
+  const request = byId(v.cards, 'foreign_state_default_judgment_cancellation_request');
+  assert.equal(request.unit, undefined);
+  assert.deepEqual(request.duration, { value: 2, unit: 'month' });
+  assert.equal(request.deadline, '2026-02-24');
+  assert.match(request.norm, /ч\. 3 ст\. 417\.10/);
+});
+
+test('заочное решение против иностранного государства: апелляция после отказа — 2 месяца, не 1', () => {
+  const v = buildView(
+    {
+      foreign_state_default_judgment_service_date: '2025-12-22',
+      foreign_state_default_judgment_cancellation_request_date: '2025-12-30',
+      foreign_state_default_judgment_refusal_date: '2026-02-10',
+    },
+    { today: '2026-03-01' },
+  );
+  const appeal = byId(v.cards, 'foreign_state_default_judgment_appeal');
+  assert.deepEqual(appeal.duration, { value: 2, unit: 'month' });
+  assert.equal(appeal.deadline, '2026-04-10');
+  assert.match(appeal.norm, /ч\. 4 ст\. 417\.10/);
+  // Без деления по субъекту: карточка не несёт поля subject.
+  assert.equal(appeal.subject, undefined);
+  assert.match(appeal.note, /определения об отказе/);
+});
+
+test('заочное решение против иностранного государства: без определения об отказе апелляция уходит в incomplete', () => {
+  // Заявление об отмене подано (режим after_request/'refusal'), но определения
+  // об отказе ещё нет — считать апелляцию не от чего.
+  const v = buildView(
+    {
+      foreign_state_default_judgment_service_date: '2025-12-22',
+      foreign_state_default_judgment_cancellation_request_date: '2025-12-30',
+    },
+    { today: '2026-03-01' },
+  );
+  const inc = byId(v.incomplete, 'foreign_state_default_judgment_appeal');
+  assert.ok(inc);
+  assert.deepEqual(inc.missing_inputs.map((m) => m.id), [
+    'foreign_state_default_judgment_refusal_date',
+  ]);
+  assert.ok(!ids(v.cards).includes('foreign_state_default_judgment_appeal'));
+});
+
 test('мировой судья: карточки ветви, выбор явки меняет срок', () => {
   const present = buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
   // Срок апелляции истёк (today 01.03.2026 > 22.01.2026), поэтому появляется и
