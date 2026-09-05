@@ -77,6 +77,14 @@ const INPUT_LABELS = {
   // Заглушка на случай прямого рендера без выбранного основания — на экране
   // фактическая подпись всегда приходит из REVIEW_GROUNDS (см. renderReviewGroundFields).
   review_circumstance_date: 'Дата обстоятельства (выберите основание выше)',
+  review_discovered_during_cassation:
+    'Обнаружено при рассмотрении кассационной/надзорной жалобы, представления',
+  review_publication_date:
+    'Дата опубликования постановления Пленума/Президиума ВС РФ в сети «Интернет»',
+  review_refusal_ruling_received_date:
+    'Дата получения копии определения об отказе в передаче жалобы для рассмотрения',
+  review_last_act_entry_into_force_date:
+    'Дата вступления в силу последнего судебного постановления по делу',
 };
 const INPUT_HINTS = {
   appeal_filed_date: 'Если жалоба подана, укажите дату',
@@ -153,6 +161,15 @@ const INPUT_HINTS = {
   review_circumstance_date:
     'Три месяца со дня, указанного в норме карточки ниже (ч. 1 ст. 394 ГПК РФ) — точка ' +
     'отсчёта зависит от выбранного основания',
+  review_publication_date:
+    'Три месяца с этой даты (абз. 2 ч. 1 ст. 394 ГПК РФ) — если обстоятельство не выявлено ' +
+    'при рассмотрении кассационной/надзорной жалобы',
+  review_refusal_ruling_received_date:
+    'Три месяца с этой даты (ч. 3 ст. 394 ГПК РФ, второе предложение) — вместо даты ' +
+    'публикации, когда обстоятельство выявлено при рассмотрении кассационной/надзорной жалобы',
+  review_last_act_entry_into_force_date:
+    'Шестимесячный потолок (ч. 3 ст. 394 ГПК РФ, первое предложение): срок не может быть ' +
+    'позднее шести месяцев с этой даты, даже если трёхмесячный компонент истекает позже',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -424,6 +441,13 @@ function renderTermCard(card, opts = {}) {
 
   if (card.alternative) c.appendChild(renderAlternative(card));
 
+  // Практика ВС (vs_practice_change, п. 5 ч. 4 ст. 392): обе промежуточные
+  // даты и явное указание, какая контролирует, — иначе на карточке был бы
+  // только финальный ответ без объяснения, откуда он взялся.
+  if (card.details && card.details.vs_practice_change) {
+    c.appendChild(renderVsPracticeChangeComponents(card.details.vs_practice_change));
+  }
+
   if (card.details) c.appendChild(renderDetails(card.details));
   if (exportableIds.has(card.id)) c.appendChild(googleCalendarLink(card));
   return c;
@@ -657,6 +681,53 @@ function renderAlternative(card) {
   box.appendChild(row2);
 
   box.appendChild(el('div', 'why', `${a.reason} ${a.recommendation}`));
+  return box;
+}
+
+// Практика ВС (vs_practice_change, п. 5 ч. 4 ст. 392): итоговый срок —
+// минимум из двух дат (ч. 1, ч. 3 ст. 394 ГПК РФ). Показываем обе и явно
+// отмечаем контролирующую — тот же приём и те же классы, что у renderAlternative
+// (спорный срок кассации), только здесь расходятся не редакции нормы, а два
+// разных компонента одного основания.
+function renderVsPracticeChangeComponents(d) {
+  const box = el('div', 'alt');
+  box.appendChild(
+    el('div', null, 'Итоговый срок — минимум из двух дат (ч. 1, ч. 3 ст. 394 ГПК РФ).'),
+  );
+
+  const row1 = el('div', 'row');
+  row1.appendChild(
+    el(
+      'span',
+      null,
+      d.discovered_during_cassation
+        ? 'Три месяца со дня получения копии определения об отказе (ч. 3 ст. 394)'
+        : 'Три месяца со дня опубликования постановления (ч. 1 ст. 394)',
+    ),
+  );
+  row1.appendChild(
+    el('span', d.controlling === 'three_month' ? 'recommended' : null, isoToRu(d.three_month.deadline)),
+  );
+  box.appendChild(row1);
+
+  const row2 = el('div', 'row');
+  row2.appendChild(
+    el('span', null, 'Шесть месяцев со дня вступления в силу последнего акта — потолок (ч. 3 ст. 394)'),
+  );
+  row2.appendChild(
+    el('span', d.controlling === 'six_month' ? 'recommended' : null, isoToRu(d.six_month_cap.deadline)),
+  );
+  box.appendChild(row2);
+
+  box.appendChild(
+    el(
+      'div',
+      'why',
+      d.controlling === 'three_month'
+        ? 'Контролирует трёхмесячный компонент — он наступает раньше шестимесячного потолка.'
+        : 'Контролирует шестимесячный потолок — он наступает раньше трёхмесячного компонента.',
+    ),
+  );
   return box;
 }
 
@@ -1394,13 +1465,16 @@ function fieldAlreadyRendered(id) {
 }
 
 // Поле для узла: либо само поле, либо ссылка на то место, где оно уже показано.
-function inviteFieldOrPointer(id) {
+// labelOverride — как у renderInviteField: для полей, чья подпись зависит не
+// от самого поля, а от другого выбора на экране (даты пересмотра — от
+// review_ground, см. renderReviewGroundFields/renderVsPracticeChangeFields).
+function inviteFieldOrPointer(id, labelOverride) {
   if (fieldAlreadyRendered(id)) {
     // Узел, забравший поле, не всегда «предыдущий срок» — это может быть и
     // строка вступления в силу, поэтому формулировка нейтральная.
-    return el('p', 'hint', `Поле «${INPUT_LABELS[id]}» — выше на этой странице.`);
+    return el('p', 'hint', `Поле «${labelOverride ?? INPUT_LABELS[id]}» — выше на этой странице.`);
   }
-  return renderInviteField(id).wrap;
+  return renderInviteField(id, labelOverride).wrap;
 }
 
 // Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
@@ -1558,10 +1632,11 @@ function renderSituationFields(situation, primaryFilled) {
         'p',
         null,
         'Заявление о пересмотре вступившего в законную силу постановления по вновь ' +
-          'открывшимся или новым обстоятельствам (глава 42 ГПК): один и тот же трёхмесячный ' +
-          'срок для всех оснований (ч. 1 ст. 394 ГПК), но точка отсчёта зависит от основания ' +
-          '(ст. 395). Практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) в список не входит — ' +
-          'у неё другая механика (минимум из двух дат, шестимесячный потолок).',
+          'открывшимся или новым обстоятельствам (глава 42 ГПК): для шести оснований — один и ' +
+          'тот же трёхмесячный срок (ч. 1 ст. 394 ГПК), но точка отсчёта зависит от основания ' +
+          '(ст. 395). У седьмого — практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) — своя ' +
+          'механика: итоговый срок — минимум из трёхмесячного компонента и шестимесячного ' +
+          'потолка (ч. 1, ч. 3 ст. 394 ГПК).',
       ),
     );
   }
@@ -1594,10 +1669,14 @@ function renderSituationFields(situation, primaryFilled) {
 }
 
 // Поля ситуации «Пересмотр по вновь открывшимся/новым обстоятельствам» (глава
-// 42 ГПК): dropdown с основанием + одно поле даты. Подпись поля даты и норма
-// на карточке ниже зависят от выбранного основания (REVIEW_GROUNDS, chain.js)
-// — по тому же образцу, что и подпись основания перерыва в renderInterruptionRow.
+// 42 ГПК): dropdown с основанием + поле(-я) даты. У шести простых оснований —
+// одно общее поле, подпись и норма на карточке ниже зависят от выбора
+// (REVIEW_GROUNDS, chain.js) — по тому же образцу, что и подпись основания
+// перерыва в renderInterruptionRow. У седьмого — «практика ВС»
+// (vs_practice_change, п. 5 ч. 4 ст. 392) — устроено иначе, см.
+// renderVsPracticeChangeFields.
 const REVIEW_GROUND_PLACEHOLDER = '';
+const VS_PRACTICE_CHANGE_GROUND_ID = 'vs_practice_change';
 
 function renderReviewGroundFields(box) {
   const current = state.inputs.review_ground || REVIEW_GROUND_PLACEHOLDER;
@@ -1611,15 +1690,41 @@ function renderReviewGroundFields(box) {
       current,
     ),
   );
+  if (current === VS_PRACTICE_CHANGE_GROUND_ID) {
+    renderVsPracticeChangeFields(box);
+    return;
+  }
   const ground = REVIEW_GROUNDS.find((g) => g.id === current) || null;
   box.appendChild(
     reveal(
       'review-date',
-      renderInviteField(
+      inviteFieldOrPointer(
         'review_circumstance_date',
         ground ? ground.date_label : INPUT_LABELS.review_circumstance_date,
-      ).wrap,
+      ),
     ),
+  );
+}
+
+// «Практика ВС» (vs_practice_change): toggle «обнаружено при рассмотрении
+// кассационной/надзорной жалобы» переключает, какое из двух взаимоисключающих
+// полей даты используется для трёхмесячного компонента — публикация
+// постановления (ч. 1 ст. 394) либо получение копии определения об отказе
+// (ч. 3 ст. 394, второе предложение); тот же приём, что у чекбокса
+// periodic_payment_indefinite (поле подменяется, а не показывается оба сразу).
+// Дата вступления в силу последнего акта нужна ВСЕГДА — это якорь
+// шестимесячного потолка (ч. 3 ст. 394, первое предложение) и от toggle не
+// зависит.
+function renderVsPracticeChangeFields(box) {
+  const discovered = Boolean(state.inputs.review_discovered_during_cassation);
+  box.appendChild(renderCheckboxField('review_discovered_during_cassation', discovered));
+
+  const anchorFieldId = discovered
+    ? 'review_refusal_ruling_received_date'
+    : 'review_publication_date';
+  box.appendChild(reveal('review-vs-anchor', inviteFieldOrPointer(anchorFieldId)));
+  box.appendChild(
+    reveal('review-vs-cap', inviteFieldOrPointer('review_last_act_entry_into_force_date')),
   );
 }
 

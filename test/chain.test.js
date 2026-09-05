@@ -1905,39 +1905,38 @@ const REVIEW_NORM_PATTERNS = {
   unauthorized_construction: /п\. 6 ч\. 4/,
 };
 
-test('пересмотр: шесть оснований на месте, п. 5 ч. 4 ст. 392 (практика ВС) отсутствует', () => {
+// Шесть оснований с единым якорем (review_circumstance_date) — седьмое,
+// vs_practice_change, устроено иначе (см. блок тестов ниже) и в этот список
+// не входит.
+const SIMPLE_REVIEW_GROUND_IDS = [
+  'newly_discovered_fact',
+  'false_testimony_or_crime',
+  'annulled_underlying_act',
+  'transaction_invalidated',
+  'ks_ruling',
+  'unauthorized_construction',
+];
+
+test('пересмотр: семь оснований на месте, включая практику ВС (п. 5 ч. 4 ст. 392)', () => {
   assert.deepEqual(
     REVIEW_GROUNDS.map((g) => g.id),
-    [
-      'newly_discovered_fact',
-      'false_testimony_or_crime',
-      'annulled_underlying_act',
-      'transaction_invalidated',
-      'ks_ruling',
-      'unauthorized_construction',
-    ],
+    [...SIMPLE_REVIEW_GROUND_IDS, 'vs_practice_change'],
   );
-  // Регрессия: практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) — другая
-  // механика (минимум из двух дат, шестимесячный потолок), отдельная задача.
-  // Место зарезервировано — этот тест должен упасть, если её добавят молча.
-  for (const g of REVIEW_GROUNDS) {
-    assert.doesNotMatch(g.label, /Пленум|Президиум/i);
-  }
-  assert.equal(REVIEW_GROUNDS.length, 6);
+  assert.equal(REVIEW_GROUNDS.length, 7);
 });
 
-test('пересмотр: три месяца от даты обстоятельства для каждого из шести оснований (ч. 1 ст. 394)', () => {
-  for (const ground of REVIEW_GROUNDS) {
+test('пересмотр: три месяца от даты обстоятельства для каждого из шести простых оснований (ч. 1 ст. 394)', () => {
+  for (const groundId of SIMPLE_REVIEW_GROUND_IDS) {
     const t = computeIndependentTerms({
-      review_ground: ground.id,
+      review_ground: groundId,
       review_circumstance_date: '2025-09-01',
     }).review_new_circumstances_filing;
-    assert.ok(t, `основание ${ground.id}: узел должен считаться`);
+    assert.ok(t, `основание ${groundId}: узел должен считаться`);
     assert.equal(t.anchor, '2025-09-01');
     assert.equal(t.offset_start, 1);
     assert.equal(t.deadline, '2025-12-01');
     assert.deepEqual(t.duration, { value: 3, unit: 'month' });
-    assert.match(t.norm.primary, REVIEW_NORM_PATTERNS[ground.id]);
+    assert.match(t.norm.primary, REVIEW_NORM_PATTERNS[groundId]);
     assert.match(t.norm.primary, /ч\. 1 ст\. 394/);
   }
 });
@@ -1965,8 +1964,8 @@ test('пересмотр: узла нет без основания, без да
       .review_new_circumstances_filing,
     null,
   );
-  // Практика Пленума/Президиума ВС в dropdown не входит — нераспознанное
-  // основание не должно молча посчитаться по какой-то из шести норм.
+  // Нераспознанное основание (не путать с настоящим id практики ВС —
+  // vs_practice_change) не должно молча посчитаться по какой-то из семи норм.
   assert.equal(
     computeIndependentTerms({
       review_ground: 'plenum_practice',
@@ -2016,4 +2015,159 @@ test('пересмотр: самовольная постройка — logic п
     review_circumstance_date: '2025-09-01',
   }).review_new_circumstances_filing;
   assert.match(t.logic, /395.*не перечисляет/);
+});
+
+// --- Практика ВС (п. 5 ч. 4 ст. 392, ч. 1 и ч. 3 ст. 394): минимум из двух ---
+
+test('практика ВС: обычный случай — трёхмесячный компонент раньше потолка, итог по нему', () => {
+  // Публикация 01.09.2025 → +3 мес. = 01.12.2025. Последний акт вступил в силу
+  // незадолго до этого (01.08.2025) — потолок (+6 мес. = 01.02.2026, с переносом
+  // 02.02.2026) наступает позже и не контролирует.
+  const t = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-09-01',
+    review_last_act_entry_into_force_date: '2025-08-01',
+  }).review_new_circumstances_filing;
+  assert.ok(t);
+  assert.equal(t.controlling, 'three_month');
+  assert.equal(t.deadline, '2025-12-01');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.vs_practice_change.three_month.deadline, '2025-12-01');
+  assert.equal(t.vs_practice_change.six_month_cap.deadline, '2026-02-02');
+  assert.equal(t.vs_practice_change.discovered_during_cassation, false);
+  assert.match(t.norm.primary, /п\. 5 ч\. 4 ст\. 392/);
+  assert.match(t.norm.primary, /ч\. 3 ст\. 394/);
+});
+
+test('практика ВС: обычный случай — шестимесячный потолок раньше, итог по потолку', () => {
+  // Публикация далеко в будущем от вступления в силу последнего акта: потолок
+  // (+6 мес. от вступления в силу) наступает раньше трёхмесячного компонента.
+  const t = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-09-01',
+    review_last_act_entry_into_force_date: '2025-01-01',
+  }).review_new_circumstances_filing;
+  assert.ok(t);
+  assert.equal(t.controlling, 'six_month');
+  assert.equal(t.deadline, '2025-07-01');
+  assert.deepEqual(t.duration, { value: 6, unit: 'month' });
+  assert.equal(t.vs_practice_change.three_month.deadline, '2025-12-01');
+  assert.equal(t.vs_practice_change.six_month_cap.deadline, '2025-07-01');
+});
+
+test('практика ВС: обнаружено при рассмотрении кассационной/надзорной жалобы — якорь меняется, потолок остаётся', () => {
+  const t = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_discovered_during_cassation: true,
+    review_refusal_ruling_received_date: '2025-09-01',
+    // Публикация тоже указана — при включённом toggle она должна игнорироваться.
+    review_publication_date: '2020-01-01',
+    // Последний акт вступил в силу незадолго до этого — потолок (+6 мес.)
+    // наступает позже трёхмесячного компонента (+3 мес. от копии определения)
+    // и в этом расчёте не контролирует.
+    review_last_act_entry_into_force_date: '2025-08-01',
+  }).review_new_circumstances_filing;
+  assert.ok(t);
+  assert.equal(t.vs_practice_change.discovered_during_cassation, true);
+  assert.equal(t.vs_practice_change.three_month.anchor_field, 'review_refusal_ruling_received_date');
+  assert.equal(t.vs_practice_change.three_month.anchor, '2025-09-01');
+  assert.equal(t.controlling, 'three_month');
+  assert.equal(t.deadline, '2025-12-01');
+  // Потолок по-прежнему посчитан и учтён (с переносом нерабочего 01.02.2026 —
+  // воскресенья — на 02.02.2026), просто не контролирует в этом случае.
+  assert.equal(t.vs_practice_change.six_month_cap.deadline, '2026-02-02');
+  assert.match(t.logic, /кассационной\/надзорной жалобы/);
+});
+
+test('практика ВС: равенство дат — детерминированный результат, не падает', () => {
+  // 01.06.2025 + 3 мес. = 01.09.2025; 01.03.2025 + 6 мес. = 01.09.2025 — те же сутки.
+  const t = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-06-01',
+    review_last_act_entry_into_force_date: '2025-03-01',
+  }).review_new_circumstances_filing;
+  assert.ok(t);
+  assert.equal(t.vs_practice_change.three_month.deadline, t.vs_practice_change.six_month_cap.deadline);
+  assert.equal(t.deadline, '2025-09-01');
+  // Тай-брейк фиксирован — трёхмесячный компонент, сравнение нестрогое (<=).
+  assert.equal(t.controlling, 'three_month');
+});
+
+test('практика ВС: перенос последнего дня применяется к обоим компонентам (ч. 2 ст. 108)', () => {
+  // Потолок: 11.10.2025 + 6 мес. = 11.04.2026 (суббота) → 13.04.2026.
+  const t = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2026-03-01', // трёхмесячный компонент заведомо позже
+    review_last_act_entry_into_force_date: '2025-10-11',
+  }).review_new_circumstances_filing;
+  assert.equal(t.controlling, 'six_month');
+  assert.equal(t.vs_practice_change.six_month_cap.raw_deadline, '2026-04-11');
+  assert.equal(t.vs_practice_change.six_month_cap.deadline, '2026-04-13');
+  assert.equal(t.shifted, true);
+  assert.equal(t.deadline, '2026-04-13');
+});
+
+test('практика ВС: unresolved — точно указывает, какого поля не хватает', () => {
+  assert.deepEqual(
+    computeIndependentTerms({ review_ground: 'vs_practice_change' }).review_new_circumstances_missing,
+    ['review_publication_date', 'review_last_act_entry_into_force_date'],
+  );
+  assert.deepEqual(
+    computeIndependentTerms({
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2025-09-01',
+    }).review_new_circumstances_missing,
+    ['review_last_act_entry_into_force_date'],
+  );
+  assert.deepEqual(
+    computeIndependentTerms({
+      review_ground: 'vs_practice_change',
+      review_last_act_entry_into_force_date: '2025-01-01',
+    }).review_new_circumstances_missing,
+    ['review_publication_date'],
+  );
+  // toggle включён — не хватает даты получения копии, а не публикации.
+  assert.deepEqual(
+    computeIndependentTerms({
+      review_ground: 'vs_practice_change',
+      review_discovered_during_cassation: true,
+      review_publication_date: '2025-09-01', // не тот якорь при включённом toggle
+      review_last_act_entry_into_force_date: '2025-01-01',
+    }).review_new_circumstances_missing,
+    ['review_refusal_ruling_received_date'],
+  );
+  // Узла при этом нет — как и у остальных незаполненных независимых узлов.
+  assert.equal(
+    computeIndependentTerms({ review_ground: 'vs_practice_change' }).review_new_circumstances_filing,
+    null,
+  );
+  // У шести простых оснований missing всегда null — промежуточного состояния
+  // «основание выбрано, но не хватает части полей» там не бывает.
+  for (const groundId of SIMPLE_REVIEW_GROUND_IDS) {
+    assert.equal(
+      computeIndependentTerms({ review_ground: groundId }).review_new_circumstances_missing,
+      null,
+    );
+  }
+});
+
+test('практика ВС: узел независим от цепочки обжалования и от категории дела', () => {
+  const alone = computeIndependentTerms({
+    review_ground: 'vs_practice_change',
+    review_publication_date: '2025-09-01',
+    review_last_act_entry_into_force_date: '2024-01-01',
+  }).review_new_circumstances_filing;
+  assert.ok(alone);
+
+  const chain = computeChain(
+    {
+      ...BASE,
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2025-09-01',
+      review_last_act_entry_into_force_date: '2024-01-01',
+    },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.review_new_circumstances_filing.deadline, alone.deadline);
+  assert.equal(chain.review_new_circumstances_filing.controlling, alone.controlling);
 });

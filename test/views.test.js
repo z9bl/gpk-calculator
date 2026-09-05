@@ -707,7 +707,18 @@ test('пересмотр по вновь открывшимся/новым об�
   assert.match(card.norm, /ч\. 1 ст\. 394/);
 });
 
-test('пересмотр: норма и логика на карточке соответствуют каждому из шести оснований', () => {
+// Шесть оснований с единым якорем — vs_practice_change (седьмое) устроено
+// иначе и проверяется отдельными тестами ниже.
+const SIMPLE_REVIEW_GROUND_IDS = [
+  'newly_discovered_fact',
+  'false_testimony_or_crime',
+  'annulled_underlying_act',
+  'transaction_invalidated',
+  'ks_ruling',
+  'unauthorized_construction',
+];
+
+test('пересмотр: норма и логика на карточке соответствуют каждому из шести простых оснований', () => {
   const NORM_PATTERNS = {
     newly_discovered_fact: /п\. 1 ч\. 3 ст\. 392/,
     false_testimony_or_crime: /пп\. 2, 3 ч\. 3 ст\. 392/,
@@ -716,27 +727,93 @@ test('пересмотр: норма и логика на карточке со�
     ks_ruling: /п\. 3 ч\. 4 ст\. 392/,
     unauthorized_construction: /п\. 6 ч\. 4/,
   };
-  for (const ground of REVIEW_GROUNDS) {
+  for (const groundId of SIMPLE_REVIEW_GROUND_IDS) {
     const v = buildView(
-      { review_ground: ground.id, review_circumstance_date: '2025-09-01' },
+      { review_ground: groundId, review_circumstance_date: '2025-09-01' },
       { today: '2025-09-10' },
     );
     const card = byId(v.cards, 'review_new_circumstances_filing');
-    assert.ok(card, `основание ${ground.id}: карточка должна появиться`);
-    assert.match(card.norm, NORM_PATTERNS[ground.id]);
-    assert.match(card.details.logic, NORM_PATTERNS[ground.id]);
+    assert.ok(card, `основание ${groundId}: карточка должна появиться`);
+    assert.match(card.norm, NORM_PATTERNS[groundId]);
+    assert.match(card.details.logic, NORM_PATTERNS[groundId]);
   }
 });
 
-test('пересмотр: практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) в список оснований не входит', () => {
-  // Регрессия: у этого основания другая механика (минимум из двух дат,
-  // шестимесячный потолок) — отдельная задача, дропдаун его не должен получить
-  // молча вместе с каким-нибудь рефакторингом REVIEW_GROUNDS.
-  assert.equal(REVIEW_GROUNDS.length, 6);
-  assert.ok(!REVIEW_GROUNDS.some((g) => g.id === 'plenum_practice'));
-  for (const g of REVIEW_GROUNDS) {
-    assert.doesNotMatch(g.label, /Пленум|Президиум/i);
-  }
+test('пересмотр: практика Пленума/Президиума ВС (п. 5 ч. 4 ст. 392) — седьмое основание в списке', () => {
+  assert.equal(REVIEW_GROUNDS.length, 7);
+  assert.deepEqual(
+    REVIEW_GROUNDS.map((g) => g.id),
+    [...SIMPLE_REVIEW_GROUND_IDS, 'vs_practice_change'],
+  );
+  assert.match(REVIEW_GROUNDS.find((g) => g.id === 'vs_practice_change').label, /Пленум\/Президиума? ВС/i);
+});
+
+test('практика ВС: карточка показывает обе промежуточные даты и контролирующую', () => {
+  const v = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_publication_date: '2025-09-01',
+      review_last_act_entry_into_force_date: '2025-01-01',
+    },
+    { today: '2025-07-01' },
+  );
+  const card = byId(v.cards, 'review_new_circumstances_filing');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.status, 'computed');
+  // Потолок раньше в этом наборе данных — итог и duration по нему.
+  assert.equal(card.deadline, '2025-07-01');
+  assert.deepEqual(card.duration, { value: 6, unit: 'month' });
+  assert.match(card.norm, /п\. 5 ч\. 4 ст\. 392/);
+
+  const detail = card.details.vs_practice_change;
+  assert.ok(detail, 'обе промежуточные даты должны быть в details');
+  assert.equal(detail.controlling, 'six_month');
+  assert.equal(detail.three_month.deadline, '2025-12-01');
+  assert.equal(detail.six_month_cap.deadline, '2025-07-01');
+  assert.equal(detail.discovered_during_cassation, false);
+});
+
+test('практика ВС: toggle переключает якорь трёхмесячного компонента', () => {
+  const v = buildView(
+    {
+      review_ground: 'vs_practice_change',
+      review_discovered_during_cassation: true,
+      review_refusal_ruling_received_date: '2025-09-01',
+      review_last_act_entry_into_force_date: '2020-01-01',
+    },
+    { today: '2025-07-01' },
+  );
+  const card = byId(v.cards, 'review_new_circumstances_filing');
+  assert.ok(card);
+  assert.equal(card.details.vs_practice_change.discovered_during_cassation, true);
+  assert.match(card.details.logic, /кассационной\/надзорной жалобы/);
+});
+
+test('практика ВС: не хватает данных — unresolved с точным указанием недостающего поля', () => {
+  const withoutCap = buildView(
+    { review_ground: 'vs_practice_change', review_publication_date: '2025-09-01' },
+    { today: '2025-07-01' },
+  );
+  assert.ok(!ids(withoutCap.cards).includes('review_new_circumstances_filing'));
+  const inc = withoutCap.incomplete.find((n) => n.id === 'review_new_circumstances_filing');
+  assert.ok(inc, 'должна быть unresolved-запись, а не тихое отсутствие узла');
+  assert.equal(inc.status, 'not_computed');
+  assert.deepEqual(
+    inc.missing_inputs.map((m) => m.id),
+    ['review_last_act_entry_into_force_date'],
+  );
+  assert.match(inc.reason, /практики ВС/);
+
+  const withoutAnything = buildView(
+    { review_ground: 'vs_practice_change' },
+    { today: '2025-07-01' },
+  );
+  const inc2 = withoutAnything.incomplete.find((n) => n.id === 'review_new_circumstances_filing');
+  assert.deepEqual(
+    inc2.missing_inputs.map((m) => m.id),
+    ['review_publication_date', 'review_last_act_entry_into_force_date'],
+  );
 });
 
 test('пересмотр: узел доступен в любой ветви, без данных цепочки', () => {

@@ -139,11 +139,27 @@ export const SITUATIONS = [
     // не часть цепочки обжалования решения суда и не привязан к категории дела.
     // Своё поле — в `fields`, а не `primary_field`: тот зарезервирован за общей
     // ветвью (см. situations.test.js).
-    // Основание — dropdown (review_ground, один из шести без п. 5 ч. 4 ст. 392 —
-    // у него другая механика, отдельная задача) + одно поле даты
-    // (review_circumstance_date), подпись и норма которого зависят от выбранного
-    // основания (см. REVIEW_GROUNDS в chain.js, по образцу enforcement_interruptions).
-    fields: ['review_ground', 'review_circumstance_date'],
+    // Основание — dropdown (review_ground, семь вариантов, см. REVIEW_GROUNDS в
+    // chain.js) + поле(-я) даты, зависящие от выбора:
+    // — шесть простых оснований используют одно общее поле
+    //   review_circumstance_date, подпись и норма которого меняются по выбору
+    //   (по образцу enforcement_interruptions);
+    // — седьмое, «изменение практики ВС» (vs_practice_change, п. 5 ч. 4 ст. 392),
+    //   устроено иначе (минимум из двух дат, см. 11.3 SPEC.md) и использует
+    //   три своих поля: булев toggle review_discovered_during_cassation
+    //   (обнаружено при рассмотрении кассационной/надзорной жалобы) переключает
+    //   между review_publication_date и review_refusal_ruling_received_date
+    //   (взаимоисключающие, как periodic_payment_indefinite у периодических
+    //   платежей), а review_last_act_entry_into_force_date нужна всегда — это
+    //   якорь шестимесячного потолка (ч. 3 ст. 394), он не зависит от toggle.
+    fields: [
+      'review_ground',
+      'review_circumstance_date',
+      'review_discovered_during_cassation',
+      'review_publication_date',
+      'review_refusal_ruling_received_date',
+      'review_last_act_entry_into_force_date',
+    ],
     nodes: ['review_new_circumstances_filing'],
   },
 ];

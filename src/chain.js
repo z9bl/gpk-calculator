@@ -801,10 +801,11 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, review_new_circumstances_filing:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
+  const reviewResult = computeReviewNewCircumstancesResult(inputs ?? {});
   return {
     protocol_remarks: remarks,
     protocol_remarks_review: review,
@@ -847,8 +848,11 @@ export function computeIndependentTerms(inputs) {
     ),
     // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
     // независим от цепочки обжалования и от категории дела, считается по
-    // своим двум input (основание + дата), см. computeReviewNewCircumstances.
-    review_new_circumstances_filing: computeReviewNewCircumstances(inputs ?? {}),
+    // своим input (основание + дата(-ы)) — см. computeReviewNewCircumstancesResult.
+    // missing — только у vs_practice_change (см. там); у остальных шести
+    // оснований всегда null, узла без данных там нет вовсе.
+    review_new_circumstances_filing: reviewResult.term,
+    review_new_circumstances_missing: reviewResult.missing,
   };
 }
 
@@ -962,23 +966,22 @@ export const CASSATION_RETURN_RULING_APPEAL = {
 };
 
 // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК,
-// ст. 392–395 — §11.3 SPEC.md). Шесть оснований без особых развилок: срок один
-// и тот же для всех — три месяца (ч. 1 ст. 394 ГПК РФ, «в течение трёх месяцев
-// со дня открытия или появления обстоятельств»), но точка отсчёта зависит от
-// основания (ст. 395, кроме иначе указанного). Узел не привязан ни к цепочке
-// обжалования, ни к категории дела — подать такое заявление можно по любому
-// вступившему в законную силу судебному постановлению, поэтому он считается
-// независимо, по образцу SUPERVISION/CASSATION_RETURN_RULING_APPEAL.
+// ст. 392–395 — §11.3 SPEC.md). Семь оснований: шесть без особых развилок —
+// срок один и тот же для всех, три месяца (ч. 1 ст. 394 ГПК РФ, «в течение
+// трёх месяцев со дня открытия или появления обстоятельств»), но точка
+// отсчёта зависит от основания (ст. 395, кроме иначе указанного); седьмое
+// (`vs_practice_change`, п. 5 ч. 4 ст. 392) устроено иначе — см. блок ниже,
+// после REVIEW_GROUNDS. Узел не привязан ни к цепочке обжалования, ни к
+// категории дела — подать такое заявление можно по любому вступившему в
+// законную силу судебному постановлению, поэтому он считается независимо, по
+// образцу SUPERVISION/CASSATION_RETURN_RULING_APPEAL.
 //
-// Не включено (см. §11.3 SPEC.md — отдельные задачи):
-// — п. 5 ч. 4 ст. 392 (новая практика Пленума/Президиума ВС) — другая
-//   механика: точка отсчёта — со дня опубликования постановления в сети
-//   «Интернет» (п. 7 ст. 395), при этом есть вторая возможная дата и берётся
-//   минимум из двух, плюс дополнительный шестимесячный потолок (ч. 4 ст. 397).
-//   Место в dropdown под это основание намеренно не заведено;
+// Не включено (см. §11.3 SPEC.md):
 // — восстановление пропущенного срока (ч. 2 ст. 394, шестимесячный резервный
 //   срок) — отдельный восстановительный механизм, а не основание пересмотра.
 export const REVIEW_NEW_CIRCUMSTANCES_DURATION = { value: 3, unit: 'month' };
+
+const VS_PRACTICE_CHANGE_GROUND_ID = 'vs_practice_change';
 
 export const REVIEW_GROUNDS = [
   {
@@ -1062,6 +1065,18 @@ export const REVIEW_GROUNDS = [
       calculation: ['ч. 1 ст. 394 ГПК РФ'],
     },
   },
+  {
+    // Устроено иначе, чем остальные шесть: не «один якорь + 3 месяца», а
+    // минимум из двух отдельно вычисленных дат — см. computeVsPracticeChangeTerm
+    // ниже. `date_label`/`logic` здесь не используются (своя карточка и три
+    // своих поля вместо одной даты); `norm` — для справки/документации.
+    id: VS_PRACTICE_CHANGE_GROUND_ID,
+    label: 'Определение либо изменение практики применения нормы (Пленум/Президиум ВС)',
+    norm: {
+      primary: 'п. 5 ч. 4 ст. 392, абз. 2 ч. 1 ст. 394, ч. 3 ст. 394 ГПК РФ',
+      calculation: ['ч. 1 ст. 394 ГПК РФ', 'ч. 3 ст. 394 ГПК РФ'],
+    },
+  },
 ];
 
 const REVIEW_GROUND_BY_ID = new Map(REVIEW_GROUNDS.map((g) => [g.id, g]));
@@ -1107,17 +1122,152 @@ function reviewTermFor(ground) {
   };
 }
 
-// Узел появляется только когда выбрано основание (review_ground — один из
-// REVIEW_GROUNDS выше; п. 5 ч. 4 ст. 392 сюда не входит) и введена дата.
-// Без основания или без даты узла нет вовсе — как у SUPERVISION и
-// CASSATION_RETURN_RULING_APPEAL, приглашение ввести данные рисует UI
-// (situations.js), incomplete-механизм buildView здесь не задействован.
-function computeReviewNewCircumstances(inputs) {
+// --- Основание «изменение практики ВС» (п. 5 ч. 4 ст. 392, ч. 1 и ч. 3 ст. 394) --
+//
+// Устроено иначе, чем остальные шесть оснований: не «один якорь + 3 месяца»,
+// а МИНИМУМ из двух отдельно вычисленных сроков:
+//  (а) трёхмесячный компонент — от даты опубликования постановления
+//      Пленума/Президиума ВС в сети «Интернет» (абз. 2 ч. 1 ст. 394); либо,
+//      если обстоятельство выявлено при рассмотрении кассационной или
+//      надзорной жалобы, представления, — от даты получения копии
+//      определения об отказе в передаче жалобы для рассмотрения в судебном
+//      заседании суда кассационной инстанции либо Президиума ВС РФ
+//      (ч. 3 ст. 394, второе предложение — меняет только якорь трёхмесячного
+//      компонента, потолок из первого предложения продолжает действовать);
+//  (б) шестимесячный потолок — от даты вступления в законную силу последнего
+//      судебного постановления, принятием которого закончилось рассмотрение
+//      дела по существу (ч. 3 ст. 394, первое предложение).
+// Оба компонента считаются обычным расчётным конвоем (offset_start: 1,
+// weekend_shift: true), контролирует БОЛЕЕ РАННЯЯ дата — потолок ограничивает
+// срок сверху, а не назначает отдельный срок, поэтому берём минимум, не
+// максимум.
+const VS_PRACTICE_CHANGE_THREE_MONTH_DURATION = { value: 3, unit: 'month' };
+const VS_PRACTICE_CHANGE_SIX_MONTH_DURATION = { value: 6, unit: 'month' };
+const VS_PRACTICE_CHANGE_MIDNIGHT_RULE =
+  'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня';
+const VS_PRACTICE_CHANGE_NORM = {
+  primary: 'п. 5 ч. 4 ст. 392, абз. 2 ч. 1 ст. 394, ч. 3 ст. 394 ГПК РФ',
+  calculation: ['ч. 1 ст. 394 ГПК РФ', 'ч. 3 ст. 394 ГПК РФ'],
+};
+
+/**
+ * Считает основание «изменение практики ВС». Ровно одно из полей результата
+ * не null: term — посчитанный узел с обеими промежуточными датами, либо
+ * missing — список недостающих input (в порядке: якорь трёхмесячного
+ * компонента, затем потолок), когда данных не хватает.
+ * @param {object} inputs
+ * @returns {{term:object|null, missing:string[]|null}}
+ */
+function computeVsPracticeChangeTerm(inputs) {
+  const discovered = Boolean(inputs?.review_discovered_during_cassation);
+  // Ч. 3 ст. 394 (второе предложение) меняет якорь трёхмесячного компонента
+  // на дату получения копии определения об отказе — но только когда
+  // обстоятельство выявлено при рассмотрении кассационной/надзорной жалобы;
+  // иначе действует общее правило абз. 2 ч. 1 ст. 394 (дата опубликования).
+  const threeMonthAnchorField = discovered
+    ? 'review_refusal_ruling_received_date'
+    : 'review_publication_date';
+  const threeMonthAnchor = toISO(inputs?.[threeMonthAnchorField]);
+  const sixMonthAnchor = toISO(inputs?.review_last_act_entry_into_force_date);
+
+  const missing = [];
+  if (threeMonthAnchor == null) missing.push(threeMonthAnchorField);
+  if (sixMonthAnchor == null) missing.push('review_last_act_entry_into_force_date');
+  if (missing.length > 0) return { term: null, missing };
+
+  const threeMonthDef = {
+    duration: VS_PRACTICE_CHANGE_THREE_MONTH_DURATION,
+    anchor: { offset_start: 1 },
+    weekend_shift: true,
+  };
+  const sixMonthDef = {
+    duration: VS_PRACTICE_CHANGE_SIX_MONTH_DURATION,
+    anchor: { offset_start: 1 },
+    weekend_shift: true,
+  };
+  const threeMonth = computeDeadline(threeMonthDef, threeMonthAnchor);
+  const sixMonth = computeDeadline(sixMonthDef, sixMonthAnchor);
+
+  // При равенстве дат (оба компонента истекают в один день) контролирующим
+  // считается трёхмесячный компонент — сравнение нестрогое (<=), результат
+  // детерминирован независимо от порядка ввода.
+  const controlling = threeMonth.deadline <= sixMonth.deadline ? 'three_month' : 'six_month';
+  const winner = controlling === 'three_month' ? threeMonth : sixMonth;
+  const controllingLabel =
+    controlling === 'three_month' ? 'трёхмесячный компонент' : 'шестимесячный потолок';
+
+  const term = {
+    id: REVIEW_NEW_CIRCUMSTANCES_FILING.id,
+    title: REVIEW_NEW_CIRCUMSTANCES_FILING.title,
+    anchor: winner.anchor,
+    offset_start: winner.offset_start,
+    raw_deadline: winner.raw_deadline,
+    deadline: winner.deadline,
+    shifted: winner.shifted,
+    duration:
+      controlling === 'three_month'
+        ? VS_PRACTICE_CHANGE_THREE_MONTH_DURATION
+        : VS_PRACTICE_CHANGE_SIX_MONTH_DURATION,
+    logic:
+      (discovered
+        ? 'Обстоятельство выявлено при рассмотрении кассационной/надзорной жалобы, ' +
+          'представления: трёхмесячный срок исчисляется со дня получения копии ' +
+          'определения об отказе в передаче жалобы для рассмотрения в судебном ' +
+          'заседании суда кассационной инстанции либо Президиума ВС РФ (ч. 3 ст. 394 ' +
+          'ГПК РФ, второе предложение).'
+        : 'Три месяца со дня опубликования постановления Пленума ВС РФ или ' +
+          'постановления Президиума ВС РФ в сети «Интернет» (абз. 2 ч. 1 ст. 394 ГПК РФ).') +
+      ' Одновременно действует шестимесячный потолок: срок не может быть позднее шести ' +
+      'месяцев со дня вступления в законную силу последнего судебного постановления, ' +
+      'принятием которого закончилось рассмотрение дела по существу (ч. 3 ст. 394 ГПК РФ, ' +
+      'первое предложение). Итоговый срок — минимум из двух дат: потолок ограничивает ' +
+      `срок сверху, а не назначает отдельный срок. В этом расчёте контролирует ${controllingLabel}.`,
+    midnight_rule: VS_PRACTICE_CHANGE_MIDNIGHT_RULE,
+    norm: VS_PRACTICE_CHANGE_NORM,
+    review_ground: VS_PRACTICE_CHANGE_GROUND_ID,
+    controlling,
+    vs_practice_change: {
+      discovered_during_cassation: discovered,
+      three_month: {
+        anchor_field: threeMonthAnchorField,
+        anchor: threeMonth.anchor,
+        raw_deadline: threeMonth.raw_deadline,
+        deadline: threeMonth.deadline,
+        shifted: threeMonth.shifted,
+      },
+      six_month_cap: {
+        anchor: sixMonth.anchor,
+        raw_deadline: sixMonth.raw_deadline,
+        deadline: sixMonth.deadline,
+        shifted: sixMonth.shifted,
+      },
+    },
+  };
+  return { term, missing: null };
+}
+
+/**
+ * Диспетчер по выбранному основанию: {term, missing} — ровно одно не null,
+ * либо оба null, когда основание не выбрано/не распознано (узла нет вовсе,
+ * incomplete-запись не заводится — как у SUPERVISION/CASSATION_RETURN_RULING_APPEAL,
+ * приглашение ввести данные рисует UI по situations.js).
+ *
+ * У «изменения практики ВС» (vs_practice_change) данных для расчёта может не
+ * хватать даже при выбранном основании (дат три, обязательных — две по
+ * toggle) — тогда term null, а missing называет недостающие input; остальные
+ * шесть оснований такого промежуточного состояния не знают: там либо дата
+ * есть, либо узла нет.
+ * @param {object} inputs
+ * @returns {{term:object|null, missing:string[]|null}}
+ */
+function computeReviewNewCircumstancesResult(inputs) {
   const ground = reviewGroundById(inputs?.review_ground);
-  if (!ground) return null;
-  return computeSimpleTerm(reviewTermFor(ground), inputs?.review_circumstance_date, {
+  if (!ground) return { term: null, missing: null };
+  if (ground.id === VS_PRACTICE_CHANGE_GROUND_ID) return computeVsPracticeChangeTerm(inputs);
+  const term = computeSimpleTerm(reviewTermFor(ground), inputs?.review_circumstance_date, {
     review_ground: ground.id,
   });
+  return { term, missing: null };
 }
 
 // Замечания на протокол (ч. 1 ст. 231) + рассмотрение судьёй (ч. 2 ст. 232).

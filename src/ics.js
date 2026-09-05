@@ -114,6 +114,18 @@ function reminderOffsets(duration) {
       { unit: 'day', value: 14 },
     ];
   }
+  // Шесть месяцев: только у практики ВС (vs_practice_change, п. 5 ч. 4 ст. 392),
+  // когда шестимесячный потолок ч. 3 ст. 394 оказывается контролирующим —
+  // остальные узлы такой длительности не имеют. Тот же принцип, что у прочих
+  // месячных сроков (ближнее напоминание не растёт, дальнее — растёт вместе со
+  // сроком): ближнее держим на уровне трёхмесячного (3 дня), дальнее продлеваем
+  // до месяца — запас пропорционален более длинному сроку.
+  if (duration && duration.unit === 'month' && duration.value === 6) {
+    return [
+      { unit: 'day', value: 3 },
+      { unit: 'day', value: 30 },
+    ];
+  }
   if (duration && duration.unit === 'year' && duration.value === 3) {
     return [
       { unit: 'day', value: 7 },
@@ -399,9 +411,14 @@ export function icsTermsFromChain(chain) {
     });
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —
-  // независимый узел: считается по своим input (review_ground +
-  // review_circumstance_date), норма в экспорте — та, что соответствует
-  // выбранному основанию (см. REVIEW_GROUNDS в chain.js).
+  // независимый узел: считается по своим input (review_ground + дата(-ы)),
+  // норма в экспорте — та, что соответствует выбранному основанию (см.
+  // REVIEW_GROUNDS в chain.js). Длительность берётся из самого узла, а не из
+  // статической константы: у практики ВС (vs_practice_change) она не
+  // фиксирована — 3 или 6 месяцев, в зависимости от того, какой из двух
+  // компонентов контролирует (см. computeVsPracticeChangeTerm), и это решает
+  // правило напоминаний (reminderOffsets). У остальных шести оснований
+  // duration узла всегда совпадает с REVIEW_NEW_CIRCUMSTANCES_FILING.duration.
   if (
     chain &&
     chain.review_new_circumstances_filing &&
@@ -412,7 +429,7 @@ export function icsTermsFromChain(chain) {
       deadline: chain.review_new_circumstances_filing.deadline,
       norm: chain.review_new_circumstances_filing.norm.primary,
       ics: REVIEW_NEW_CIRCUMSTANCES_FILING.ics,
-      duration: REVIEW_NEW_CIRCUMSTANCES_FILING.duration,
+      duration: chain.review_new_circumstances_filing.duration,
     });
   }
   // Возражения должника относительно исполнения судебного приказа (ст. 128
