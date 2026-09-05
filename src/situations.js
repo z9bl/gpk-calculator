@@ -132,6 +132,20 @@ export const SITUATIONS = [
       'cassation_return_ruling_appeal',
     ],
   },
+  {
+    id: 'review_new_circumstances',
+    label: 'Пересмотр по вновь открывшимся/новым обстоятельствам',
+    // Глава 42 ГПК (ст. 392–395) — самостоятельный трек, как «Отдельные сроки»:
+    // не часть цепочки обжалования решения суда и не привязан к категории дела.
+    // Своё поле — в `fields`, а не `primary_field`: тот зарезервирован за общей
+    // ветвью (см. situations.test.js).
+    // Основание — dropdown (review_ground, один из шести без п. 5 ч. 4 ст. 392 —
+    // у него другая механика, отдельная задача) + одно поле даты
+    // (review_circumstance_date), подпись и норма которого зависят от выбранного
+    // основания (см. REVIEW_GROUNDS в chain.js, по образцу enforcement_interruptions).
+    fields: ['review_ground', 'review_circumstance_date'],
+    nodes: ['review_new_circumstances_filing'],
+  },
 ];
 
 export const DEFAULT_SITUATION = 'general';

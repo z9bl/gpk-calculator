@@ -22,12 +22,19 @@ import {
   reasonedDelayVersionFor,
   INTERRUPTION_TYPES,
   INTERRUPTION_SCOPE_WARNING,
+  REVIEW_GROUNDS,
 } from './chain.js';
 
 // Перерыв срока (ст. 22 ФЗ № 229-ФЗ) — константы модели нужны и интерфейсу:
 // список оснований для выпадающего списка и текст предупреждения о ч. 3.1.
 // Отдаём их через слой представления, чтобы web/app.js не тянул chain.js.
 export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING };
+
+// Основания пересмотра по вновь открывшимся/новым обстоятельствам (глава 42
+// ГПК) — список для dropdown в UI, по тому же образцу: подпись поля даты и
+// норма на карточке зависят от выбранного основания (см. REVIEW_GROUNDS,
+// reviewTermFor в chain.js).
+export { REVIEW_GROUNDS };
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Список пуст:
 // судебный приказ и периодические платежи раскрыты отдельными узлами
@@ -81,6 +88,8 @@ const INPUT_LABELS = {
   child_return_interim_ruling_date:
     'Дата определения суда первой инстанции (глава 22.2 ГПК)',
   enforcement_interruptions: 'Перерывы срока предъявления (ст. 22 ФЗ № 229-ФЗ)',
+  review_ground: 'Основание пересмотра (глава 42 ГПК)',
+  review_circumstance_date: 'Дата обстоятельства (зависит от основания)',
 };
 
 // Подписи оснований перерыва — для выпадающего списка в UI и для истории на
@@ -816,6 +825,12 @@ function independentNodes(source, today = null) {
   if (terms.child_return_appeal) cards.push(workingDayCard(terms.child_return_appeal));
   if (terms.child_return_private_complaint) {
     cards.push(workingDayCard(terms.child_return_private_complaint));
+  }
+  // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
+  // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже
+  // выбраны по основанию внутри computeReviewNewCircumstances.
+  if (terms.review_new_circumstances_filing) {
+    cards.push(monthTermCard(terms.review_new_circumstances_filing));
   }
   if (simplified) cards.push(...simplifiedCards(simplified));
   if (defaultJudgment) {

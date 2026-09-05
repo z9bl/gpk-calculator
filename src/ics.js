@@ -26,6 +26,7 @@ import {
   CHILD_RETURN_APPEAL,
   CHILD_RETURN_PRIVATE_COMPLAINT,
   CASSATION_RETURN_RULING_APPEAL,
+  REVIEW_NEW_CIRCUMSTANCES_FILING,
   SIMPLIFIED_REASONED_REQUEST,
   SIMPLIFIED_APPEAL,
   DEFAULT_JUDGMENT_CANCELLATION_REQUEST,
@@ -395,6 +396,23 @@ export function icsTermsFromChain(chain) {
       norm: chain.cassation_return_ruling_appeal.norm.primary,
       ics: CASSATION_RETURN_RULING_APPEAL.ics,
       duration: CASSATION_RETURN_RULING_APPEAL.duration,
+    });
+  }
+  // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —
+  // независимый узел: считается по своим input (review_ground +
+  // review_circumstance_date), норма в экспорте — та, что соответствует
+  // выбранному основанию (см. REVIEW_GROUNDS в chain.js).
+  if (
+    chain &&
+    chain.review_new_circumstances_filing &&
+    chain.review_new_circumstances_filing.deadline
+  ) {
+    terms.push({
+      title: chain.review_new_circumstances_filing.title,
+      deadline: chain.review_new_circumstances_filing.deadline,
+      norm: chain.review_new_circumstances_filing.norm.primary,
+      ics: REVIEW_NEW_CIRCUMSTANCES_FILING.ics,
+      duration: REVIEW_NEW_CIRCUMSTANCES_FILING.duration,
     });
   }
   // Возражения должника относительно исполнения судебного приказа (ст. 128

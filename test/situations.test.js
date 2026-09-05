@@ -42,6 +42,8 @@ const ALL_BRANCHES_INPUTS = {
   periodic_payment_period_end_date: '2023-04-12',
   child_return_reasoned_decision_date: '2025-07-02',
   child_return_interim_ruling_date: '2025-07-08',
+  review_ground: 'newly_discovered_fact',
+  review_circumstance_date: '2025-07-02',
 };
 
 test('каждый узел из buildView попадает ровно в одну ситуацию', () => {
@@ -178,7 +180,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined).id, 'general');
 });
 
-test('все восемь ситуаций на месте и подписаны', () => {
+test('все девять ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -190,10 +192,38 @@ test('все восемь ситуаций на месте и подписаны
       'periodic_payments',
       'child_return',
       'separate',
+      'review_new_circumstances',
     ],
   );
   for (const s of SITUATIONS) {
     assert.ok(s.label && s.label.length > 3, `${s.id}: нужна подпись`);
     assert.ok(s.nodes.length > 0, `${s.id}: ситуация без узлов`);
   }
+});
+
+test('пересмотр по вновь открывшимся/новым обстоятельствам: узел и поля учтены в разбиении', () => {
+  const situation = SITUATIONS.find((s) => s.id === 'review_new_circumstances');
+  assert.deepEqual(situation.nodes, ['review_new_circumstances_filing']);
+  assert.deepEqual(situation.fields, ['review_ground', 'review_circumstance_date']);
+  // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  // Ни основания, ни узла без него — карточки нет.
+  const withoutGround = buildView(
+    { review_circumstance_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    withoutGround.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    [],
+  );
+
+  const withGround = buildView(
+    { review_ground: 'newly_discovered_fact', review_circumstance_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    withGround.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['review_new_circumstances_filing'],
+  );
 });
