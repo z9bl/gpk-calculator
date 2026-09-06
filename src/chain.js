@@ -10,6 +10,7 @@
 
 import { computeDeadline, addDays } from '../core/engine/engine.js';
 import { toISODate } from '../core/calendar/calendar.js';
+import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -74,6 +75,13 @@ export const CASSATION_KSOYU = {
         primary: 'абз. 2 ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
+      // Пограничное окно редакций (раздел 10 SPEC.md): показывается, когда
+      // срок по прежней редакции истёк ещё до отсечки, а по действующей — уже
+      // на/после нее (см. boundaryWarning в core/engine/versioning.js). Текст
+      // объясняет, почему окно вообще возможно у этой конкретной редакции.
+      boundary_note:
+        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
+        'редакции спорный.',
       // Конфликт с п. 12 ПП ВС РФ от 22.06.2021 № 17 существует только для этой редакции: до
       // 01.09.2024 разъяснение Пленума совпадало с законом (раздел 6 SPEC.md).
       alternative_calculation: {
@@ -137,12 +145,7 @@ const DEFAULT_JUDGMENT_DEFENDANT_EXHAUSTION_WARNING = {
     'этого жалоба подлежит возврату.',
 };
 
-// Редакция нормы по дате (ч. 3 ст. 1 ГПК): границы включительны, null = без границы.
-function pickVersion(versions, dateISO) {
-  return versions.find(
-    (v) => (v.from == null || dateISO >= v.from) && (v.to == null || dateISO <= v.to),
-  );
-}
+// pickVersion — перенесена в core/engine/versioning.js (см. импорт выше).
 
 /**
  * Редакция ч. 1 ст. 376.1 ГПК, действующая на дату (для UI и подсказок).
@@ -193,6 +196,11 @@ export const CASSATION_VS = {
           'ФЗ № 79-ФЗ от 09.04.2026 — терминологическая правка)',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
+      // Пограничное окно редакций — тот же механизм и тот же текст, что и у
+      // CASSATION_KSOYU.from_135fz: отсечка одна и та же (ФЗ № 135-ФЗ).
+      boundary_note:
+        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
+        'редакции спорный.',
       alternative_calculation: {
         anchor: { event: 'ksoyu_ruling', offset_start: 1 },
         norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17',
@@ -2878,111 +2886,10 @@ function resolveVsAnchor(version, inputs) {
   return toISO(inputs.ksoyu_ruling_date);
 }
 
-// Расчёт по конкретной редакции (offset_start + месяцы + перенос выходного).
-function termDeadline(term, anchorSpec, anchorDate) {
-  return computeDeadline(
-    {
-      duration: term.duration,
-      anchor: { offset_start: anchorSpec.offset_start },
-      weekend_shift: term.weekend_shift,
-    },
-    anchorDate,
-  );
-}
-
-// Пограничное окно редакций. Если действует более поздняя редакция (по дате
-// подачи), но по прежней срок истёк ещё до отсечки (её вступления в силу), а по
-// действующей — уже после, отсечка попадает между датами. Переходных положений
-// у ФЗ № 135-ФЗ нет — вопрос о применимой редакции спорный. Расчёт остаётся по
-// действующей редакции, но показываются обе даты (раздел 10 SPEC.md).
-// resolveAnchorFor(version) → дата точки отсчёта или null.
-function boundaryWarning(term, version, resolveAnchorFor, currentDeadline) {
-  const versions = term.norm_versions;
-  const idx = versions.indexOf(version);
-  if (idx <= 0) return null; // действует самая ранняя редакция — окна нет
-  const prev = versions[idx - 1];
-  const cutoff = version.from; // граница = дата вступления редакции в силу
-  if (cutoff == null) return null;
-
-  const prevAnchor = resolveAnchorFor(prev);
-  if (prevAnchor == null) return null;
-  const prevDeadline = termDeadline(term, prev.anchor, prevAnchor).deadline;
-
-  // Отсечка между датами: прежняя истекла до неё, действующая — на/после.
-  if (prevDeadline < cutoff && currentDeadline >= cutoff) {
-    return {
-      cutoff,
-      prev_version_id: prev.id,
-      prev_redaction_deadline: prevDeadline,
-      current_deadline: currentDeadline,
-      reason:
-        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
-        'редакции спорный.',
-    };
-  }
-  return null;
-}
-
-// Обобщённый расчёт срока с темпоральными редакциями (кассация в КСОЮ и в ВС).
-//   resolveAnchorFor(version) → дата точки отсчёта или null;
-//   altDates — { ruling, reasoned } для alternative_calculation, или null.
-function computeVersionedTerm(term, effectiveDate, resolveAnchorFor, altDates) {
-  if (effectiveDate == null) return null;
-  const version = pickVersion(term.norm_versions, effectiveDate);
-  if (version == null) return null;
-
-  const anchor = resolveAnchorFor(version);
-  // Нет точки отсчёта (напр. новая редакция без даты мотивированного
-  // определения): срок ещё не считается.
-  if (anchor == null) return null;
-
-  const primary = termDeadline(term, version.anchor, anchor);
-
-  const result = {
-    id: term.id,
-    title: term.title,
-    anchor,
-    offset_start: primary.offset_start,
-    raw_deadline: primary.raw_deadline,
-    deadline: primary.deadline,
-    shifted: primary.shifted,
-    version_id: version.id,
-    effective_date: effectiveDate,
-    logic: version.logic,
-    midnight_rule: term.midnight_rule,
-    norm: version.norm,
-  };
-
-  // alternative_calculation — только у редакции, где она задана (from_135fz), при
-  // расхождении даты вынесения и даты мотивированного определения (раздел 6).
-  const altSpec = version.alternative_calculation;
-  if (altSpec && altDates) {
-    const ruling = toISO(altDates.ruling);
-    const reasoned = toISO(altDates.reasoned);
-    if (ruling != null && reasoned != null && reasoned > ruling) {
-      const alt = termDeadline(term, altSpec.anchor, ruling);
-      const recommended =
-        alt.deadline < primary.deadline ? alt.deadline : primary.deadline; // prefer: earliest
-      result.alternative = {
-        anchor: ruling,
-        raw_deadline: alt.raw_deadline,
-        deadline: alt.deadline,
-        shifted: alt.shifted,
-        norm: altSpec.norm,
-        reason: altSpec.reason,
-        prefer: altSpec.prefer,
-        recommended_deadline: recommended,
-        recommendation: altSpec.recommendation,
-      };
-    }
-  }
-
-  // Пограничное окно редакций (раздел 10 SPEC.md) — расчёт не меняем.
-  const bw = boundaryWarning(term, version, resolveAnchorFor, primary.deadline);
-  if (bw) result.boundary_warning = bw;
-
-  return result;
-}
+// pickVersion, computeVersionedTerm — перенесены в core/engine/versioning.js
+// (норм-версионирование как таковое не зависит от предметной области;
+// текст пограничного окна теперь у самой редакции нормы, в поле
+// boundary_note — см. CASSATION_KSOYU.norm_versions и CASSATION_VS.norm_versions выше).
 
 // Предупреждение об исчерпании способов обжалования — показывается, когда акт
 // первой инстанции в апелляции не обжаловался. Расчёт не меняется.
