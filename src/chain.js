@@ -10,7 +10,13 @@
 
 import { computeDeadline, addDays } from '../core/engine/engine.js';
 import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
-import { toISO, compareInterruptions, computeSimpleTerm } from '../core/engine/term.js';
+import { toISO, computeSimpleTerm } from '../core/engine/term.js';
+import {
+  interruptionEvents as genericInterruptionEvents,
+  applyInterruptions as genericApplyInterruptions,
+  withInterruptions as genericWithInterruptions,
+  computeInterruptibleTerm as genericComputeInterruptibleTerm,
+} from '../core/engine/interruption.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -344,40 +350,27 @@ export const INTERRUPTION_SCOPE_WARNING = {
     'расчётный срок.',
 };
 
-// compareInterruptions — перенесена в core/engine/term.js (см. импорт выше).
+// Механика (сортировка, отсев непригодных событий, сдвиг якоря) перенесена в
+// core/engine/interruption.js — она не знает про ФЗ № 229-ФЗ и про то, какие
+// основания перерыва допустимы. Ниже — тонкие обёртки, которые передают эти
+// ГПК-данные параметром, сохраняя прежние имена и сигнатуры вызовов.
+
+// Текст, которым core/engine/interruption.js помечает результат — данные
+// именно этого модуля (ФЗ № 229-ФЗ), а не механизма.
+const INTERRUPTION_CONFIG = {
+  norm: INTERRUPTION_NORM.primary,
+  logic: INTERRUPTION_NORM.logic,
+  warning: INTERRUPTION_SCOPE_WARNING,
+};
 
 /**
  * События-перерывы в расчётной форме, отсортированные по дате по возрастанию.
- * Порядок ввода хронологии не гарантирует (перерывы вспоминают вразнобой),
- * поэтому сортировка обязательна.
- *
- * Событие помечается ignored, если учесть его нельзя: не указана дата,
- * неизвестное основание либо дата раньше базового якоря — прерывать ещё не
- * начавшийся срок нечем, а сдвиг якоря назад дал бы дедлайн раньше базового.
- * Такие события не выбрасываются молча: они остаются в истории с причиной,
- * чтобы на карточке было видно, что именно не принято в расчёт.
- *
  * @param {Date|string|null} baseAnchorDate — базовая точка отсчёта срока.
  * @param {Array<{type:string, date:string}>|null|undefined} interruptions
  * @returns {Array<{type:string|null, date:string|null, ignored?:boolean, ignored_reason?:string}>}
  */
 export function interruptionEvents(baseAnchorDate, interruptions) {
-  if (!Array.isArray(interruptions) || interruptions.length === 0) return [];
-  const base = toISO(baseAnchorDate);
-  return interruptions
-    .map((raw) => {
-      const type = raw?.type ?? null;
-      const date = toISO(raw?.date);
-      if (date == null) return { type, date: null, ignored: true, ignored_reason: 'no_date' };
-      if (!INTERRUPTION_TYPE_IDS.has(type)) {
-        return { type, date, ignored: true, ignored_reason: 'unknown_type' };
-      }
-      if (base != null && date < base) {
-        return { type, date, ignored: true, ignored_reason: 'before_anchor' };
-      }
-      return { type, date };
-    })
-    .sort(compareInterruptions);
+  return genericInterruptionEvents(baseAnchorDate, interruptions, INTERRUPTION_TYPE_IDS);
 }
 
 /**
@@ -389,23 +382,13 @@ export function interruptionEvents(baseAnchorDate, interruptions) {
  * @returns {Date|string|null} тот же baseAnchorDate либо ISO-дата перерыва.
  */
 export function applyInterruptions(baseAnchorDate, interruptions) {
-  const applied = interruptionEvents(baseAnchorDate, interruptions).filter((e) => !e.ignored);
-  if (applied.length === 0) return baseAnchorDate;
-  return applied[applied.length - 1].date;
+  return genericApplyInterruptions(baseAnchorDate, interruptions, INTERRUPTION_TYPE_IDS);
 }
 
 // Исходный якорь на посчитанном сроке: в calc.anchor лежит уже сдвинутая дата,
 // а история перерывов без точки, от которой срок шёл изначально, не читается.
 function withInterruptions(result, baseAnchorISO, events) {
-  if (result == null || events.length === 0) return result;
-  return {
-    ...result,
-    base_anchor: baseAnchorISO,
-    interruptions: events,
-    interruption_norm: INTERRUPTION_NORM.primary,
-    interruption_logic: INTERRUPTION_NORM.logic,
-    interruption_warning: INTERRUPTION_SCOPE_WARNING,
-  };
+  return genericWithInterruptions(result, baseAnchorISO, events, INTERRUPTION_CONFIG);
 }
 
 // Срок предъявления ИЛ — condition: узел появляется только когда вступление в
@@ -807,15 +790,16 @@ export const ADOPTION_APPEAL = {
 // Контракт «ровно одна редакция» и известное исключение (MIROVOY_CASSATION,
 // у которой их две) задокументированы там же.
 
-// Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ: тот же расчёт, что и
-// у computeSimpleTerm, но якорь сдвигается на последнее по хронологии событие
-// (applyInterruptions), а исходный сохраняется в base_anchor для истории.
+// Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ — тонкая обёртка
+// над core/engine/interruption.js с ГПК-данными (основания перерыва, норма).
 function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
-  const base = toISO(baseAnchorDate);
-  if (base == null) return null;
-  const events = interruptionEvents(base, interruptions);
-  const result = computeSimpleTerm(term, applyInterruptions(base, interruptions));
-  return withInterruptions(result, base, events);
+  return genericComputeInterruptibleTerm(
+    term,
+    baseAnchorDate,
+    interruptions,
+    INTERRUPTION_TYPE_IDS,
+    INTERRUPTION_CONFIG,
+  );
 }
 
 /**
