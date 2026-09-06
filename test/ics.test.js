@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { buildICS, icsTermsFromChain, icsTermsFromView, TERM_REGISTRY } from '../src/ics.js';
 import { buildView } from '../src/views.js';
 import { computeChain } from '../src/chain.js';
-import { addDays, addMonths } from '../src/engine.js';
+import { addDays, addMonths } from '../core/engine/engine.js';
 import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } from '../core/calendar/calendar.js';
 
 const NOW = '2025-01-01T00:00:00Z'; // фиксируем DTSTAMP для детерминизма

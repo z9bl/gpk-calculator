@@ -8,7 +8,7 @@
 // Текущая дата (для ветвей not_appealed/pending) передаётся параметром, а не
 // берётся из системных часов — иначе расчёт был бы недетерминированным.
 
-import { computeDeadline, addDays } from './engine.js';
+import { computeDeadline, addDays } from '../core/engine/engine.js';
 import { toISODate } from '../core/calendar/calendar.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------

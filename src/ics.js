@@ -11,7 +11,7 @@
 // Напоминание раньше даты расчёта не создаётся.
 
 import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from '../core/calendar/calendar.js';
-import { addMonths } from './engine.js';
+import { addMonths } from '../core/engine/engine.js';
 import { calendarEventTitle } from '../core/export/links.js';
 import {
   APPEAL_GENERAL,

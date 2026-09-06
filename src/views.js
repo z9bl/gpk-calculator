@@ -45,7 +45,7 @@ export { REVIEW_GROUNDS };
 // applyInterruptions в chain.js). Механизм оставлен, как и STUBS ниже: он
 // понадобится следующему смежному случаю, для которого расчёта не окажется.
 const ENFORCEMENT_STUBS = [];
-import { computeDeadline, addDays } from './engine.js';
+import { computeDeadline, addDays } from '../core/engine/engine.js';
 import { toISODate, calendarNote, isWorkingDay } from '../core/calendar/calendar.js';
 
 // Названия input (п. 4.1 SPEC.md) для списка «что ещё можно уточнить».
