@@ -95,6 +95,9 @@ export function computeVersionedTerm(term, effectiveDate, resolveAnchorFor, altD
     logic: version.logic,
     midnight_rule: term.midnight_rule,
     norm: version.norm,
+    // Норма восстановления пропущенного срока — свойство term в целом (не
+    // версии): нужна вызывающему коду для markExpired.
+    restoration_norm: term.restoration_norm,
   };
 
   // alternative_calculation — только у редакции, где она задана в данных, при

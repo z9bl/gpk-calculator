@@ -33,6 +33,7 @@ export const APPEAL_GENERAL = {
     'соответствующее число следующего месяца.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   // Одна редакция за весь период (см. темпоральную модель, раздел 10 SPEC.md).
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -59,6 +60,7 @@ export const CASSATION_KSOYU = {
   // Темпоральная модель нормы (ч. 3 ст. 1 ГПК — раздел 10 SPEC.md): применяется
   // редакция, действующая на момент подачи кассационной жалобы (иначе — на
   // текущую дату). Отсечка — 01.09.2024, вступление в силу ФЗ № 135-ФЗ.
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'before_135fz',
@@ -176,6 +178,7 @@ export const CASSATION_VS = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'before_135fz',
@@ -251,6 +254,7 @@ export const ENFORCEMENT_PRESENTATION = {
     'после перерыва течение возобновляется, истёкшее время в новый срок не ' +
     'засчитывается (ст. 22 ФЗ № 229-ФЗ, ст. 432 ГПК).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -435,6 +439,7 @@ export const PROTOCOL_REMARKS = {
     'дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ); течение начинается со дня, ' +
     'следующего за подписанием, а если он нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -461,6 +466,7 @@ export const PROTOCOL_REMARKS_REVIEW = {
     'Пять дней со дня подачи замечаний. Срок исчисляется днями — нерабочие дни ' +
     'не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ).',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -488,6 +494,7 @@ export const PRIVATE_COMPLAINT = {
     'РФ); течение начинается со дня, следующего за вынесением, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -535,6 +542,7 @@ export const COURT_ORDER_OBJECTION = {
     'сроком он здесь не считается, и точка отсчёта — именно получение копии, а ' +
     'не вынесение приказа и не его отправка.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -577,6 +585,7 @@ export const COURT_ORDER_PRESENTATION = {
     'а не со дня его вынесения мировым судьёй и не со дня истечения срока на ' +
     'возражения должника.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -617,6 +626,7 @@ export const PERIODIC_PAYMENTS_PRESENTATION = {
     'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ можно ' +
     'предъявить в любой момент — содержательного дедлайна на это время нет.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -699,6 +709,7 @@ export const CHILD_RETURN_APPEAL = {
     'следующего за принятием решения в окончательной форме, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -728,6 +739,7 @@ export const CHILD_RETURN_PRIVATE_COMPLAINT = {
     'РФ); течение начинается со дня, следующего за вынесением определения, а ' +
     'если он нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -772,6 +784,7 @@ export const ADOPTION_APPEAL = {
     'следующего за принятием решения в окончательной форме, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -919,6 +932,7 @@ export const SUPERVISION = {
     '(ч. 1 ст. 390.3 в редакции с 01.09.2024), который считается со дня ' +
     'изготовления мотивированного определения КСОЮ.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -980,6 +994,7 @@ export const CASSATION_RETURN_RULING_APPEAL = {
     'предложение ч. 2 ст. 379.2): соблюдение кассационного срока (ст. 376.1) ' +
     'проверяется по этому дню, заново срок не течёт.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1027,6 +1042,7 @@ export const ARBITRATION_COMPETENCE_APPEAL = {
     'вопроса о компетенции; итоговое решение третейского суда по существу спора ' +
     'этим сроком не охватывается.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1081,6 +1097,7 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
     'немедленному исполнению (ч. 11 ст. 153.10) — на срок обжалования это ' +
     'не влияет.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1234,6 +1251,7 @@ export const REVIEW_NEW_CIRCUMSTANCES_FILING = {
   title: 'Заявление о пересмотре по вновь открывшимся/новым обстоятельствам',
   duration: REVIEW_NEW_CIRCUMSTANCES_DURATION,
   ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
 };
 
 // Общая норма срока одна на все основания (ч. 1 ст. 394 ГПК РФ) — длительность,
@@ -1437,6 +1455,7 @@ export const REVIEW_NEW_CIRCUMSTANCES_RESTORATION = {
     'того, какое из семи оснований выбрано. Рассматривается в порядке, ' +
     'установленном ст. 112 ГПК РФ.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1516,6 +1535,7 @@ export const SIMPLIFIED_REASONED_REQUEST = {
     'Пять дней со дня подписания резолютивной части решения. Срок в рабочих ' +
     'днях (абз. 2 ч. 3 ст. 107 ГПК РФ, п. 16–17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1538,6 +1558,7 @@ export const SIMPLIFIED_REASONED_MAKING = {
     'Десять дней со дня поступления заявления о составлении мотивированного ' +
     'решения либо со дня подачи апелляционной жалобы. Срок в рабочих днях.',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1561,6 +1582,7 @@ export const SIMPLIFIED_APPEAL = {
     'решения — со дня принятия решения в окончательной форме. Срок в рабочих ' +
     'днях (п. 17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1738,6 +1760,7 @@ export const DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     'исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ). ' +
     DEFAULT_JUDGMENT_CANCELLED_NOTE,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1761,6 +1784,7 @@ export const DEFAULT_JUDGMENT_APPEAL = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2059,6 +2083,7 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     'иностранного государства рассматривается по правилам главы 22 ГПК РФ ' +
     '(ч. 1 ст. 417.10).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2086,6 +2111,7 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL = {
   title: 'Апелляционная жалоба (заочное решение против иностранного государства)',
   duration: { value: 1, unit: 'month' },
   ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
 };
 
 const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE =
@@ -2138,6 +2164,10 @@ function computeForeignStateAppealTerm(mode, anchorDate) {
     logic: mode.logic,
     anchor_kind: mode.anchor_kind,
     midnight_rule: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE,
+    // Расчёт здесь ручной (см. преамбулу выше), не через computeSimpleTerm,
+    // поэтому restoration_norm не наследуется автоматически — переносим явно
+    // с константы-реестра, иначе узел молча остался бы без нормы восстановления.
+    restoration_norm: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL.restoration_norm,
   };
 }
 
@@ -2348,6 +2378,7 @@ export const MIROVOY_REASONED_REQUEST = {
   condition: 'mirovoy_resolution_date',
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2396,6 +2427,7 @@ export const MIROVOY_REASONED_MAKING = {
     'Десять дней со дня поступления заявления о составлении мотивированного ' +
     'решения. Срок в рабочих днях.',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2416,6 +2448,7 @@ export const MIROVOY_APPEAL = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2593,6 +2626,7 @@ export const MIROVOY_CASSATION = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'ksoyu_before_79fz',

@@ -74,6 +74,10 @@ export function computeSimpleTerm(term, anchorDate, overrides = null) {
     // Фактическая длительность: у части сроков она зависит не от константы, а
     // от входных данных. Нужна вызывающему коду для правил напоминаний .ics.
     duration: term.duration,
+    // Норма восстановления пропущенного срока — тоже данные term, не
+    // константа механизма (у разных сроков и кодексов она может различаться).
+    // Нужна вызывающему коду для markExpired.
+    restoration_norm: term.restoration_norm,
   };
   if (term.interruptible) result.interruptible = true;
   if (calc.first_working_day) result.first_working_day = calc.first_working_day;
