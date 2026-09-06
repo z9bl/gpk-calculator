@@ -10,25 +10,7 @@
 // знает, что означает та или иная точка отсчёта.
 
 import { computeDeadline } from './engine.js';
-import { toISODate } from '../calendar/calendar.js';
-
-// Приводит Date | 'YYYY-MM-DD' | null/undefined к ISO-строке или null.
-// Дублирует одноимённую функцию в src/chain.js (см. фрагмент 5 аудита,
-// docs/core-extraction-audit.md) — эта функция нужна только computeVersionedTerm
-// для дат alternative_calculation, и заводить ради неё зависимость ядра от
-// chain.js нельзя. Дедупликация вынесена за рамки этого шага.
-function toISO(value) {
-  if (value == null || value === '') return null;
-  if (typeof value === 'string') {
-    const parts = value.split('-').map(Number);
-    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
-    const [y, m, d] = parts;
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return Number.isNaN(date.getTime()) ? null : toISODate(date);
-  }
-  const iso = toISODate(value);
-  return iso === 'NaN-NaN-NaN' ? null : iso;
-}
+import { toISO } from './term.js';
 
 // Редакция нормы по дате: границы включительны, null = без границы.
 export function pickVersion(versions, dateISO) {

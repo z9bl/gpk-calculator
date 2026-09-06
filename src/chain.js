@@ -9,8 +9,8 @@
 // берётся из системных часов — иначе расчёт был бы недетерминированным.
 
 import { computeDeadline, addDays } from '../core/engine/engine.js';
-import { toISODate } from '../core/calendar/calendar.js';
 import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
+import { toISO, compareInterruptions, computeSimpleTerm } from '../core/engine/term.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -344,13 +344,7 @@ export const INTERRUPTION_SCOPE_WARNING = {
     'расчётный срок.',
 };
 
-// Сортировка по дате по возрастанию; события без даты — в конец.
-function compareInterruptions(a, b) {
-  if (a.date == null) return b.date == null ? 0 : 1;
-  if (b.date == null) return -1;
-  if (a.date < b.date) return -1;
-  return a.date > b.date ? 1 : 0;
-}
+// compareInterruptions — перенесена в core/engine/term.js (см. импорт выше).
 
 /**
  * События-перерывы в расчётной форме, отсортированные по дате по возрастанию.
@@ -809,33 +803,9 @@ export const ADOPTION_APPEAL = {
   ],
 };
 
-// Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
-function computeSimpleTerm(term, anchorDate, overrides = null) {
-  const anchor = toISO(anchorDate);
-  if (anchor == null) return null;
-  const calc = computeDeadline(term, anchor);
-  const result = {
-    id: term.id,
-    title: term.title,
-    anchor: calc.anchor,
-    offset_start: calc.offset_start,
-    raw_deadline: calc.raw_deadline,
-    deadline: calc.deadline,
-    shifted: calc.shifted,
-    logic: term.logic,
-    midnight_rule: term.midnight_rule,
-    norm: term.norm_versions[0].norm,
-    // Фактическая длительность: у части сроков она зависит не от константы, а
-    // от входных данных (3/15 рабочих дней по явке, ч. 4 ст. 199). Нужна для
-    // правил напоминаний .ics.
-    duration: term.duration,
-  };
-  if (term.interruptible) result.interruptible = true;
-  if (calc.first_working_day) result.first_working_day = calc.first_working_day;
-  // overrides — для сроков, у которых норма и логика зависят не от редакции, а
-  // от субъекта обжалования (заочное решение, ч. 2 ст. 237).
-  return overrides ? { ...result, ...overrides } : result;
-}
+// computeSimpleTerm — перенесена в core/engine/term.js (см. импорт выше).
+// Контракт «ровно одна редакция» и известное исключение (MIROVOY_CASSATION,
+// у которой их две) задокументированы там же.
 
 // Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ: тот же расчёт, что и
 // у computeSimpleTerm, но якорь сдвигается на последнее по хронологии событие
@@ -2773,24 +2743,11 @@ const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
 
-// Приводит Date | 'YYYY-MM-DD' | null/undefined к ISO-строке или null.
-//
-// Пустая строка и неполные/битые даты дают null, а не «NaN-NaN-NaN»: иначе
-// проверки вида `toISO(x) != null` ложно срабатывают на пустом поле. Так пустое
-// поле «определение об отказе» переставало гасить предупреждение об исчерпании
-// для ответчика по заочному решению.
-function toISO(value) {
-  if (value == null || value === '') return null;
-  if (typeof value === 'string') {
-    const parts = value.split('-').map(Number);
-    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
-    const [y, m, d] = parts;
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return Number.isNaN(date.getTime()) ? null : toISODate(date);
-  }
-  const iso = toISODate(value);
-  return iso === 'NaN-NaN-NaN' ? null : iso;
-}
+// toISO — перенесена в core/engine/term.js (каноническая версия для всего
+// проекта; см. импорт выше). src/views.js несёт отдельную одноимённую
+// функцию с другим телом — это не дубликат этой toISO, а самостоятельная
+// реализация (см. фрагмент 5 аудита, docs/core-extraction-audit.md), её
+// перенос вне рамок этого шага.
 
 // --- Событие: вступление решения в силу (п. 4.3) ----------------------------
 
