@@ -7,7 +7,7 @@ import { buildICS, icsTermsFromChain, icsTermsFromView, TERM_REGISTRY } from '..
 import { buildView } from '../src/views.js';
 import { computeChain } from '../src/chain.js';
 import { addDays, addMonths } from '../src/engine.js';
-import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } from '../src/calendar.js';
+import { toISODate, isWorkingDay, shiftBackIfNonWorking, subtractWorkingDays } from '../core/calendar/calendar.js';
 
 const NOW = '2025-01-01T00:00:00Z'; // фиксируем DTSTAMP для детерминизма
 

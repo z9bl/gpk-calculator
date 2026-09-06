@@ -46,7 +46,7 @@ export { REVIEW_GROUNDS };
 // понадобится следующему смежному случаю, для которого расчёта не окажется.
 const ENFORCEMENT_STUBS = [];
 import { computeDeadline, addDays } from './engine.js';
-import { toISODate, calendarNote, isWorkingDay } from './calendar.js';
+import { toISODate, calendarNote, isWorkingDay } from '../core/calendar/calendar.js';
 
 // Названия input (п. 4.1 SPEC.md) для списка «что ещё можно уточнить».
 const INPUT_LABELS = {

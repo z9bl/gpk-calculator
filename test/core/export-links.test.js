@@ -12,9 +12,9 @@ import {
   reminderRulePhrase,
   calendarEventTitle,
   ruDate,
-} from '../src/export-links.js';
-import { buildView } from '../src/views.js';
-import { icsTermsFromView } from '../src/ics.js';
+} from '../../core/export/links.js';
+import { buildView } from '../../src/views.js';
+import { icsTermsFromView } from '../../src/ics.js';
 
 const APPEAL = {
   title: 'Апелляционная жалоба',

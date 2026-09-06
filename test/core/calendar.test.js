@@ -13,10 +13,10 @@ import {
   toISODate,
   getYearInfo,
   calendarNote,
-} from '../src/calendar.js';
+} from '../../core/calendar/calendar.js';
 
 const calendarData = JSON.parse(
-  readFileSync(new URL('../calendar_data.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../core/calendar/calendar_data.json', import.meta.url), 'utf8'),
 );
 
 // Правило-ловушка № 3: перенос, у которого день-донор и день-приёмник дают

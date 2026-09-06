@@ -427,7 +427,7 @@
       // открыли как файл (file://), а не через веб-сервер.
       let calendarJson;
       try {
-        const res = await fetch('./calendar_data.json');
+        const res = await fetch('./core/calendar/calendar_data.json');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         calendarJson = await res.text();
       } catch (e) {

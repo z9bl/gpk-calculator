@@ -20,8 +20,8 @@ import {
   calendarEventTitle,
   DEADLINE_CAPTION,
   DEADLINE_CAPTION_COURT,
-} from '../src/export-links.js';
-import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../src/date-field.js';
+} from '../core/export/links.js';
+import { applyDateEdit, dateFieldError, isoToRu, ruToISO } from '../core/ui/date-field.js';
 import { SITUATIONS, DEFAULT_SITUATION, situationById } from '../src/situations.js';
 
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
@@ -263,7 +263,7 @@ function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// isoToRu/ruToISO живут в src/date-field.js — они нужны и тестам.
+// isoToRu/ruToISO живут в core/ui/date-field.js — они нужны и тестам.
 
 // Название поля для фразы «Укажите …»: подписи начинаются с «Дата», а дальше
 // уже идёт родительный падеж — остаётся отбросить уточнение в скобках. Поля не

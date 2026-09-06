@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { addDays, addMonths, computeDeadline } from '../src/engine.js';
-import { toISODate, isWorkingDay, shiftIfNonWorking } from '../src/calendar.js';
+import { toISODate, isWorkingDay, shiftIfNonWorking } from '../core/calendar/calendar.js';
 
 // Срок как в модели п. 4.2: 1 месяц, течение со следующего дня (ч. 3 ст. 107),
 // перенос выходного (ч. 2 ст. 108).

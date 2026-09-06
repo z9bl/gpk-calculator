@@ -9,7 +9,7 @@
 //     построению.
 // Начало течения во всех случаях — по ч. 3 ст. 107 через offset_start.
 
-import { shiftIfNonWorking, toISODate } from './calendar.js';
+import { shiftIfNonWorking, toISODate } from '../core/calendar/calendar.js';
 
 const DAY_MS = 86_400_000;
 
