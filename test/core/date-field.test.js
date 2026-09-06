@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyDateEdit, dateFieldError, isDatePrefix, ruToISO } from '../src/date-field.js';
+import { applyDateEdit, dateFieldError, isDatePrefix, ruToISO } from '../../core/ui/date-field.js';
 
 // Ввод в конец строки: браузер ставит каретку в конец, inputType — insertText.
 const typeAtEnd = (value) => applyDateEdit(value, value.length, 'insertText');

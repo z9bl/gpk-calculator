@@ -8,8 +8,15 @@
 // Текущая дата (для ветвей not_appealed/pending) передаётся параметром, а не
 // берётся из системных часов — иначе расчёт был бы недетерминированным.
 
-import { computeDeadline, addDays } from './engine.js';
-import { toISODate } from './calendar.js';
+import { computeDeadline, addDays } from '../core/engine/engine.js';
+import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
+import { toISO, computeSimpleTerm } from '../core/engine/term.js';
+import {
+  interruptionEvents as genericInterruptionEvents,
+  applyInterruptions as genericApplyInterruptions,
+  withInterruptions as genericWithInterruptions,
+  computeInterruptibleTerm as genericComputeInterruptibleTerm,
+} from '../core/engine/interruption.js';
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -26,6 +33,7 @@ export const APPEAL_GENERAL = {
     'соответствующее число следующего месяца.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   // Одна редакция за весь период (см. темпоральную модель, раздел 10 SPEC.md).
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -52,6 +60,7 @@ export const CASSATION_KSOYU = {
   // Темпоральная модель нормы (ч. 3 ст. 1 ГПК — раздел 10 SPEC.md): применяется
   // редакция, действующая на момент подачи кассационной жалобы (иначе — на
   // текущую дату). Отсечка — 01.09.2024, вступление в силу ФЗ № 135-ФЗ.
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'before_135fz',
@@ -74,6 +83,13 @@ export const CASSATION_KSOYU = {
         primary: 'абз. 2 ч. 1 ст. 376.1 ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
+      // Пограничное окно редакций (раздел 10 SPEC.md): показывается, когда
+      // срок по прежней редакции истёк ещё до отсечки, а по действующей — уже
+      // на/после нее (см. boundaryWarning в core/engine/versioning.js). Текст
+      // объясняет, почему окно вообще возможно у этой конкретной редакции.
+      boundary_note:
+        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
+        'редакции спорный.',
       // Конфликт с п. 12 ПП ВС РФ от 22.06.2021 № 17 существует только для этой редакции: до
       // 01.09.2024 разъяснение Пленума совпадало с законом (раздел 6 SPEC.md).
       alternative_calculation: {
@@ -137,12 +153,7 @@ const DEFAULT_JUDGMENT_DEFENDANT_EXHAUSTION_WARNING = {
     'этого жалоба подлежит возврату.',
 };
 
-// Редакция нормы по дате (ч. 3 ст. 1 ГПК): границы включительны, null = без границы.
-function pickVersion(versions, dateISO) {
-  return versions.find(
-    (v) => (v.from == null || dateISO >= v.from) && (v.to == null || dateISO <= v.to),
-  );
-}
+// pickVersion — перенесена в core/engine/versioning.js (см. импорт выше).
 
 /**
  * Редакция ч. 1 ст. 376.1 ГПК, действующая на дату (для UI и подсказок).
@@ -167,6 +178,7 @@ export const CASSATION_VS = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'before_135fz',
@@ -193,6 +205,11 @@ export const CASSATION_VS = {
           'ФЗ № 79-ФЗ от 09.04.2026 — терминологическая правка)',
         calculation: ['ч. 3 ст. 107', 'ч. 1, 2 ст. 108 ГПК РФ'],
       },
+      // Пограничное окно редакций — тот же механизм и тот же текст, что и у
+      // CASSATION_KSOYU.from_135fz: отсечка одна и та же (ФЗ № 135-ФЗ).
+      boundary_note:
+        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
+        'редакции спорный.',
       alternative_calculation: {
         anchor: { event: 'ksoyu_ruling', offset_start: 1 },
         norm: 'п. 12 ПП ВС РФ от 22.06.2021 № 17',
@@ -237,6 +254,7 @@ export const ENFORCEMENT_PRESENTATION = {
     'после перерыва течение возобновляется, истёкшее время в новый срок не ' +
     'засчитывается (ст. 22 ФЗ № 229-ФЗ, ст. 432 ГПК).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -336,46 +354,27 @@ export const INTERRUPTION_SCOPE_WARNING = {
     'расчётный срок.',
 };
 
-// Сортировка по дате по возрастанию; события без даты — в конец.
-function compareInterruptions(a, b) {
-  if (a.date == null) return b.date == null ? 0 : 1;
-  if (b.date == null) return -1;
-  if (a.date < b.date) return -1;
-  return a.date > b.date ? 1 : 0;
-}
+// Механика (сортировка, отсев непригодных событий, сдвиг якоря) перенесена в
+// core/engine/interruption.js — она не знает про ФЗ № 229-ФЗ и про то, какие
+// основания перерыва допустимы. Ниже — тонкие обёртки, которые передают эти
+// ГПК-данные параметром, сохраняя прежние имена и сигнатуры вызовов.
+
+// Текст, которым core/engine/interruption.js помечает результат — данные
+// именно этого модуля (ФЗ № 229-ФЗ), а не механизма.
+const INTERRUPTION_CONFIG = {
+  norm: INTERRUPTION_NORM.primary,
+  logic: INTERRUPTION_NORM.logic,
+  warning: INTERRUPTION_SCOPE_WARNING,
+};
 
 /**
  * События-перерывы в расчётной форме, отсортированные по дате по возрастанию.
- * Порядок ввода хронологии не гарантирует (перерывы вспоминают вразнобой),
- * поэтому сортировка обязательна.
- *
- * Событие помечается ignored, если учесть его нельзя: не указана дата,
- * неизвестное основание либо дата раньше базового якоря — прерывать ещё не
- * начавшийся срок нечем, а сдвиг якоря назад дал бы дедлайн раньше базового.
- * Такие события не выбрасываются молча: они остаются в истории с причиной,
- * чтобы на карточке было видно, что именно не принято в расчёт.
- *
  * @param {Date|string|null} baseAnchorDate — базовая точка отсчёта срока.
  * @param {Array<{type:string, date:string}>|null|undefined} interruptions
  * @returns {Array<{type:string|null, date:string|null, ignored?:boolean, ignored_reason?:string}>}
  */
 export function interruptionEvents(baseAnchorDate, interruptions) {
-  if (!Array.isArray(interruptions) || interruptions.length === 0) return [];
-  const base = toISO(baseAnchorDate);
-  return interruptions
-    .map((raw) => {
-      const type = raw?.type ?? null;
-      const date = toISO(raw?.date);
-      if (date == null) return { type, date: null, ignored: true, ignored_reason: 'no_date' };
-      if (!INTERRUPTION_TYPE_IDS.has(type)) {
-        return { type, date, ignored: true, ignored_reason: 'unknown_type' };
-      }
-      if (base != null && date < base) {
-        return { type, date, ignored: true, ignored_reason: 'before_anchor' };
-      }
-      return { type, date };
-    })
-    .sort(compareInterruptions);
+  return genericInterruptionEvents(baseAnchorDate, interruptions, INTERRUPTION_TYPE_IDS);
 }
 
 /**
@@ -387,23 +386,13 @@ export function interruptionEvents(baseAnchorDate, interruptions) {
  * @returns {Date|string|null} тот же baseAnchorDate либо ISO-дата перерыва.
  */
 export function applyInterruptions(baseAnchorDate, interruptions) {
-  const applied = interruptionEvents(baseAnchorDate, interruptions).filter((e) => !e.ignored);
-  if (applied.length === 0) return baseAnchorDate;
-  return applied[applied.length - 1].date;
+  return genericApplyInterruptions(baseAnchorDate, interruptions, INTERRUPTION_TYPE_IDS);
 }
 
 // Исходный якорь на посчитанном сроке: в calc.anchor лежит уже сдвинутая дата,
 // а история перерывов без точки, от которой срок шёл изначально, не читается.
 function withInterruptions(result, baseAnchorISO, events) {
-  if (result == null || events.length === 0) return result;
-  return {
-    ...result,
-    base_anchor: baseAnchorISO,
-    interruptions: events,
-    interruption_norm: INTERRUPTION_NORM.primary,
-    interruption_logic: INTERRUPTION_NORM.logic,
-    interruption_warning: INTERRUPTION_SCOPE_WARNING,
-  };
+  return genericWithInterruptions(result, baseAnchorISO, events, INTERRUPTION_CONFIG);
 }
 
 // Срок предъявления ИЛ — condition: узел появляется только когда вступление в
@@ -450,6 +439,7 @@ export const PROTOCOL_REMARKS = {
     'дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ); течение начинается со дня, ' +
     'следующего за подписанием, а если он нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -476,6 +466,7 @@ export const PROTOCOL_REMARKS_REVIEW = {
     'Пять дней со дня подачи замечаний. Срок исчисляется днями — нерабочие дни ' +
     'не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ).',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -503,6 +494,7 @@ export const PRIVATE_COMPLAINT = {
     'РФ); течение начинается со дня, следующего за вынесением, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -550,6 +542,7 @@ export const COURT_ORDER_OBJECTION = {
     'сроком он здесь не считается, и точка отсчёта — именно получение копии, а ' +
     'не вынесение приказа и не его отправка.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -592,6 +585,7 @@ export const COURT_ORDER_PRESENTATION = {
     'а не со дня его вынесения мировым судьёй и не со дня истечения срока на ' +
     'возражения должника.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -632,6 +626,7 @@ export const PERIODIC_PAYMENTS_PRESENTATION = {
     'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ можно ' +
     'предъявить в любой момент — содержательного дедлайна на это время нет.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -714,6 +709,7 @@ export const CHILD_RETURN_APPEAL = {
     'следующего за принятием решения в окончательной форме, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -743,6 +739,7 @@ export const CHILD_RETURN_PRIVATE_COMPLAINT = {
     'РФ); течение начинается со дня, следующего за вынесением определения, а ' +
     'если он нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -787,6 +784,7 @@ export const ADOPTION_APPEAL = {
     'следующего за принятием решения в окончательной форме, а если он ' +
     'нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -801,43 +799,20 @@ export const ADOPTION_APPEAL = {
   ],
 };
 
-// Расчёт одноредакционного срока от даты-якоря; null, если якоря нет.
-function computeSimpleTerm(term, anchorDate, overrides = null) {
-  const anchor = toISO(anchorDate);
-  if (anchor == null) return null;
-  const calc = computeDeadline(term, anchor);
-  const result = {
-    id: term.id,
-    title: term.title,
-    anchor: calc.anchor,
-    offset_start: calc.offset_start,
-    raw_deadline: calc.raw_deadline,
-    deadline: calc.deadline,
-    shifted: calc.shifted,
-    logic: term.logic,
-    midnight_rule: term.midnight_rule,
-    norm: term.norm_versions[0].norm,
-    // Фактическая длительность: у части сроков она зависит не от константы, а
-    // от входных данных (3/15 рабочих дней по явке, ч. 4 ст. 199). Нужна для
-    // правил напоминаний .ics.
-    duration: term.duration,
-  };
-  if (term.interruptible) result.interruptible = true;
-  if (calc.first_working_day) result.first_working_day = calc.first_working_day;
-  // overrides — для сроков, у которых норма и логика зависят не от редакции, а
-  // от субъекта обжалования (заочное решение, ч. 2 ст. 237).
-  return overrides ? { ...result, ...overrides } : result;
-}
+// computeSimpleTerm — перенесена в core/engine/term.js (см. импорт выше).
+// Контракт «ровно одна редакция» и известное исключение (MIROVOY_CASSATION,
+// у которой их две) задокументированы там же.
 
-// Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ: тот же расчёт, что и
-// у computeSimpleTerm, но якорь сдвигается на последнее по хронологии событие
-// (applyInterruptions), а исходный сохраняется в base_anchor для истории.
+// Срок, который может быть прерван по ст. 22 ФЗ № 229-ФЗ — тонкая обёртка
+// над core/engine/interruption.js с ГПК-данными (основания перерыва, норма).
 function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
-  const base = toISO(baseAnchorDate);
-  if (base == null) return null;
-  const events = interruptionEvents(base, interruptions);
-  const result = computeSimpleTerm(term, applyInterruptions(base, interruptions));
-  return withInterruptions(result, base, events);
+  return genericComputeInterruptibleTerm(
+    term,
+    baseAnchorDate,
+    interruptions,
+    INTERRUPTION_TYPE_IDS,
+    INTERRUPTION_CONFIG,
+  );
 }
 
 /**
@@ -957,6 +932,7 @@ export const SUPERVISION = {
     '(ч. 1 ст. 390.3 в редакции с 01.09.2024), который считается со дня ' +
     'изготовления мотивированного определения КСОЮ.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1018,6 +994,7 @@ export const CASSATION_RETURN_RULING_APPEAL = {
     'предложение ч. 2 ст. 379.2): соблюдение кассационного срока (ст. 376.1) ' +
     'проверяется по этому дню, заново срок не течёт.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1065,6 +1042,7 @@ export const ARBITRATION_COMPETENCE_APPEAL = {
     'вопроса о компетенции; итоговое решение третейского суда по существу спора ' +
     'этим сроком не охватывается.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1119,6 +1097,7 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
     'немедленному исполнению (ч. 11 ст. 153.10) — на срок обжалования это ' +
     'не влияет.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1272,6 +1251,7 @@ export const REVIEW_NEW_CIRCUMSTANCES_FILING = {
   title: 'Заявление о пересмотре по вновь открывшимся/новым обстоятельствам',
   duration: REVIEW_NEW_CIRCUMSTANCES_DURATION,
   ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
 };
 
 // Общая норма срока одна на все основания (ч. 1 ст. 394 ГПК РФ) — длительность,
@@ -1475,6 +1455,7 @@ export const REVIEW_NEW_CIRCUMSTANCES_RESTORATION = {
     'того, какое из семи оснований выбрано. Рассматривается в порядке, ' +
     'установленном ст. 112 ГПК РФ.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1554,6 +1535,7 @@ export const SIMPLIFIED_REASONED_REQUEST = {
     'Пять дней со дня подписания резолютивной части решения. Срок в рабочих ' +
     'днях (абз. 2 ч. 3 ст. 107 ГПК РФ, п. 16–17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1576,6 +1558,7 @@ export const SIMPLIFIED_REASONED_MAKING = {
     'Десять дней со дня поступления заявления о составлении мотивированного ' +
     'решения либо со дня подачи апелляционной жалобы. Срок в рабочих днях.',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1599,6 +1582,7 @@ export const SIMPLIFIED_APPEAL = {
     'решения — со дня принятия решения в окончательной форме. Срок в рабочих ' +
     'днях (п. 17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1776,6 +1760,7 @@ export const DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     'исчисляется днями — нерабочие дни не включаются (абз. 2 ч. 3 ст. 107 ГПК РФ). ' +
     DEFAULT_JUDGMENT_CANCELLED_NOTE,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -1799,6 +1784,7 @@ export const DEFAULT_JUDGMENT_APPEAL = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2097,6 +2083,7 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     'иностранного государства рассматривается по правилам главы 22 ГПК РФ ' +
     '(ч. 1 ст. 417.10).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2124,6 +2111,7 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL = {
   title: 'Апелляционная жалоба (заочное решение против иностранного государства)',
   duration: { value: 1, unit: 'month' },
   ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
 };
 
 const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE =
@@ -2176,6 +2164,10 @@ function computeForeignStateAppealTerm(mode, anchorDate) {
     logic: mode.logic,
     anchor_kind: mode.anchor_kind,
     midnight_rule: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE,
+    // Расчёт здесь ручной (см. преамбулу выше), не через computeSimpleTerm,
+    // поэтому restoration_norm не наследуется автоматически — переносим явно
+    // с константы-реестра, иначе узел молча остался бы без нормы восстановления.
+    restoration_norm: FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL.restoration_norm,
   };
 }
 
@@ -2386,6 +2378,7 @@ export const MIROVOY_REASONED_REQUEST = {
   condition: 'mirovoy_resolution_date',
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2434,6 +2427,7 @@ export const MIROVOY_REASONED_MAKING = {
     'Десять дней со дня поступления заявления о составлении мотивированного ' +
     'решения. Срок в рабочих днях.',
   midnight_rule: null,
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2454,6 +2448,7 @@ export const MIROVOY_APPEAL = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'current',
@@ -2631,6 +2626,7 @@ export const MIROVOY_CASSATION = {
   weekend_shift: true,
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
     {
       id: 'ksoyu_before_79fz',
@@ -2765,24 +2761,11 @@ const ENTRY_INTO_FORCE_NORM = 'ч. 1 ст. 209 ГПК РФ';
 
 // --- Вспомогательные --------------------------------------------------------
 
-// Приводит Date | 'YYYY-MM-DD' | null/undefined к ISO-строке или null.
-//
-// Пустая строка и неполные/битые даты дают null, а не «NaN-NaN-NaN»: иначе
-// проверки вида `toISO(x) != null` ложно срабатывают на пустом поле. Так пустое
-// поле «определение об отказе» переставало гасить предупреждение об исчерпании
-// для ответчика по заочному решению.
-function toISO(value) {
-  if (value == null || value === '') return null;
-  if (typeof value === 'string') {
-    const parts = value.split('-').map(Number);
-    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
-    const [y, m, d] = parts;
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return Number.isNaN(date.getTime()) ? null : toISODate(date);
-  }
-  const iso = toISODate(value);
-  return iso === 'NaN-NaN-NaN' ? null : iso;
-}
+// toISO — перенесена в core/engine/term.js (каноническая версия для всего
+// проекта; см. импорт выше). src/views.js несёт отдельную одноимённую
+// функцию с другим телом — это не дубликат этой toISO, а самостоятельная
+// реализация (см. фрагмент 5 аудита, docs/core-extraction-audit.md), её
+// перенос вне рамок этого шага.
 
 // --- Событие: вступление решения в силу (п. 4.3) ----------------------------
 
@@ -2878,111 +2861,10 @@ function resolveVsAnchor(version, inputs) {
   return toISO(inputs.ksoyu_ruling_date);
 }
 
-// Расчёт по конкретной редакции (offset_start + месяцы + перенос выходного).
-function termDeadline(term, anchorSpec, anchorDate) {
-  return computeDeadline(
-    {
-      duration: term.duration,
-      anchor: { offset_start: anchorSpec.offset_start },
-      weekend_shift: term.weekend_shift,
-    },
-    anchorDate,
-  );
-}
-
-// Пограничное окно редакций. Если действует более поздняя редакция (по дате
-// подачи), но по прежней срок истёк ещё до отсечки (её вступления в силу), а по
-// действующей — уже после, отсечка попадает между датами. Переходных положений
-// у ФЗ № 135-ФЗ нет — вопрос о применимой редакции спорный. Расчёт остаётся по
-// действующей редакции, но показываются обе даты (раздел 10 SPEC.md).
-// resolveAnchorFor(version) → дата точки отсчёта или null.
-function boundaryWarning(term, version, resolveAnchorFor, currentDeadline) {
-  const versions = term.norm_versions;
-  const idx = versions.indexOf(version);
-  if (idx <= 0) return null; // действует самая ранняя редакция — окна нет
-  const prev = versions[idx - 1];
-  const cutoff = version.from; // граница = дата вступления редакции в силу
-  if (cutoff == null) return null;
-
-  const prevAnchor = resolveAnchorFor(prev);
-  if (prevAnchor == null) return null;
-  const prevDeadline = termDeadline(term, prev.anchor, prevAnchor).deadline;
-
-  // Отсечка между датами: прежняя истекла до неё, действующая — на/после.
-  if (prevDeadline < cutoff && currentDeadline >= cutoff) {
-    return {
-      cutoff,
-      prev_version_id: prev.id,
-      prev_redaction_deadline: prevDeadline,
-      current_deadline: currentDeadline,
-      reason:
-        'ФЗ № 135-ФЗ не содержит переходных положений — вопрос о применимой ' +
-        'редакции спорный.',
-    };
-  }
-  return null;
-}
-
-// Обобщённый расчёт срока с темпоральными редакциями (кассация в КСОЮ и в ВС).
-//   resolveAnchorFor(version) → дата точки отсчёта или null;
-//   altDates — { ruling, reasoned } для alternative_calculation, или null.
-function computeVersionedTerm(term, effectiveDate, resolveAnchorFor, altDates) {
-  if (effectiveDate == null) return null;
-  const version = pickVersion(term.norm_versions, effectiveDate);
-  if (version == null) return null;
-
-  const anchor = resolveAnchorFor(version);
-  // Нет точки отсчёта (напр. новая редакция без даты мотивированного
-  // определения): срок ещё не считается.
-  if (anchor == null) return null;
-
-  const primary = termDeadline(term, version.anchor, anchor);
-
-  const result = {
-    id: term.id,
-    title: term.title,
-    anchor,
-    offset_start: primary.offset_start,
-    raw_deadline: primary.raw_deadline,
-    deadline: primary.deadline,
-    shifted: primary.shifted,
-    version_id: version.id,
-    effective_date: effectiveDate,
-    logic: version.logic,
-    midnight_rule: term.midnight_rule,
-    norm: version.norm,
-  };
-
-  // alternative_calculation — только у редакции, где она задана (from_135fz), при
-  // расхождении даты вынесения и даты мотивированного определения (раздел 6).
-  const altSpec = version.alternative_calculation;
-  if (altSpec && altDates) {
-    const ruling = toISO(altDates.ruling);
-    const reasoned = toISO(altDates.reasoned);
-    if (ruling != null && reasoned != null && reasoned > ruling) {
-      const alt = termDeadline(term, altSpec.anchor, ruling);
-      const recommended =
-        alt.deadline < primary.deadline ? alt.deadline : primary.deadline; // prefer: earliest
-      result.alternative = {
-        anchor: ruling,
-        raw_deadline: alt.raw_deadline,
-        deadline: alt.deadline,
-        shifted: alt.shifted,
-        norm: altSpec.norm,
-        reason: altSpec.reason,
-        prefer: altSpec.prefer,
-        recommended_deadline: recommended,
-        recommendation: altSpec.recommendation,
-      };
-    }
-  }
-
-  // Пограничное окно редакций (раздел 10 SPEC.md) — расчёт не меняем.
-  const bw = boundaryWarning(term, version, resolveAnchorFor, primary.deadline);
-  if (bw) result.boundary_warning = bw;
-
-  return result;
-}
+// pickVersion, computeVersionedTerm — перенесены в core/engine/versioning.js
+// (норм-версионирование как таковое не зависит от предметной области;
+// текст пограничного окна теперь у самой редакции нормы, в поле
+// boundary_note — см. CASSATION_KSOYU.norm_versions и CASSATION_VS.norm_versions выше).
 
 // Предупреждение об исчерпании способов обжалования — показывается, когда акт
 // первой инстанции в апелляции не обжаловался. Расчёт не меняется.

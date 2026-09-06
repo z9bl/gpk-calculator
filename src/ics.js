@@ -10,9 +10,9 @@
 // сдвигается НАЗАД, к предыдущему рабочему (через календарный модуль).
 // Напоминание раньше даты расчёта не создаётся.
 
-import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from './calendar.js';
-import { addMonths } from './engine.js';
-import { calendarEventTitle } from './export-links.js';
+import { shiftBackIfNonWorking, subtractWorkingDays, toISODate } from '../core/calendar/calendar.js';
+import { addMonths } from '../core/engine/engine.js';
+import { calendarEventTitle } from '../core/export/links.js';
 import {
   APPEAL_GENERAL,
   CASSATION_KSOYU,

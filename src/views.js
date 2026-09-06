@@ -45,8 +45,19 @@ export { REVIEW_GROUNDS };
 // applyInterruptions в chain.js). Механизм оставлен, как и STUBS ниже: он
 // понадобится следующему смежному случаю, для которого расчёта не окажется.
 const ENFORCEMENT_STUBS = [];
-import { computeDeadline, addDays } from './engine.js';
-import { toISODate, calendarNote, isWorkingDay } from './calendar.js';
+import { computeDeadline } from '../core/engine/engine.js';
+import { toISODate } from '../core/calendar/calendar.js';
+import {
+  termCard,
+  attachCalendarWarning,
+  workingDayCard,
+  monthTermCard,
+  incompleteNode,
+  daysBetween,
+  workingDaysAfter,
+  missingInputs as genericMissingInputs,
+  markExpired as genericMarkExpired,
+} from '../core/view/cards.js';
 
 // Названия input (п. 4.1 SPEC.md) для списка «что ещё можно уточнить».
 const INPUT_LABELS = {
@@ -153,66 +164,16 @@ function toISO(value) {
   return toISODate(value);
 }
 
-// Разница в календарных днях: bIso − aIso.
-function daysBetween(aIso, bIso) {
-  const [ay, am, ad] = aIso.split('-').map(Number);
-  const [by, bm, bd] = bIso.split('-').map(Number);
-  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000);
-}
+// daysBetween, workingDaysAfter, termCard, attachCalendarWarning — перенесены
+// в core/view/cards.js (см. импорт выше), тела не изменены.
 
-// Насколько фактическая дата вышла за последний допустимый день — в рабочих
-// днях. Порог задан в рабочих днях, поэтому и расхождение считаем в них: по
-// календарным новогодние каникулы раздували бы цифру втрое.
-function workingDaysAfter(allowedISO, actualISO) {
-  let count = 0;
-  let cursor = allowedISO;
-  while (cursor < actualISO) {
-    cursor = toISODate(addDays(cursor, 1));
-    if (isWorkingDay(cursor)) count += 1;
-  }
-  return count;
-}
-
-// Недостающие input из списка ids → [{id, label}].
+// Недостающие input из списка ids → [{id, label}] — тонкая обёртка над
+// core/view/cards.js с ГПК-словарём подписей полей.
 function missingInputs(ids, inputs) {
-  return ids
-    .filter((id) => inputs[id] == null)
-    .map((id) => ({ id, label: INPUT_LABELS[id] }));
-}
-
-function incompleteNode(id, kind, title, reason, missing) {
-  return { id, kind, title, status: 'not_computed', reason, missing_inputs: missing };
+  return genericMissingInputs(ids, inputs, INPUT_LABELS);
 }
 
 // --- Карточки узлов ---------------------------------------------------------
-
-function termCard(term, calc) {
-  const version = term.norm_versions[0]; // одноверсионный срок (апелляция)
-  const card = {
-    id: term.id,
-    kind: 'term',
-    title: term.title,
-    status: 'computed',
-    deadline: calc.deadline,
-    norm: version.norm.primary,
-    details: {
-      collapsed: true, // блок «подробнее» свёрнут по умолчанию
-      logic: term.logic,
-      calculation: version.norm.calculation,
-      midnight_rule: term.midnight_rule,
-    },
-  };
-  attachCalendarWarning(card);
-  return card;
-}
-
-// Примечание о достоверности календаря (draft/preliminary год + зона переносов).
-// Для карточек-событий дату надо передать явно: у них поле date, а не deadline.
-function attachCalendarWarning(card, date = card.deadline) {
-  if (date == null) return;
-  const note = calendarNote(date);
-  if (note) card.calendar_warning = note;
-}
 
 function buildAppealCard(inputs) {
   const calc = computeDeadline(APPEAL_GENERAL, inputs.reasoned_decision_date);
@@ -297,6 +258,7 @@ function cassationCard(cassation) {
   if (cassation.alternative) card.alternative = cassation.alternative;
   if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
   if (cassation.exhaustion_warning) card.exhaustion_warning = cassation.exhaustion_warning;
+  if (cassation.restoration_norm) card.restoration_norm = cassation.restoration_norm;
   attachCalendarWarning(card);
   return card;
 }
@@ -350,31 +312,7 @@ function enforcementCard(enf) {
   return card;
 }
 
-// Карточка срока в рабочих днях (абз. 2 ч. 3 ст. 107). Показывает первый день
-// течения — иначе непонятно, почему дата такая далёкая после каникул.
-function workingDayCard(term, extra = {}) {
-  const card = {
-    id: term.id,
-    kind: 'term',
-    title: term.title,
-    status: 'computed',
-    deadline: term.deadline,
-    norm: term.norm.primary,
-    unit: 'working_day',
-    duration: term.duration,
-    first_working_day: term.first_working_day,
-    details: {
-      collapsed: true,
-      logic: term.logic,
-      calculation: term.norm.calculation,
-      midnight_rule: term.midnight_rule,
-    },
-    ...extra,
-  };
-  if (term.anchor_note) card.note = term.anchor_note;
-  attachCalendarWarning(card);
-  return card;
-}
+// workingDayCard — перенесена в core/view/cards.js (см. импорт выше).
 
 // Карточки упрощённого производства (глава 21.1): три срока + своё событие
 // вступления в силу по ст. 232.4.
@@ -492,6 +430,7 @@ function defaultJudgmentCards(dj) {
           ? 'Ответчик заявление об отмене не подавал — отсчёт по истечении срока его подачи.'
           : 'Отсчёт со дня вынесения определения об отказе в отмене заочного решения.',
     };
+    if (dj.appeal.restoration_norm) card.restoration_norm = dj.appeal.restoration_norm;
     attachCalendarWarning(card);
     cards.push(card);
   } else if (dj.appeal_not_applicable) {
@@ -581,6 +520,7 @@ function foreignStateDefaultJudgmentCards(dj) {
           ? 'Заявление об отмене не подавалось — отсчёт по истечении срока его подачи.'
           : 'Отсчёт со дня вынесения определения об отказе в отмене заочного решения.',
     };
+    if (dj.appeal.restoration_norm) card.restoration_norm = dj.appeal.restoration_norm;
     attachCalendarWarning(card);
     cards.push(card);
   } else if (dj.appeal_not_applicable) {
@@ -705,27 +645,10 @@ function mirovoyCards(m) {
 // осталось от первого случая применения — надзорной жалобы, но функция не
 // завязана на unit: то же используется для годового срока предъявления
 // судебного приказа).
-function monthTermCard(term) {
-  const card = {
-    id: term.id,
-    kind: 'term',
-    title: term.title,
-    status: 'computed',
-    deadline: term.deadline,
-    norm: term.norm.primary,
-    duration: term.duration,
-    details: {
-      collapsed: true,
-      logic: term.logic,
-      calculation: term.norm.calculation,
-      midnight_rule: term.midnight_rule,
-    },
-  };
-  // Прерываемые сроки (предъявление судебного приказа) — история перерывов.
-  attachInterruptions(card, term);
-  attachCalendarWarning(card);
-  return card;
-}
+// monthTermCard — перенесена в core/view/cards.js (см. импорт выше). Историю
+// перерывов (attachInterruptions) она больше не прикладывает сама — это
+// предметная надстройка, единственный узел, которому она нужна
+// (court_order_presentation), получает её от вызывающего кода отдельно.
 
 // Карточка пересмотра по вновь открывшимся/новым обстоятельствам: обычный
 // monthTermCard плюс, у практики ВС (vs_practice_change), обе промежуточные
@@ -952,7 +875,12 @@ function independentNodes(source, today = null) {
   }
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (terms.court_order_objection) cards.push(courtOrderObjectionCard(terms.court_order_objection));
-  if (terms.court_order_presentation) cards.push(monthTermCard(terms.court_order_presentation));
+  if (terms.court_order_presentation) {
+    const courtOrderPresentationCard = monthTermCard(terms.court_order_presentation);
+    // Прерываемый срок (ст. 22 ФЗ № 229-ФЗ) — история перерывов на карточке.
+    attachInterruptions(courtOrderPresentationCard, terms.court_order_presentation);
+    cards.push(courtOrderPresentationCard);
+  }
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
   }
@@ -1086,36 +1014,17 @@ const MISSED_FROM_FILING = new Set([
   'mirovoy_cassation',
 ]);
 
-/**
- * Помечает рассчитанные сроки: пропущенные (есть дата подачи, и она позже
- * дедлайна) и истёкшие (даты подачи нет, дедлайн в прошлом). Меняет карточки на
- * месте: обе пометки зависят от введённых фактов и текущей даты, расчёт не
- * трогают.
- * @param {object[]} cards
- * @param {object} inputs
- * @param {string|null} today — 'YYYY-MM-DD'; без неё пометки нет.
- */
+// markExpired — тонкая обёртка над core/view/cards.js с ГПК-данными
+// (ACTION_FACT_INPUT, MISSED_FROM_FILING). Норма восстановления
+// ('ст. 112 ГПК РФ') больше не хардкод в этой функции — она читается из
+// card.restoration_norm, куда её кладут узлы chain.js (см. restoration_norm
+// у каждого term-константы) через termCard/workingDayCard/monthTermCard,
+// computeSimpleTerm, computeVersionedTerm.
 function markExpired(cards, inputs, today) {
-  for (const card of cards) {
-    if (card.kind !== 'term' || card.status !== 'computed' || !card.deadline) continue;
-    const factInput = ACTION_FACT_INPUT[card.id];
-    const fact = factInput ? toISO(inputs?.[factInput]) : null;
-
-    if (fact != null) {
-      // Факт есть — дальше судим по нему, а не по календарю. Пропуск
-      // устанавливается только там, где этот факт и есть дата подачи.
-      if (MISSED_FROM_FILING.has(card.id) && fact > card.deadline) {
-        card.status = 'missed';
-        card.overdue = { days: daysBetween(card.deadline, fact), norm: 'ст. 112 ГПК РФ' };
-      }
-      continue;
-    }
-
-    if (today == null || card.deadline >= today) continue; // ч. 3 ст. 108 — 24:00
-    card.status = 'expired';
-    card.expired = { days: daysBetween(card.deadline, today) };
-  }
-  return cards;
+  return genericMarkExpired(cards, inputs, today, {
+    factInputMap: ACTION_FACT_INPUT,
+    missedFromFilingIds: MISSED_FROM_FILING,
+  });
 }
 
 // --- Публичная сборка -------------------------------------------------------
