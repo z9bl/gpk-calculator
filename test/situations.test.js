@@ -45,6 +45,9 @@ const ALL_BRANCHES_INPUTS = {
   adoption_reasoned_decision_date: '2025-07-02',
   arbitration_competence_ruling_received_date: '2025-07-08',
   settlement_approval_ruling_date: '2025-07-08',
+  sudebny_prikaz_entry_into_force_date: '2025-07-08',
+  treteisky_osparivanie_entry_into_force_date: '2025-07-08',
+  treteisky_ispollist_entry_into_force_date: '2025-07-08',
   foreign_state_default_judgment_service_date: '2025-07-05',
   foreign_state_default_judgment_refusal_date: '2025-08-10',
   review_ground: 'newly_discovered_fact',
@@ -244,6 +247,72 @@ test('утверждение мирового соглашения: узел в 
   assert.deepEqual(
     v.cards.map((c) => c.id),
     ['settlement_approval_cassation_appeal'],
+  );
+});
+
+test('судебный приказ (кассация): узел в независимом пуле, а не в ветви категории', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(
+    separate.nodes.includes('sudebny_prikaz_cassation'),
+    'узел должен лежать в пуле отдельных сроков — рядом с утверждением мирового соглашения',
+  );
+  assert.ok(separate.fields.includes('sudebny_prikaz_entry_into_force_date'));
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(
+      !s.nodes.includes('sudebny_prikaz_cassation'),
+      `${s.id}: узел не привязан к категории дела`,
+    );
+    assert.ok(
+      !s.fields.includes('sudebny_prikaz_entry_into_force_date'),
+      `${s.id}: поле не отсюда`,
+    );
+  }
+
+  const v = buildView(
+    { sudebny_prikaz_entry_into_force_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['sudebny_prikaz_cassation'],
+  );
+});
+
+test('оспаривание решения третейского суда (кассация): узел в независимом пуле', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(separate.nodes.includes('treteisky_osparivanie_cassation'));
+  assert.ok(separate.fields.includes('treteisky_osparivanie_entry_into_force_date'));
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(!s.nodes.includes('treteisky_osparivanie_cassation'));
+    assert.ok(!s.fields.includes('treteisky_osparivanie_entry_into_force_date'));
+  }
+
+  const v = buildView(
+    { treteisky_osparivanie_entry_into_force_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['treteisky_osparivanie_cassation'],
+  );
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): узел в независимом пуле', () => {
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.ok(separate.nodes.includes('treteisky_ispollist_cassation'));
+  assert.ok(separate.fields.includes('treteisky_ispollist_entry_into_force_date'));
+  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+    assert.ok(!s.nodes.includes('treteisky_ispollist_cassation'));
+    assert.ok(!s.fields.includes('treteisky_ispollist_entry_into_force_date'));
+  }
+
+  const v = buildView(
+    { treteisky_ispollist_entry_into_force_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    v.cards.map((c) => c.id),
+    ['treteisky_ispollist_cassation'],
   );
 });
 

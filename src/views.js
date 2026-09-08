@@ -836,6 +836,21 @@ function independentNodes(source, today = null) {
   if (terms.settlement_approval_cassation_appeal) {
     cards.push(monthTermCard(terms.settlement_approval_cassation_appeal));
   }
+  // Прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
+  // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
+  // на принудительное исполнение решения третейского суда — тот же рендерер,
+  // что и у settlement_approval_cassation_appeal выше (monthTermCard не
+  // привязан к конкретной длительности узла).
+  if (terms.sudebny_prikaz_cassation) {
+    cards.push(monthTermCard(terms.sudebny_prikaz_cassation));
+  }
+  if (terms.treteisky_osparivanie_cassation) {
+    cards.push(monthTermCard(terms.treteisky_osparivanie_cassation));
+  }
+  if (terms.treteisky_ispollist_cassation) {
+    cards.push(monthTermCard(terms.treteisky_ispollist_cassation));
+  }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже
   // выбраны по основанию внутри computeReviewNewCircumstancesResult. У

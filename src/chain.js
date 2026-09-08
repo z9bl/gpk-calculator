@@ -813,7 +813,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -853,6 +853,26 @@ export function computeIndependentTerms(inputs) {
     settlement_approval_cassation_appeal: computeSimpleTerm(
       SETTLEMENT_APPROVAL_CASSATION_APPEAL,
       inputs?.settlement_approval_ruling_date,
+    ),
+    // Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) —
+    // три независимых узла по тому же образцу, что и три выше: акт, для
+    // которого апелляционное обжалование не предусмотрено, обжалуется сразу в
+    // кассацию (п. 3 ПП ВС РФ от 22.06.2021 № 17). См. открытый вопрос про
+    // точку отсчёта (день вступления в силу) в комментарии перед определением
+    // констант выше.
+    // condition — '*_entry_into_force_date': каждый узел появляется только
+    // после ввода даты вступления соответствующего акта в законную силу.
+    sudebny_prikaz_cassation: computeSimpleTerm(
+      SUDEBNY_PRIKAZ_CASSATION,
+      inputs?.sudebny_prikaz_entry_into_force_date,
+    ),
+    treteisky_osparivanie_cassation: computeSimpleTerm(
+      TRETEISKY_OSPARIVANIE_CASSATION,
+      inputs?.treteisky_osparivanie_entry_into_force_date,
+    ),
+    treteisky_ispollist_cassation: computeSimpleTerm(
+      TRETEISKY_ISPOLLIST_CASSATION,
+      inputs?.treteisky_ispollist_entry_into_force_date,
     ),
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
@@ -1115,6 +1135,125 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
       norm: {
         primary: 'ч. 11 ст. 153.10 ГПК РФ',
         calculation: ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) — три
+// независимых узла по образцу SETTLEMENT_APPROVAL_CASSATION_APPEAL выше: акты,
+// для которых ГПК не предусматривает апелляционного обжалования, перечислены
+// одним списком в п. 3 ПП ВС РФ от 22.06.2021 № 17 (судебный приказ,
+// определение об утверждении мирового соглашения, определения по делам об
+// оспаривании решений третейских судов и о выдаче/отказе в выдаче
+// исполнительного листа на принудительное исполнение решения третейского
+// суда). В отличие от SETTLEMENT_APPROVAL_CASSATION_APPEAL (месяц, ч. 11
+// ст. 153.10 — своя норма срока) эти три подчиняются общему правилу кассации:
+// три месяца со дня вступления обжалуемого определения в законную силу
+// (ч. 1 ст. 376.1 ГПК РФ), восстановление — на общих основаниях (ст. 112).
+//
+// ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): что считать
+// днём вступления в законную силу для каждого из трёх обжалуемых актов —
+// в частности, для судебного приказа, если он не обжаловался должником в
+// установленный ст. 128 срок, и для определений по ст. 422/427 ГПК, которые,
+// в отличие от судебного приказа, не проходят через отдельную процедуру
+// возражений. Модель сознательно не вычисляет эту дату сама (в отличие от
+// MIROVOY_CASSATION, где она выводится из даты апелляционного определения или
+// истечения срока на апелляцию) — пользователь вводит её напрямую, тем же
+// способом, что и у SUPERVISION/CASSATION_RETURN_RULING_APPEAL выше.
+const DIRECT_CASSATION_CALC = ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'];
+
+// Кассационная жалоба на судебный приказ (п. 1 ч. 2 ст. 377 ГПК РФ).
+export const SUDEBNY_PRIKAZ_CASSATION = {
+  id: 'sudebny_prikaz_cassation',
+  title: 'Кассационная жалоба на судебный приказ',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'sudebny_prikaz_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления судебного приказа в законную силу ' +
+    '(ч. 1 ст. 376.1 ГПК РФ). Обжалуется сразу в суд кассационной инстанции, ' +
+    'минуя апелляцию: ГПК не предусматривает апелляционного обжалования ' +
+    'судебного приказа (п. 3 ПП ВС РФ от 22.06.2021 № 17).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'sudebny_prikaz_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'п. 1 ч. 2 ст. 377, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+      },
+    },
+  ],
+};
+
+// Кассационная жалоба на определение суда по делу об оспаривании решения
+// третейского суда (ч. 5 ст. 422 ГПК РФ).
+export const TRETEISKY_OSPARIVANIE_CASSATION = {
+  id: 'treteisky_osparivanie_cassation',
+  title: 'Кассационная жалоба на определение по делу об оспаривании решения третейского суда',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'treteisky_osparivanie_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления в законную силу определения суда по делу об ' +
+    'оспаривании решения третейского суда (ч. 1 ст. 376.1 ГПК РФ). Обжалуется ' +
+    'сразу в суд кассационной инстанции, минуя апелляцию (ч. 5 ст. 422, п. 3 ' +
+    'ПП ВС РФ от 22.06.2021 № 17).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'treteisky_osparivanie_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 5 ст. 422, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+      },
+    },
+  ],
+};
+
+// Кассационная жалоба на определение суда о выдаче исполнительного листа на
+// принудительное исполнение решения третейского суда или об отказе в выдаче
+// такого листа (ч. 5 ст. 427 ГПК РФ).
+export const TRETEISKY_ISPOLLIST_CASSATION = {
+  id: 'treteisky_ispollist_cassation',
+  title:
+    'Кассационная жалоба на определение о выдаче исполнительного листа на ' +
+    'принудительное исполнение решения третейского суда (или об отказе в выдаче)',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'treteisky_ispollist_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления в законную силу определения суда о выдаче ' +
+    'исполнительного листа на принудительное исполнение решения третейского ' +
+    'суда или об отказе в выдаче такого листа (ч. 1 ст. 376.1 ГПК РФ). ' +
+    'Обжалуется сразу в суд кассационной инстанции, минуя апелляцию (ч. 5 ' +
+    'ст. 427, п. 3 ПП ВС РФ от 22.06.2021 № 17).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'treteisky_ispollist_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 5 ст. 427, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
       },
     },
   ],

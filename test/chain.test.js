@@ -15,6 +15,9 @@ import {
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
   SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+  SUDEBNY_PRIKAZ_CASSATION,
+  TRETEISKY_OSPARIVANIE_CASSATION,
+  TRETEISKY_ISPOLLIST_CASSATION,
   REVIEW_GROUNDS,
 } from '../src/chain.js';
 
@@ -1530,6 +1533,162 @@ test('утверждение мирового соглашения: ч. 11 ст.
   assert.match(t.logic, /любого мирового соглашения/);
   assert.match(t.logic, /любой стадии/);
   assert.doesNotMatch(SETTLEMENT_APPROVAL_CASSATION_APPEAL.title, /в исполнении/i);
+});
+
+// --- Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) --
+//
+// Три независимых узла по образцу утверждения мирового соглашения выше, но с
+// общей нормой срока (ч. 1 ст. 376.1), а не своей.
+
+test('судебный приказ (кассация): 3 месяца со дня вступления в силу (ч. 1 ст. 376.1)', () => {
+  const t = computeIndependentTerms({
+    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+  }).sudebny_prikaz_cassation;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-12-01');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 1 ст\. 376\.1/);
+  assert.match(t.norm.primary, /п\. 1 ч\. 2 ст\. 377/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+});
+
+test('судебный приказ (кассация): перенос последнего дня (ч. 2 ст. 108)', () => {
+  // 14.11.2025 + 3 месяца = 14.02.2026 (суббота) → 16.02.2026 (понедельник).
+  const t = computeIndependentTerms({
+    sudebny_prikaz_entry_into_force_date: '2025-11-14',
+  }).sudebny_prikaz_cassation;
+  assert.equal(t.raw_deadline, '2026-02-14');
+  assert.equal(t.deadline, '2026-02-16');
+  assert.equal(t.shifted, true);
+});
+
+test('судебный приказ (кассация): узла нет без даты вступления в силу', () => {
+  assert.equal(computeIndependentTerms({}).sudebny_prikaz_cassation, null);
+  assert.equal(computeChain(BASE, { today: '2025-09-10' }).sudebny_prikaz_cassation, null);
+});
+
+test('судебный приказ (кассация): узел независим от категории дела и ветви цепочки', () => {
+  const alone = computeIndependentTerms({
+    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+  }).sudebny_prikaz_cassation;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const chain = computeChain(
+    { ...BASE, sudebny_prikaz_entry_into_force_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.sudebny_prikaz_cassation.deadline, alone.deadline);
+});
+
+test('судебный приказ (кассация): обжалуется сразу в кассацию, минуя апелляцию', () => {
+  const t = computeIndependentTerms({
+    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+  }).sudebny_prikaz_cassation;
+  assert.match(t.logic, /минуя апелляцию/);
+  assert.equal(SUDEBNY_PRIKAZ_CASSATION.norm_versions.length, 1);
+});
+
+test('оспаривание решения третейского суда (кассация): 3 месяца (ч. 5 ст. 422, ч. 1 ст. 376.1)', () => {
+  const t = computeIndependentTerms({
+    treteisky_osparivanie_entry_into_force_date: '2025-09-01',
+  }).treteisky_osparivanie_cassation;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-12-01');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 5 ст\. 422/);
+  assert.match(t.norm.primary, /ч\. 1 ст\. 376\.1/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+});
+
+test('оспаривание решения третейского суда (кассация): перенос последнего дня (ч. 2 ст. 108)', () => {
+  const t = computeIndependentTerms({
+    treteisky_osparivanie_entry_into_force_date: '2025-11-14',
+  }).treteisky_osparivanie_cassation;
+  assert.equal(t.raw_deadline, '2026-02-14');
+  assert.equal(t.deadline, '2026-02-16');
+  assert.equal(t.shifted, true);
+});
+
+test('оспаривание решения третейского суда (кассация): узла нет без даты вступления в силу', () => {
+  assert.equal(computeIndependentTerms({}).treteisky_osparivanie_cassation, null);
+  assert.equal(
+    computeChain(BASE, { today: '2025-09-10' }).treteisky_osparivanie_cassation,
+    null,
+  );
+});
+
+test('оспаривание решения третейского суда (кассация): узел независим от категории дела', () => {
+  const alone = computeIndependentTerms({
+    treteisky_osparivanie_entry_into_force_date: '2025-09-01',
+  }).treteisky_osparivanie_cassation;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const chain = computeChain(
+    { ...BASE, treteisky_osparivanie_entry_into_force_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.treteisky_osparivanie_cassation.deadline, alone.deadline);
+});
+
+test('оспаривание решения третейского суда (кассация): минуя апелляцию', () => {
+  const t = computeIndependentTerms({
+    treteisky_osparivanie_entry_into_force_date: '2025-09-01',
+  }).treteisky_osparivanie_cassation;
+  assert.match(t.logic, /минуя апелляцию/);
+  assert.equal(TRETEISKY_OSPARIVANIE_CASSATION.norm_versions.length, 1);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): 3 месяца (ч. 5 ст. 427, ч. 1 ст. 376.1)', () => {
+  const t = computeIndependentTerms({
+    treteisky_ispollist_entry_into_force_date: '2025-09-01',
+  }).treteisky_ispollist_cassation;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-12-01');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 5 ст\. 427/);
+  assert.match(t.norm.primary, /ч\. 1 ст\. 376\.1/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): перенос последнего дня', () => {
+  const t = computeIndependentTerms({
+    treteisky_ispollist_entry_into_force_date: '2025-11-14',
+  }).treteisky_ispollist_cassation;
+  assert.equal(t.raw_deadline, '2026-02-14');
+  assert.equal(t.deadline, '2026-02-16');
+  assert.equal(t.shifted, true);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): узла нет без даты', () => {
+  assert.equal(computeIndependentTerms({}).treteisky_ispollist_cassation, null);
+  assert.equal(
+    computeChain(BASE, { today: '2025-09-10' }).treteisky_ispollist_cassation,
+    null,
+  );
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): узел независим от категории дела', () => {
+  const alone = computeIndependentTerms({
+    treteisky_ispollist_entry_into_force_date: '2025-09-01',
+  }).treteisky_ispollist_cassation;
+  assert.ok(alone, 'узел считается по одной своей дате');
+
+  const chain = computeChain(
+    { ...BASE, treteisky_ispollist_entry_into_force_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.treteisky_ispollist_cassation.deadline, alone.deadline);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): минуя апелляцию', () => {
+  const t = computeIndependentTerms({
+    treteisky_ispollist_entry_into_force_date: '2025-09-01',
+  }).treteisky_ispollist_cassation;
+  assert.match(t.logic, /минуя апелляцию/);
+  assert.equal(TRETEISKY_ISPOLLIST_CASSATION.norm_versions.length, 1);
 });
 
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------
