@@ -2133,6 +2133,157 @@ test('периодические платежи: узел не зависит о
   assert.equal(chain.periodic_payments_presentation.deadline, '2026-04-13');
 });
 
+// --- Признание и исполнение решений иностранных судов (глава 45 ГПК) --------
+
+test('иностранное решение — предъявление к исполнению: 3 года со дня вступления в силу, перенос через выходные', () => {
+  const t = computeIndependentTerms({ foreign_judgment_entry_into_force_date: '2023-04-12' })
+    .foreign_judgment_enforcement_presentation;
+  assert.equal(t.anchor, '2023-04-12');
+  assert.equal(t.raw_deadline, '2026-04-12'); // воскресенье
+  assert.equal(t.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
+  assert.equal(t.shifted, true);
+  assert.match(t.norm.primary, /ч\. 3 ст\. 409/);
+  assert.deepEqual(t.duration, { value: 3, unit: 'year' });
+});
+
+test('иностранное решение — предъявление к исполнению: узла нет без даты вступления в силу', () => {
+  assert.equal(computeIndependentTerms({}).foreign_judgment_enforcement_presentation, null);
+  assert.equal(
+    computeChain(BASE, { today: '2026-03-01' }).foreign_judgment_enforcement_presentation,
+    null,
+  );
+});
+
+test('иностранное решение — предъявление к исполнению: узел не зависит от остальной цепочки', () => {
+  const chain = computeChain(
+    { ...BASE, foreign_judgment_entry_into_force_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
+  assert.ok(chain.foreign_judgment_enforcement_presentation);
+  assert.equal(chain.foreign_judgment_enforcement_presentation.deadline, '2026-04-13');
+
+  // Тот же результат сам по себе, без единой другой заполненной даты цепочки.
+  const alone = computeIndependentTerms({
+    foreign_judgment_entry_into_force_date: '2023-04-12',
+  }).foreign_judgment_enforcement_presentation;
+  assert.equal(alone.deadline, chain.foreign_judgment_enforcement_presentation.deadline);
+});
+
+test('иностранное решение — предъявление к исполнению: восстановление по ст. 112 без годичного потолка ч. 7 ст. 112', () => {
+  // Контроль по аналогии с апелляционными узлами: норма прямо упоминает
+  // восстановление по ст. 112 (ч. 3 ст. 409, второе предложение), но это не
+  // кассационная и не надзорная жалоба — годичный потолок ч. 7 ст. 112 к узлу
+  // не подключён, поле restoration_one_year_cap на нём отсутствует, даже если
+  // ввести дату обстоятельства под тем же именем, что и у узлов категории (a).
+  const t = computeIndependentTerms({
+    foreign_judgment_entry_into_force_date: '2023-04-12',
+    foreign_judgment_enforcement_presentation_restoration_circumstance_date: '2024-04-12',
+  }).foreign_judgment_enforcement_presentation;
+  assert.match(t.logic, /восстановлен/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+  assert.equal(t.restoration_one_year_cap, undefined);
+  assert.ok(
+    !CASSATION_SUPERVISORY_RESTORATION_NODE_IDS.includes('foreign_judgment_enforcement_presentation'),
+  );
+});
+
+test('иностранное решение — возражения относительно признания: 1 месяц со дня, когда узнал, перенос через выходной', () => {
+  const t = computeIndependentTerms({ foreign_judgment_recognition_aware_date: '2025-09-01' })
+    .foreign_judgment_recognition_objection;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-10-01');
+  assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 2 ст\. 413/);
+
+  // 14.02.2026 + 1 месяц = 14.03.2026 (суббота) → 16.03.2026 (понедельник).
+  const shifted = computeIndependentTerms({
+    foreign_judgment_recognition_aware_date: '2026-02-14',
+  }).foreign_judgment_recognition_objection;
+  assert.equal(shifted.raw_deadline, '2026-03-14');
+  assert.equal(shifted.deadline, '2026-03-16');
+  assert.equal(shifted.shifted, true);
+});
+
+test('иностранное решение — возражения относительно признания: точка отсчёта — дата, когда узнал, а не дата решения', () => {
+  // Норма (ч. 2 ст. 413) прямо отсчитывает срок не от вынесения решения и не
+  // от вступления его в силу, а от субъективного момента — дня, когда
+  // заинтересованному лицу стало известно о решении; калькулятор считает
+  // именно от введённой даты, других дат производства для этого узла нет.
+  const t = computeIndependentTerms({ foreign_judgment_recognition_aware_date: '2025-09-01' })
+    .foreign_judgment_recognition_objection;
+  assert.match(t.logic, /стало известно/);
+  // Якорь — введённая дата «узнал», а не дата решения/вступления в силу:
+  // других input у этого узла нет, других дат в расчёт взять неоткуда.
+  assert.equal(t.anchor, '2025-09-01');
+});
+
+test('иностранное решение — возражения относительно признания: узла нет без даты', () => {
+  assert.equal(computeIndependentTerms({}).foreign_judgment_recognition_objection, null);
+  assert.equal(
+    computeChain(BASE, { today: '2026-03-01' }).foreign_judgment_recognition_objection,
+    null,
+  );
+});
+
+test('иностранное решение — возражения относительно признания: восстановление по ст. 112 без годичного потолка ч. 7 ст. 112', () => {
+  // Норма (ч. 2 ст. 413) восстановление прямо не упоминает, но общее правило
+  // ч. 1 ст. 112 применяется — исключения для этого случая нет. Как и у узла
+  // предъявления к исполнению выше, это не кассационная/надзорная жалоба —
+  // годичный потолок ч. 7 ст. 112 не подключён.
+  const t = computeIndependentTerms({ foreign_judgment_recognition_aware_date: '2025-09-01' })
+    .foreign_judgment_recognition_objection;
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+  assert.equal(t.restoration_one_year_cap, undefined);
+  assert.ok(
+    !CASSATION_SUPERVISORY_RESTORATION_NODE_IDS.includes('foreign_judgment_recognition_objection'),
+  );
+});
+
+test('иностранное решение: оба узла считаются независимо друг от друга и от остальной цепочки', () => {
+  const onlyEnforcement = computeIndependentTerms({
+    foreign_judgment_entry_into_force_date: '2023-04-12',
+  });
+  assert.ok(onlyEnforcement.foreign_judgment_enforcement_presentation);
+  assert.equal(onlyEnforcement.foreign_judgment_recognition_objection, null);
+
+  const onlyObjection = computeIndependentTerms({
+    foreign_judgment_recognition_aware_date: '2025-09-01',
+  });
+  assert.equal(onlyObjection.foreign_judgment_enforcement_presentation, null);
+  assert.ok(onlyObjection.foreign_judgment_recognition_objection);
+
+  const both = computeIndependentTerms({
+    foreign_judgment_entry_into_force_date: '2023-04-12',
+    foreign_judgment_recognition_aware_date: '2025-09-01',
+  });
+  // Каждый узел считается от своей даты — соседнее поле его не сдвигает.
+  assert.equal(
+    both.foreign_judgment_enforcement_presentation.deadline,
+    onlyEnforcement.foreign_judgment_enforcement_presentation.deadline,
+  );
+  assert.equal(
+    both.foreign_judgment_recognition_objection.deadline,
+    onlyObjection.foreign_judgment_recognition_objection.deadline,
+  );
+
+  const neither = computeIndependentTerms({});
+  assert.equal(neither.foreign_judgment_enforcement_presentation, null);
+  assert.equal(neither.foreign_judgment_recognition_objection, null);
+
+  // Присутствие узлов главы 45 не должно ничего менять в остальной цепочке.
+  const chainWithBoth = computeChain(
+    {
+      ...BASE,
+      foreign_judgment_entry_into_force_date: '2023-04-12',
+      foreign_judgment_recognition_aware_date: '2025-09-01',
+    },
+    { today: '2025-07-01' },
+  );
+  const chainWithout = computeChain(BASE, { today: '2025-07-01' });
+  assert.equal(chainWithBoth.appeal.deadline, chainWithout.appeal.deadline);
+});
+
 // --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
 //
 // Базовые ориентиры: BASE + today 01.05.2025 → вступление в силу 12.04.2025,

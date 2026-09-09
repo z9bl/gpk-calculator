@@ -190,6 +190,12 @@ export const SITUATIONS = [
     // здесь — у трёх узлов прямой кассации пула, для которых предусмотрен
     // (settlement_approval_cassation_appeal, sudebny_prikaz_cassation,
     // treteisky_osparivanie_cassation, treteisky_ispollist_cassation).
+    // foreign_judgment_entry_into_force_date /
+    // foreign_judgment_recognition_aware_date — глава 45 ГПК (признание и
+    // исполнение решений иностранных судов): два независимых узла, каждый со
+    // своей датой, годичный потолок к ним не подключён (см. комментарий в
+    // chain.js перед FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION) — поэтому
+    // у них нет отдельного поля *_restoration_circumstance_date.
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
@@ -204,6 +210,8 @@ export const SITUATIONS = [
       'treteisky_osparivanie_cassation_restoration_circumstance_date',
       'treteisky_ispollist_entry_into_force_date',
       'treteisky_ispollist_cassation_restoration_circumstance_date',
+      'foreign_judgment_entry_into_force_date',
+      'foreign_judgment_recognition_aware_date',
     ],
     nodes: [
       'protocol_remarks',
@@ -215,6 +223,8 @@ export const SITUATIONS = [
       'sudebny_prikaz_cassation',
       'treteisky_osparivanie_cassation',
       'treteisky_ispollist_cassation',
+      'foreign_judgment_enforcement_presentation',
+      'foreign_judgment_recognition_objection',
     ],
   },
   {
