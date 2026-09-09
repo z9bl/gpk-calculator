@@ -13,6 +13,10 @@ import {
   computeMirovoy,
   applyInterruptions,
   interruptionEvents,
+  CASSATION_KSOYU,
+  CASSATION_VS,
+  SUPERVISION,
+  MIROVOY_CASSATION,
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
   SETTLEMENT_APPROVAL_CASSATION_APPEAL,
@@ -20,6 +24,14 @@ import {
   TRETEISKY_OSPARIVANIE_CASSATION,
   TRETEISKY_ISPOLLIST_CASSATION,
   REVIEW_GROUNDS,
+  CASSATION_SUPERVISORY_RESTORATION_NODE_IDS,
+  APPEAL_GENERAL,
+  CHILD_RETURN_APPEAL,
+  ADOPTION_APPEAL,
+  SIMPLIFIED_APPEAL,
+  DEFAULT_JUDGMENT_APPEAL,
+  FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL,
+  MIROVOY_APPEAL,
 } from '../src/chain.js';
 
 // Базовые входные данные. reasoned_decision_date = 11.03.2025 (вторник),
@@ -2859,4 +2871,61 @@ test('восстановление срока пересмотра: практи
   assert.equal(restoration.anchor, primary.anchor);
   assert.equal(restoration.anchor, '2025-01-01');
   assert.equal(restoration.deadline, '2025-07-01');
+});
+
+// --- Годичный потолок восстановления (ч. 7 ст. 112 ГПК РФ) — область действия --
+//
+// Проверяет саму механику (core/engine/restoration.js) на синтетических
+// датах в test/core/restoration.test.js; здесь — контроль ГРАНИЦЫ правила:
+// список узлов кассации/надзора не должен ни терять узел из задачи, ни
+// расширяться на апелляционный узел по ошибке при рефакторинге.
+test('годичный потолок восстановления: список узлов кассации/надзора — без пропусков и без апелляции', () => {
+  assert.deepEqual(
+    [...CASSATION_SUPERVISORY_RESTORATION_NODE_IDS].sort(),
+    [
+      'cassation_ksoyu',
+      'cassation_vs',
+      'mirovoy_cassation',
+      'settlement_approval_cassation_appeal',
+      'sudebny_prikaz_cassation',
+      'supervision',
+      'treteisky_ispollist_cassation',
+      'treteisky_osparivanie_cassation',
+    ].sort(),
+  );
+
+  // Контроль: ни один апелляционный узел не должен просочиться в список
+  // кассации/надзора — на апелляционное восстановление (ч. 1–5 ст. 112)
+  // годичный потолок не распространяется.
+  const appealIds = [
+    APPEAL_GENERAL.id,
+    CHILD_RETURN_APPEAL.id,
+    ADOPTION_APPEAL.id,
+    SIMPLIFIED_APPEAL.id,
+    DEFAULT_JUDGMENT_APPEAL.id,
+    FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL.id,
+    MIROVOY_APPEAL.id,
+  ];
+  for (const id of appealIds) {
+    assert.ok(
+      !CASSATION_SUPERVISORY_RESTORATION_NODE_IDS.includes(id),
+      `апелляционный узел "${id}" не должен подпадать под годичный потолок`,
+    );
+  }
+});
+
+test('годичный потолок восстановления: у каждого узла из списка задана restoration_norm', () => {
+  const byId = {
+    cassation_ksoyu: CASSATION_KSOYU,
+    cassation_vs: CASSATION_VS,
+    supervision: SUPERVISION,
+    settlement_approval_cassation_appeal: SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+    sudebny_prikaz_cassation: SUDEBNY_PRIKAZ_CASSATION,
+    treteisky_osparivanie_cassation: TRETEISKY_OSPARIVANIE_CASSATION,
+    treteisky_ispollist_cassation: TRETEISKY_ISPOLLIST_CASSATION,
+    mirovoy_cassation: MIROVOY_CASSATION,
+  };
+  for (const id of CASSATION_SUPERVISORY_RESTORATION_NODE_IDS) {
+    assert.equal(byId[id].restoration_norm, 'ст. 112 ГПК РФ', `узел "${id}"`);
+  }
 });

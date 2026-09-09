@@ -3286,3 +3286,32 @@ export function computeChain(inputs, options = {}) {
     mirovoy: computeMirovoy(inputs, toISO(options.today)),
   };
 }
+
+// Узлы кассационного/надзорного обжалования, на которые распространяется
+// годичный потолок восстановления пропущенного срока (ч. 7 ст. 112 ГПК РФ в
+// редакции ФЗ от 01.04.2025 № 49-ФЗ; до неё — абз. 2 ч. 6 ст. 112 в той же по
+// смыслу редакции). Норма касается ТОЛЬКО кассационных и надзорных жалоб,
+// представлений — апелляционные узлы (APPEAL_GENERAL, CHILD_RETURN_APPEAL,
+// ADOPTION_APPEAL, SIMPLIFIED_APPEAL, DEFAULT_JUDGMENT_APPEAL,
+// FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL, MIROVOY_APPEAL) в этот список
+// сознательно не входят, как и узлы, ссылающиеся на ст. 112 ГПК РФ, но не
+// являющиеся ни кассационной/надзорной, ни апелляционной жалобой
+// (замечания на протокол, частная жалоба на определение суда первой
+// инстанции, предъявление исполнительного листа/приказа к исполнению,
+// заявления о мотивированном решении, обжалование определения о возврате
+// кассационной жалобы, отмена постановления третейского суда о компетенции,
+// пересмотр по новым обстоятельствам — глава 42 ГПК живёт по своей норме,
+// ч. 2 ст. 394).
+//
+// Список собирается из id самих term-констант, а не хардкодится строками:
+// переименование id узла ломает сборку, а не расходится с ней молча.
+export const CASSATION_SUPERVISORY_RESTORATION_NODE_IDS = [
+  CASSATION_KSOYU.id,
+  CASSATION_VS.id,
+  SUPERVISION.id,
+  SETTLEMENT_APPROVAL_CASSATION_APPEAL.id,
+  SUDEBNY_PRIKAZ_CASSATION.id,
+  TRETEISKY_OSPARIVANIE_CASSATION.id,
+  TRETEISKY_ISPOLLIST_CASSATION.id,
+  MIROVOY_CASSATION.id,
+];
