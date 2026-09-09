@@ -23,6 +23,7 @@ import {
   SUDEBNY_PRIKAZ_CASSATION,
   TRETEISKY_OSPARIVANIE_CASSATION,
   TRETEISKY_ISPOLLIST_CASSATION,
+  COURT_ARBITRATION_AWARD_SETASIDE,
   REVIEW_GROUNDS,
   CASSATION_SUPERVISORY_RESTORATION_NODE_IDS,
   APPEAL_GENERAL,
@@ -1791,6 +1792,119 @@ test('выдача исполнительного листа на решение
   }).treteisky_ispollist_cassation;
   assert.match(t.logic, /минуя апелляцию/);
   assert.equal(TRETEISKY_ISPOLLIST_CASSATION.norm_versions.length, 1);
+});
+
+// --- Заявление об отмене решения третейского суда (глава 46, ст. 418) ------
+//
+// Первая стадия того же процесса, что и treteisky_osparivanie_cassation выше
+// (кассация на определение суда по этому заявлению), но независимый узел:
+// не путать формулировки — здесь речь о первом обращении в районный суд, там
+// — о кассации на уже вынесенное по нему определение.
+
+test('отмена решения третейского суда: вариант (a) — 3 месяца со дня получения решения стороной (ч. 2 ст. 418)', () => {
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-09-01',
+  }).arbitration_award_setaside;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.offset_start, 1);
+  assert.equal(t.deadline, '2025-12-01');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.match(t.norm.primary, /ч\. 2, 3 ст\. 418/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+  assert.equal(t.applicant_variant, 'party');
+});
+
+test('отмена решения третейского суда: вариант (a) — перенос последнего дня через выходной (ч. 2 ст. 108)', () => {
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-11-14',
+  }).arbitration_award_setaside;
+  assert.equal(t.raw_deadline, '2026-02-14'); // суббота
+  assert.equal(t.deadline, '2026-02-16'); // перенос на понедельник
+  assert.equal(t.shifted, true);
+  assert.equal(t.applicant_variant, 'party');
+});
+
+test('отмена решения третейского суда: вариант (b) — 3 месяца со дня, когда узнало лицо, не являющееся стороной (ч. 3 ст. 418)', () => {
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_aware_date: '2025-09-01',
+  }).arbitration_award_setaside;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.deadline, '2025-12-01');
+  assert.match(t.norm.primary, /ч\. 2, 3 ст\. 418/);
+  assert.match(t.logic, /узнало или должно было узнать/);
+  assert.equal(t.applicant_variant, 'non_party');
+});
+
+test('отмена решения третейского суда: вариант (b) — перенос последнего дня через выходной', () => {
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_aware_date: '2025-10-17',
+  }).arbitration_award_setaside;
+  assert.equal(t.raw_deadline, '2026-01-17'); // суббота
+  assert.equal(t.deadline, '2026-01-19'); // перенос на понедельник
+  assert.equal(t.shifted, true);
+  assert.equal(t.applicant_variant, 'non_party');
+});
+
+test('отмена решения третейского суда: заполнены оба поля — приоритет за вариантом (a), датой получения стороной', () => {
+  // По аналогии с приоритетом received_date над postal_arrival_date у
+  // SUDEBNY_PRIKAZ_CASSATION (resolveSudebnyPrikazReceivedDate): если
+  // заполнены оба поля, используется received_date (вариант (a)), а
+  // aware_date (вариант (b)) игнорируется, даже если тоже введена.
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-09-01',
+    arbitration_award_setaside_aware_date: '2025-01-01',
+  }).arbitration_award_setaside;
+  assert.equal(t.anchor, '2025-09-01');
+  assert.equal(t.deadline, '2025-12-01');
+  assert.equal(t.applicant_variant, 'party');
+});
+
+test('отмена решения третейского суда: узла нет без даты — ни одно из двух полей не заполнено', () => {
+  assert.equal(computeIndependentTerms({}).arbitration_award_setaside, null);
+  assert.equal(computeChain(BASE, { today: '2025-09-10' }).arbitration_award_setaside, null);
+});
+
+test('отмена решения третейского суда: узел независим от категории дела и остальной цепочки', () => {
+  const alone = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-09-01',
+  }).arbitration_award_setaside;
+  assert.ok(alone, 'узел считается по своей дате');
+
+  const chain = computeChain(
+    { ...BASE, arbitration_award_setaside_received_date: '2025-09-01' },
+    { today: '2025-09-10' },
+  );
+  assert.equal(chain.arbitration_award_setaside.deadline, alone.deadline);
+
+  const onlyAware = computeIndependentTerms({
+    arbitration_award_setaside_aware_date: '2025-09-01',
+  });
+  assert.ok(onlyAware.arbitration_award_setaside);
+  assert.equal(onlyAware.arbitration_award_setaside.deadline, alone.deadline);
+});
+
+test('отмена решения третейского суда: компетентный суд — районный, не кассационный', () => {
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-09-01',
+  }).arbitration_award_setaside;
+  assert.match(t.logic, /районный суд/);
+});
+
+test('отмена решения третейского суда: восстановление по ст. 112 без годичного потолка ч. 7 ст. 112', () => {
+  // Контроль по аналогии с FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION/
+  // FOREIGN_JUDGMENT_RECOGNITION_OBJECTION выше: ст. 418 сама восстановление
+  // не упоминает, но применяется общее правило ч. 1 ст. 112 (исключения для
+  // этого случая нет) — это не кассационная/надзорная жалоба, а первичное
+  // заявление в суд первой инстанции, поэтому годичный потолок ч. 7 ст. 112
+  // (CASSATION_SUPERVISORY_RESTORATION_NODE_IDS) к узлу не подключён.
+  const t = computeIndependentTerms({
+    arbitration_award_setaside_received_date: '2025-09-01',
+  }).arbitration_award_setaside;
+  assert.match(t.logic, /ч\. 1 ст\. 112/);
+  assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
+  assert.equal(t.restoration_one_year_cap, undefined);
+  assert.ok(!CASSATION_SUPERVISORY_RESTORATION_NODE_IDS.includes('arbitration_award_setaside'));
+  assert.equal(COURT_ARBITRATION_AWARD_SETASIDE.norm_versions.length, 1);
 });
 
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------
