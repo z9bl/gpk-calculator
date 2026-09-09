@@ -43,6 +43,7 @@ import {
   SUDEBNY_PRIKAZ_CASSATION,
   TRETEISKY_OSPARIVANIE_CASSATION,
   TRETEISKY_ISPOLLIST_CASSATION,
+  COURT_ARBITRATION_AWARD_SETASIDE,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
   REVIEW_NEW_CIRCUMSTANCES_RESTORATION,
   SIMPLIFIED_REASONED_REQUEST,
@@ -281,6 +282,20 @@ export function icsTermsFromChain(chain) {
       norm: chain.treteisky_ispollist_cassation.norm.primary,
       ics: TRETEISKY_ISPOLLIST_CASSATION.ics,
       duration: TRETEISKY_ISPOLLIST_CASSATION.duration,
+    });
+  }
+  // Заявление об отмене решения третейского суда (глава 46, ч. 2, 3 ст. 418
+  // ГПК) — независимый узел: первая стадия того же процесса, что и
+  // treteisky_osparivanie_cassation выше, но якорь вводится напрямую одним из
+  // двух альтернативных полей (см. комментарий в chain.js), не вычисляется
+  // из другого узла цепочки.
+  if (chain && chain.arbitration_award_setaside && chain.arbitration_award_setaside.deadline) {
+    terms.push({
+      title: chain.arbitration_award_setaside.title,
+      deadline: chain.arbitration_award_setaside.deadline,
+      norm: chain.arbitration_award_setaside.norm.primary,
+      ics: COURT_ARBITRATION_AWARD_SETASIDE.ics,
+      duration: COURT_ARBITRATION_AWARD_SETASIDE.duration,
     });
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —

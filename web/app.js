@@ -142,6 +142,14 @@ const INPUT_HINTS = {
     'Один месяц со дня, когда заинтересованному лицу стало известно о решении ' +
     '(ч. 2 ст. 413 ГПК РФ) — не со дня вынесения решения и не со дня вступления ' +
     'его в силу; относится к решениям, не требующим принудительного исполнения',
+  arbitration_award_setaside_received_date:
+    'Три месяца со дня получения этой даты (ч. 2 ст. 418 ГПК РФ) — для стороны ' +
+    'третейского разбирательства, обратившейся с заявлением',
+  arbitration_award_setaside_aware_date:
+    'Три месяца со дня, когда лицо узнало или должно было узнать о решении ' +
+    '(ч. 3 ст. 418 ГПК РФ) — для лица, не являющегося стороной третейского ' +
+    'разбирательства, в отношении прав и обязанностей которого оно вынесено, ' +
+    'а также для прокурора в установленных случаях',
   foreign_state_default_judgment_service_date:
     'Дело в отсутствие представителя иностранного государства рассматривается ' +
     'по правилам главы 22 ГПК РФ (заочное производство), но с другими сроками ' +
@@ -1608,6 +1616,63 @@ function renderSudebnyPrikazFields(box) {
   );
 }
 
+// Заявление об отмене решения третейского суда (глава 46 ГПК, ст. 418): один
+// и тот же трёхмесячный срок у двух разных субъектов заявления с разной
+// точкой отсчёта — выбор варианта не идёт в inputs отдельным полем, это чисто
+// интерфейсное переключение того, какое из двух полей ввода показано (см.
+// resolveArbitrationAwardSetasideAnchor в chain.js — там же и приоритет
+// received_date над aware_date, если заполнены оба), по тому же образцу, что
+// и renderSudebnyPrikazFields выше.
+const ARBITRATION_AWARD_SETASIDE_MODE_PARTY = 'party';
+const ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY = 'non_party';
+
+function arbitrationAwardSetasideMode() {
+  if (state.arbitrationAwardSetasideMode) return state.arbitrationAwardSetasideMode;
+  return state.inputs.arbitration_award_setaside_aware_date != null
+    ? ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY
+    : ARBITRATION_AWARD_SETASIDE_MODE_PARTY;
+}
+
+function renderArbitrationAwardSetasideFields(box) {
+  const mode = arbitrationAwardSetasideMode();
+  box.appendChild(
+    renderRadioGroup(
+      'arbitration_award_setaside_mode',
+      [
+        {
+          value: ARBITRATION_AWARD_SETASIDE_MODE_PARTY,
+          label: 'Я сторона третейского разбирательства',
+        },
+        {
+          value: ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY,
+          label:
+            'Я не являюсь стороной, но решение касается моих прав, или я прокурор',
+        },
+      ],
+      mode,
+      (value) => {
+        state.arbitrationAwardSetasideMode = value;
+        // Поле неактивного варианта очищаем — иначе после переключения назад
+        // и обратно расчёт молча использует давно введённую дату по варианту,
+        // который сейчас не выбран.
+        if (value === ARBITRATION_AWARD_SETASIDE_MODE_PARTY) {
+          delete state.inputs.arbitration_award_setaside_aware_date;
+        } else {
+          delete state.inputs.arbitration_award_setaside_received_date;
+        }
+        render();
+      },
+    ),
+  );
+  box.appendChild(
+    inviteFieldOrPointer(
+      mode === ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY
+        ? 'arbitration_award_setaside_aware_date'
+        : 'arbitration_award_setaside_received_date',
+    ),
+  );
+}
+
 // Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
 // маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
@@ -1794,8 +1859,13 @@ function renderSituationFields(situation, primaryFilled) {
           'ГПК), и возражения относительно признания решения, не требующего ' +
           'принудительного исполнения, — один месяц со дня, когда заинтересованное лицо ' +
           'о решении узнало (ч. 2 ст. 413 ГПК); второй срок распространяется также на ' +
-          'решения иностранных третейских судов (арбитражей) — ст. 416 ГПК. Заполните ' +
-          'нужную дату.',
+          'решения иностранных третейских судов (арбитражей) — ст. 416 ГПК. Заявление об ' +
+          'отмене решения третейского суда (глава 46 ГПК) — три месяца, но точка отсчёта ' +
+          'зависит от субъекта: со дня получения решения стороной третейского ' +
+          'разбирательства (ч. 2 ст. 418) либо со дня, когда об оспариваемом решении ' +
+          'узнало или должно было узнать лицо, не являющееся стороной, в отношении прав ' +
+          'и обязанностей которого оно вынесено, либо прокурор (ч. 3 ст. 418) — выберите ' +
+          'вариант переключателем. Заполните нужную дату.',
       ),
     );
   }
@@ -1845,6 +1915,11 @@ function renderSituationFields(situation, primaryFilled) {
         continue;
       }
       if (id === 'sudebny_prikaz_postal_arrival_date') continue; // показано выше вместе с received_date
+      if (id === 'arbitration_award_setaside_received_date') {
+        renderArbitrationAwardSetasideFields(box);
+        continue;
+      }
+      if (id === 'arbitration_award_setaside_aware_date') continue; // показано выше вместе с received_date
       box.appendChild(inviteFieldOrPointer(id));
     }
   } else if (situation.id === 'periodic_payments') {

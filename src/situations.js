@@ -196,6 +196,14 @@ export const SITUATIONS = [
     // своей датой, годичный потолок к ним не подключён (см. комментарий в
     // chain.js перед FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION) — поэтому
     // у них нет отдельного поля *_restoration_circumstance_date.
+    // arbitration_award_setaside_received_date /
+    // arbitration_award_setaside_aware_date — глава 46 ГПК (заявление об
+    // отмене решения третейского суда, ст. 418): один узел с двумя
+    // взаимоисключающими полями, как у sudebny_prikaz_* выше — приоритет за
+    // received_date (вариант (a), сторона третейского разбирательства), если
+    // заполнены оба (см. resolveArbitrationAwardSetasideAnchor в chain.js).
+    // Годичный потолок к узлу не подключён по той же причине, что и у главы
+    // 45, — своего поля *_restoration_circumstance_date тоже нет.
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
@@ -212,6 +220,8 @@ export const SITUATIONS = [
       'treteisky_ispollist_cassation_restoration_circumstance_date',
       'foreign_judgment_entry_into_force_date',
       'foreign_judgment_recognition_aware_date',
+      'arbitration_award_setaside_received_date',
+      'arbitration_award_setaside_aware_date',
     ],
     nodes: [
       'protocol_remarks',
@@ -225,6 +235,7 @@ export const SITUATIONS = [
       'treteisky_ispollist_cassation',
       'foreign_judgment_enforcement_presentation',
       'foreign_judgment_recognition_objection',
+      'arbitration_award_setaside',
     ],
   },
   {

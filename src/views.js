@@ -624,6 +624,18 @@ function sudebnyPrikazCassationCard(term) {
   return card;
 }
 
+// Карточка заявления об отмене решения третейского суда (глава 46, ст. 418):
+// обычный monthTermCard плюс отметка о том, какой из двух вариантов субъекта
+// сработал — сторона третейского разбирательства (ч. 2) или лицо, не
+// являющееся стороной, в т.ч. прокурор (ч. 3) — иначе карточка не объясняла
+// бы, откуда взялась точка отсчёта, при заполнении сразу двух полей ввода
+// (см. resolveArbitrationAwardSetasideAnchor в chain.js — приоритет за ч. 2).
+function arbitrationAwardSetasideCard(term) {
+  const card = monthTermCard(term);
+  card.details.applicant_variant = term.applicant_variant;
+  return card;
+}
+
 // Карточка предъявления документов о взыскании периодических платежей
 // (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
 // ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
@@ -890,6 +902,14 @@ function independentNodes(source, today = null) {
   }
   if (terms.treteisky_ispollist_cassation) {
     cards.push(monthTermCard(terms.treteisky_ispollist_cassation));
+  }
+  // Заявление об отмене решения третейского суда (глава 46, ч. 2, 3 ст. 418):
+  // первая стадия того же процесса, что и treteisky_osparivanie_cassation
+  // выше, но независимый узел (см. комментарий в chain.js) — через
+  // arbitrationAwardSetasideCard, чтобы показать, какой вариант субъекта
+  // сработал.
+  if (terms.arbitration_award_setaside) {
+    cards.push(arbitrationAwardSetasideCard(terms.arbitration_award_setaside));
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже
