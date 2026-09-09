@@ -111,4 +111,30 @@ export const INPUT_LABELS = {
     'Дата получения копии определения об отказе в передаче жалобы для рассмотрения',
   review_last_act_entry_into_force_date:
     'Дата вступления в силу последнего судебного постановления по делу',
+
+  // Годичный потолок восстановления пропущенного кассационного/надзорного
+  // срока (ч. 7 ст. 112 ГПК РФ) — по одному полю на узел категории (a), см.
+  // CASSATION_SUPERVISORY_RESTORATION_NODE_IDS и restorationOneYearCapResult
+  // в src/chain.js. Поле не обязательно: без него карточка ведёт себя как
+  // раньше (просто restoration_norm), заполняется только когда пользователь
+  // спрашивает, реалистично ли восстановление.
+  cassation_ksoyu_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация в КСОЮ)',
+  cassation_vs_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация в ВС РФ)',
+  supervision_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (надзорная жалоба)',
+  settlement_approval_cassation_appeal_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (обжалование ' +
+    'определения об утверждении мирового соглашения)',
+  sudebny_prikaz_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация на судебный приказ)',
+  treteisky_osparivanie_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация по делу ' +
+    'об оспаривании решения третейского суда)',
+  treteisky_ispollist_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация на выдачу ' +
+    'исполнительного листа на исполнение решения третейского суда)',
+  mirovoy_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация по делам мировых судей)',
 };

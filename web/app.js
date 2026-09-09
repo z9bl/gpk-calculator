@@ -161,6 +161,30 @@ const INPUT_HINTS = {
   review_last_act_entry_into_force_date:
     'Шестимесячный потолок (ч. 3 ст. 394 ГПК РФ, первое предложение): срок не может быть ' +
     'позднее шести месяцев с этой даты, даже если трёхмесячный компонент истекает позже',
+  cassation_ksoyu_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  cassation_vs_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  supervision_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  settlement_approval_cassation_appeal_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  sudebny_prikaz_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  treteisky_osparivanie_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  treteisky_ispollist_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  mirovoy_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -430,6 +454,10 @@ function renderTermCard(card, opts = {}) {
 
   if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
 
+  if (card.restoration_one_year_cap) {
+    c.appendChild(renderRestorationOneYearCap(card.restoration_one_year_cap));
+  }
+
   if (card.alternative) c.appendChild(renderAlternative(card));
 
   // Практика ВС (vs_practice_change, п. 5 ч. 4 ст. 392): обе промежуточные
@@ -636,6 +664,42 @@ function renderExhaustionWarning(w) {
   if (w.calculation_note) rows.push(el('div', 'hint', w.calculation_note));
   rows.push(el('div', 'hint', w.clarification ? `${w.norm} · ${w.clarification}` : w.norm));
   return collapsedWarning('Требуется исчерпание способов обжалования', rows);
+}
+
+// Годичный потолок восстановления пропущенного кассационного/надзорного
+// срока (ч. 7 ст. 112 ГПК РФ): показывается, только когда пользователь ввёл
+// дату обстоятельства — уважительной причины пропуска (card.restoration_one_year_cap,
+// см. restorationOneYearCapResult в src/chain.js). За пределами потолка —
+// не просто предупреждение, а прямое указание на законодательный запрет
+// восстановления, поэтому не сворачиваем в <details> и используем класс
+// .miss, как у уже пропущенного срока — это тоже блокирующее обстоятельство,
+// а не то, что можно свернуть и не заметить.
+function renderRestorationOneYearCap(cap) {
+  const box = el('div');
+  if (cap.within_cap) {
+    box.appendChild(
+      el(
+        'div',
+        'hint',
+        `Обстоятельство (${isoToRu(cap.circumstance_date)}) укладывается в годичный ` +
+          `потолок восстановления — не позднее ${isoToRu(cap.cap_deadline)} (${cap.norm}). ` +
+          'Это не гарантирует восстановление: суд ещё должен признать причину ' +
+          'пропуска уважительной.',
+      ),
+    );
+  } else {
+    box.appendChild(
+      el(
+        'div',
+        'miss',
+        `Обстоятельство (${isoToRu(cap.circumstance_date)}) — позже годичного потолка ` +
+          `восстановления, истёкшего ${isoToRu(cap.cap_deadline)}. По ${cap.norm} в этом ` +
+          'случае восстановление пропущенного срока прямо исключено законом, а не ' +
+          'оставлено на усмотрение суда.',
+      ),
+    );
+  }
+  return box;
 }
 
 function renderBoundaryWarning(bw) {

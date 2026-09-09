@@ -77,6 +77,7 @@ export function termCard(term, calc) {
     },
   };
   if (term.restoration_norm) card.restoration_norm = term.restoration_norm;
+  if (term.restoration_one_year_cap) card.restoration_one_year_cap = term.restoration_one_year_cap;
   attachCalendarWarning(card);
   return card;
 }
@@ -139,6 +140,7 @@ export function monthTermCard(term) {
     },
   };
   if (term.restoration_norm) card.restoration_norm = term.restoration_norm;
+  if (term.restoration_one_year_cap) card.restoration_one_year_cap = term.restoration_one_year_cap;
   attachCalendarWarning(card);
   return card;
 }

@@ -189,6 +189,9 @@ function cassationCard(cassation) {
   if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
   if (cassation.exhaustion_warning) card.exhaustion_warning = cassation.exhaustion_warning;
   if (cassation.restoration_norm) card.restoration_norm = cassation.restoration_norm;
+  if (cassation.restoration_one_year_cap) {
+    card.restoration_one_year_cap = cassation.restoration_one_year_cap;
+  }
   attachCalendarWarning(card);
   return card;
 }
