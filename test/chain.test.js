@@ -2929,3 +2929,192 @@ test('годичный потолок восстановления: у кажд�
     assert.equal(byId[id].restoration_norm, 'ст. 112 ГПК РФ', `узел "${id}"`);
   }
 });
+
+// --- Годичный потолок восстановления: подключение к узлам категории (a) ----
+//
+// Сама проверка (в пределах года / на границе / за пределами) уже покрыта на
+// синтетических датах в test/core/restoration.test.js; здесь — что
+// restoration_one_year_cap появляется на РЕЗУЛЬТАТЕ КАЖДОГО из восьми узлов
+// категории (a), от правильной даты вступления в силу (не всегда совпадающей
+// с якорем самого срока — см. cassation_ksoyu/cassation_vs/mirovoy_cassation
+// ниже), и не появляется вовсе, пока дата обстоятельства не введена.
+test('годичный потолок: cassation_ksoyu — от entry_into_force, включая границу года', () => {
+  const appealedInputs = {
+    ...BASE,
+    appeal_filed_date: '2025-04-05',
+    appeal_ruling_date: '2025-06-02',
+    appeal_ruling_reasoned_date: '2025-06-02',
+  };
+  // Без даты обстоятельства — поля нет вовсе (обычное состояние формы).
+  const noCircumstance = computeChain(appealedInputs, { today: '2025-07-01' });
+  assert.equal(noCircumstance.cassation.restoration_one_year_cap, undefined);
+
+  const withinYear = computeChain(
+    { ...appealedInputs, cassation_ksoyu_restoration_circumstance_date: '2025-12-01' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(withinYear.cassation.restoration_one_year_cap, {
+    within_cap: true,
+    cap_deadline: '2026-06-02',
+    circumstance_date: '2025-12-01',
+    norm: 'ч. 7 ст. 112 ГПК РФ',
+  });
+
+  // Ровно на границе года («не позднее одного года» — включительно).
+  const onBoundary = computeChain(
+    { ...appealedInputs, cassation_ksoyu_restoration_circumstance_date: '2026-06-02' },
+    { today: '2025-07-01' },
+  );
+  assert.equal(onBoundary.cassation.restoration_one_year_cap.within_cap, true);
+
+  // За пределами года — потолок блокирует.
+  const beyondYear = computeChain(
+    { ...appealedInputs, cassation_ksoyu_restoration_circumstance_date: '2026-06-03' },
+    { today: '2025-07-01' },
+  );
+  assert.equal(beyondYear.cassation.restoration_one_year_cap.within_cap, false);
+});
+
+test('годичный потолок: cassation_ksoyu считается от даты вступления в силу, а не от якоря срока', () => {
+  // Тот же кейс, что «5b. alternative_calculation» выше: обжаловано, дата
+  // принятия (02.06.2025) и дата изготовления мотивированного (10.06.2025) —
+  // разные. Действующая редакция (после 01.09.2024) считает срок КАССАЦИИ от
+  // мотивированного (10.06), но постановление ВСТУПАЕТ В СИЛУ со дня принятия
+  // (02.06) — это и есть дата, от которой отсчитывается годичный потолок.
+  const r = computeChain(
+    {
+      ...BASE,
+      appeal_filed_date: '2025-04-05',
+      appeal_ruling_date: '2025-06-02',
+      appeal_ruling_reasoned_date: '2025-06-10',
+      cassation_ksoyu_restoration_circumstance_date: '2026-06-02', // = entry_into_force + 1 год
+    },
+    { today: '2025-07-01' },
+  );
+  assert.equal(r.cassation.anchor, '2025-06-10'); // якорь срока — мотивированное определение
+  assert.equal(r.entry_into_force.date, '2025-06-02'); // а вступление в силу — дата принятия
+  assert.equal(r.cassation.restoration_one_year_cap.cap_deadline, '2026-06-02');
+  assert.equal(r.cassation.restoration_one_year_cap.within_cap, true);
+});
+
+test('годичный потолок: cassation_vs — от даты вынесения определения КСОЮ (не мотивированного)', () => {
+  const inputs = {
+    ...VS_BASE,
+    ksoyu_ruling_date: '2023-04-12',
+    vs_cassation_filed_date: '2023-07-01',
+  };
+  const within = computeChain(
+    { ...inputs, cassation_vs_restoration_circumstance_date: '2024-01-01' },
+    { today: '2023-07-20' },
+  );
+  assert.equal(within.cassation_vs.restoration_one_year_cap.within_cap, true);
+  assert.equal(within.cassation_vs.restoration_one_year_cap.cap_deadline, '2024-04-12');
+
+  const beyond = computeChain(
+    { ...inputs, cassation_vs_restoration_circumstance_date: '2024-04-13' },
+    { today: '2023-07-20' },
+  );
+  assert.equal(beyond.cassation_vs.restoration_one_year_cap.within_cap, false);
+});
+
+test('годичный потолок: supervision (надзор) — от даты вынесения определения коллегии ВС', () => {
+  const within = computeIndependentTerms({
+    vs_ruling_date: '2025-09-01',
+    supervision_restoration_circumstance_date: '2026-01-01',
+  }).supervision;
+  assert.equal(within.restoration_one_year_cap.within_cap, true);
+  assert.equal(within.restoration_one_year_cap.cap_deadline, '2026-09-01');
+
+  const beyond = computeIndependentTerms({
+    vs_ruling_date: '2025-09-01',
+    supervision_restoration_circumstance_date: '2026-09-02',
+  }).supervision;
+  assert.equal(beyond.restoration_one_year_cap.within_cap, false);
+
+  const noCircumstance = computeIndependentTerms({ vs_ruling_date: '2025-09-01' }).supervision;
+  assert.equal(noCircumstance.restoration_one_year_cap, undefined);
+});
+
+test('годичный потолок: settlement_approval_cassation_appeal — от даты определения об утверждении соглашения', () => {
+  const within = computeIndependentTerms({
+    settlement_approval_ruling_date: '2025-09-01',
+    settlement_approval_cassation_appeal_restoration_circumstance_date: '2026-03-01',
+  }).settlement_approval_cassation_appeal;
+  assert.equal(within.restoration_one_year_cap.within_cap, true);
+  assert.equal(within.restoration_one_year_cap.cap_deadline, '2026-09-01');
+
+  const beyond = computeIndependentTerms({
+    settlement_approval_ruling_date: '2025-09-01',
+    settlement_approval_cassation_appeal_restoration_circumstance_date: '2026-09-02',
+  }).settlement_approval_cassation_appeal;
+  assert.equal(beyond.restoration_one_year_cap.within_cap, false);
+});
+
+test('годичный потолок: sudebny_prikaz_cassation — от ВЫЧИСЛЕННОЙ даты вступления приказа в силу', () => {
+  // entry_into_force вычисляется (не вводится): 01.09.2025 + 10 рабочих дней
+  // на возражения = 15.09.2025 (см. «судебный приказ: вариант (a)» выше).
+  const within = computeIndependentTerms({
+    sudebny_prikaz_received_date: '2025-09-01',
+    sudebny_prikaz_cassation_restoration_circumstance_date: '2026-03-01',
+  }).sudebny_prikaz_cassation;
+  assert.equal(within.entry_into_force, '2025-09-15');
+  assert.equal(within.restoration_one_year_cap.within_cap, true);
+  assert.equal(within.restoration_one_year_cap.cap_deadline, '2026-09-15');
+
+  const beyond = computeIndependentTerms({
+    sudebny_prikaz_received_date: '2025-09-01',
+    sudebny_prikaz_cassation_restoration_circumstance_date: '2026-09-16',
+  }).sudebny_prikaz_cassation;
+  assert.equal(beyond.restoration_one_year_cap.within_cap, false);
+});
+
+test('годичный потолок: treteisky_osparivanie_cassation и treteisky_ispollist_cassation — от даты вступления в силу', () => {
+  const osparivanie = computeIndependentTerms({
+    treteisky_osparivanie_entry_into_force_date: '2025-09-01',
+    treteisky_osparivanie_cassation_restoration_circumstance_date: '2026-09-01',
+  }).treteisky_osparivanie_cassation;
+  assert.equal(osparivanie.restoration_one_year_cap.within_cap, true); // граница, включительно
+
+  const ispollist = computeIndependentTerms({
+    treteisky_ispollist_entry_into_force_date: '2025-09-01',
+    treteisky_ispollist_cassation_restoration_circumstance_date: '2026-09-02',
+  }).treteisky_ispollist_cassation;
+  assert.equal(ispollist.restoration_one_year_cap.within_cap, false); // на следующий день
+});
+
+test('годичный потолок: mirovoy_cassation — от даты вступления решения мирового судьи в силу', () => {
+  // Апелляции не было, срок истёк → entry.date = дедлайн апелляции + 1 день =
+  // 17.02.2026 (см. «кассация мировых: отсчёт от вступления в силу» выше) —
+  // тот же якорь, что и у самого срока кассации в этой ветке.
+  const inputs = { mirovoy_resolution_date: '2026-01-15' };
+  const within = computeMirovoy(
+    { ...inputs, mirovoy_cassation_restoration_circumstance_date: '2026-08-01' },
+    '2026-07-01',
+  );
+  assert.equal(within.entry_into_force.date, '2026-02-17');
+  assert.equal(within.cassation.restoration_one_year_cap.within_cap, true);
+  assert.equal(within.cassation.restoration_one_year_cap.cap_deadline, '2027-02-17');
+
+  const beyond = computeMirovoy(
+    { ...inputs, mirovoy_cassation_restoration_circumstance_date: '2027-02-18' },
+    '2026-07-01',
+  );
+  assert.equal(beyond.cassation.restoration_one_year_cap.within_cap, false);
+});
+
+test('годичный потолок: контроль — апелляционные узлы не получают restoration_one_year_cap', () => {
+  // Апелляция (ч. 1–5 ст. 112) годичным потолком не ограничена (ч. 7 ст. 112
+  // касается только кассации/надзора) — узел не должен приобрести это поле,
+  // даже если (по ошибке) для него ввести одноимённый по смыслу вход.
+  const r = computeChain(BASE, { today: '2025-07-01' });
+  assert.equal(r.appeal.restoration_one_year_cap, undefined);
+
+  const childReturn = computeIndependentTerms({
+    child_return_reasoned_decision_date: '2025-07-02',
+  }).child_return_appeal;
+  assert.equal(childReturn.restoration_one_year_cap, undefined);
+
+  const mirovoyAppeal = computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }, '2026-07-01')
+    .appeal;
+  assert.equal(mirovoyAppeal.restoration_one_year_cap, undefined);
+});

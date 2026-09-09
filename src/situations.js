@@ -23,7 +23,17 @@ export const SITUATIONS = [
     // Основное поле ветви — статическое, в разметке страницы. Хранится по id:
     // от его заполненности зависит показ блока уточняющих дат.
     primary_field: 'reasoned_decision_date',
-    fields: ['vs_ruling_date'],
+    // *_restoration_circumstance_date — необязательные поля годичного
+    // потолка восстановления (ч. 7 ст. 112 ГПК РФ, см.
+    // CASSATION_SUPERVISORY_RESTORATION_NODE_IDS в chain.js): заполняются,
+    // только если пользователь спрашивает про восстановление пропущенного
+    // кассационного/надзорного срока, а не как часть обычного расчёта.
+    fields: [
+      'vs_ruling_date',
+      'cassation_ksoyu_restoration_circumstance_date',
+      'cassation_vs_restoration_circumstance_date',
+      'supervision_restoration_circumstance_date',
+    ],
     nodes: [
       'appeal_general',
       'entry_into_force',
@@ -36,7 +46,10 @@ export const SITUATIONS = [
   {
     id: 'mirovoy',
     label: 'Решение мирового судьи',
-    fields: ['mirovoy_resolution_date'],
+    // mirovoy_cassation_restoration_circumstance_date — годичный потолок
+    // восстановления (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви
+    // 'general' выше.
+    fields: ['mirovoy_resolution_date', 'mirovoy_cassation_restoration_circumstance_date'],
     nodes: [
       'mirovoy_reasoned_request',
       'mirovoy_reasoned_making',
@@ -172,16 +185,25 @@ export const SITUATIONS = [
     // получена напрямую) имеет приоритет, sudebny_prikaz_postal_arrival_date
     // (известна только дата прибытия на почту) используется, только если
     // первое не заполнено.
+    // *_restoration_circumstance_date — годичный потолок восстановления
+    // (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви 'general' выше;
+    // здесь — у трёх узлов прямой кассации пула, для которых предусмотрен
+    // (settlement_approval_cassation_appeal, sudebny_prikaz_cassation,
+    // treteisky_osparivanie_cassation, treteisky_ispollist_cassation).
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
       'cassation_return_ruling_date',
       'arbitration_competence_ruling_received_date',
       'settlement_approval_ruling_date',
+      'settlement_approval_cassation_appeal_restoration_circumstance_date',
       'sudebny_prikaz_received_date',
       'sudebny_prikaz_postal_arrival_date',
+      'sudebny_prikaz_cassation_restoration_circumstance_date',
       'treteisky_osparivanie_entry_into_force_date',
+      'treteisky_osparivanie_cassation_restoration_circumstance_date',
       'treteisky_ispollist_entry_into_force_date',
+      'treteisky_ispollist_cassation_restoration_circumstance_date',
     ],
     nodes: [
       'protocol_remarks',

@@ -18,6 +18,42 @@ import {
   withInterruptions as genericWithInterruptions,
   computeInterruptibleTerm as genericComputeInterruptibleTerm,
 } from '../core/engine/interruption.js';
+import { checkRestorationOneYearCap } from '../core/engine/restoration.js';
+
+// --- Годичный потолок восстановления (ч. 7 ст. 112 ГПК РФ) ------------------
+//
+// Механика проверки — core/engine/restoration.js (предметно-независима);
+// здесь — только подключение к узлам кассации/надзора категории (a) (см.
+// CASSATION_SUPERVISORY_RESTORATION_NODE_IDS ниже). Единая функция для всех
+// восьми узлов, а не своя копия проверки в каждом — расчёт этой проверки
+// нигде не дублируется.
+const RESTORATION_ONE_YEAR_CAP_NORM = 'ч. 7 ст. 112 ГПК РФ';
+
+/**
+ * Результат проверки годичного потолка для карточки узла категории (a).
+ *
+ * Пока пользователь не ввёл дату обстоятельства — уважительной причины
+ * пропуска, проверять нечего: это обычное состояние формы (пользователь ещё
+ * не спрашивает про восстановление), а не ошибка, поэтому null, а не
+ * предупреждение по умолчанию. Дата вступления в силу отсутствует по той же
+ * причине, что и у остального узла на этой стадии расчёта (событие ещё не
+ * разрешилось, дата не введена) — тоже null.
+ *
+ * @param {string|null|undefined} entryIntoForceDate — дата вступления
+ *   обжалуемого постановления в законную силу (не обязательно совпадает с
+ *   якорем самого срока — см. cassation_ksoyu/cassation_vs/mirovoy_cassation,
+ *   где якорь после реформы 2024/2026 гг. может ссылаться на дату
+ *   изготовления мотивированного определения, а не на вступление в силу).
+ * @param {*} circumstanceDateInput — сырое значение нового поля ввода узла.
+ * @returns {{within_cap:boolean, cap_deadline:string, circumstance_date:string, norm:string}|null}
+ */
+function restorationOneYearCapResult(entryIntoForceDate, circumstanceDateInput) {
+  const circumstance = toISO(circumstanceDateInput);
+  if (circumstance == null) return null;
+  const cap = checkRestorationOneYearCap(entryIntoForceDate, circumstance);
+  if (cap == null) return null;
+  return { ...cap, circumstance_date: circumstance, norm: RESTORATION_ONE_YEAR_CAP_NORM };
+}
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -819,13 +855,88 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
   const reviewResult = computeReviewNewCircumstancesResult(inputs ?? {});
+
+  // Надзорная жалоба (глава 41.1) — узел категории (a): годичный потолок
+  // восстановления (ч. 7 ст. 112) подключается через общую функцию
+  // restorationOneYearCapResult, а не копируется в расчёт. Дата вступления
+  // обжалуемого постановления в силу для надзора — та же vs_ruling_date, что
+  // и якорь самого срока (см. логику SUPERVISION: определение Судебной
+  // коллегии ВС вступает в силу со дня вынесения).
+  const supervision = computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date);
+  if (supervision) {
+    const cap = restorationOneYearCapResult(
+      inputs?.vs_ruling_date,
+      inputs?.supervision_restoration_circumstance_date,
+    );
+    if (cap) supervision.restoration_one_year_cap = cap;
+  }
+
+  // Обжалование определения об утверждении мирового соглашения (ч. 11
+  // ст. 153.10) — прямая кассация, узел категории (a). Дата вступления в
+  // силу обжалуемого определения — та же settlement_approval_ruling_date,
+  // что и якорь срока (акт, не подлежащий апелляции, вступает в силу со дня
+  // вынесения).
+  const settlementApprovalCassationAppeal = computeSimpleTerm(
+    SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+    inputs?.settlement_approval_ruling_date,
+  );
+  if (settlementApprovalCassationAppeal) {
+    const cap = restorationOneYearCapResult(
+      inputs?.settlement_approval_ruling_date,
+      inputs?.settlement_approval_cassation_appeal_restoration_circumstance_date,
+    );
+    if (cap) settlementApprovalCassationAppeal.restoration_one_year_cap = cap;
+  }
+
+  // Прямая кассация на судебный приказ, узел категории (a): дата вступления
+  // приказа в законную силу не вводится, а вычисляется
+  // (resolveSudebnyPrikazEntryIntoForce) — берём её же для годичного потолка,
+  // а не якорь срока напрямую (у sudebny_prikaz_cassation они совпадают, но
+  // вычисленная дата уже есть готовой в computeSudebnyPrikazCassation).
+  const sudebnyPrikazCassation = computeSudebnyPrikazCassation(inputs ?? {});
+  if (sudebnyPrikazCassation) {
+    const cap = restorationOneYearCapResult(
+      sudebnyPrikazCassation.entry_into_force,
+      inputs?.sudebny_prikaz_cassation_restoration_circumstance_date,
+    );
+    if (cap) sudebnyPrikazCassation.restoration_one_year_cap = cap;
+  }
+
+  // Прямая кассация на определения по третейским делам (ч. 5 ст. 422, ч. 5
+  // ст. 427) — узлы категории (a); дата вступления в силу вводится напрямую
+  // (см. открытый вопрос у SUDEBNY_PRIKAZ_CASSATION выше) и служит одновременно
+  // якорем срока и точкой отсчёта годичного потолка.
+  const treteiskyOsparivanieCassation = computeSimpleTerm(
+    TRETEISKY_OSPARIVANIE_CASSATION,
+    inputs?.treteisky_osparivanie_entry_into_force_date,
+  );
+  if (treteiskyOsparivanieCassation) {
+    const cap = restorationOneYearCapResult(
+      inputs?.treteisky_osparivanie_entry_into_force_date,
+      inputs?.treteisky_osparivanie_cassation_restoration_circumstance_date,
+    );
+    if (cap) treteiskyOsparivanieCassation.restoration_one_year_cap = cap;
+  }
+
+  const treteiskyIspollistCassation = computeSimpleTerm(
+    TRETEISKY_ISPOLLIST_CASSATION,
+    inputs?.treteisky_ispollist_entry_into_force_date,
+  );
+  if (treteiskyIspollistCassation) {
+    const cap = restorationOneYearCapResult(
+      inputs?.treteisky_ispollist_entry_into_force_date,
+      inputs?.treteisky_ispollist_cassation_restoration_circumstance_date,
+    );
+    if (cap) treteiskyIspollistCassation.restoration_one_year_cap = cap;
+  }
+
   return {
     protocol_remarks: remarks,
     protocol_remarks_review: review,
     // condition (бывшее поле PRIVATE_COMPLAINT) — 'interim_ruling_date': узел
     // появляется только после ввода даты определения суда первой инстанции.
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
-    supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
+    supervision,
     // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2):
     // событие стадии кассации, возможное по делу любой категории, — поэтому
     // независимый узел, а не часть какой-либо ветви цепочки.
@@ -851,10 +962,7 @@ export function computeIndependentTerms(inputs) {
     // в кассацию, независимый узел по тому же образцу, что и два выше.
     // condition (бывшее поле) — 'settlement_approval_ruling_date': узел
     // появляется только после ввода даты определения об утверждении соглашения.
-    settlement_approval_cassation_appeal: computeSimpleTerm(
-      SETTLEMENT_APPROVAL_CASSATION_APPEAL,
-      inputs?.settlement_approval_ruling_date,
-    ),
+    settlement_approval_cassation_appeal: settlementApprovalCassationAppeal,
     // Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) —
     // три независимых узла: акт, для которого апелляционное обжалование не
     // предусмотрено, обжалуется сразу в кассацию (п. 3 ПП ВС РФ от 22.06.2021
@@ -864,15 +972,9 @@ export function computeIndependentTerms(inputs) {
     // condition — sudebny_prikaz_cassation появляется после ввода одной из
     // дат приказного производства (получения копии или прибытия на почту);
     // два остальных — после ввода даты вступления акта в законную силу.
-    sudebny_prikaz_cassation: computeSudebnyPrikazCassation(inputs ?? {}),
-    treteisky_osparivanie_cassation: computeSimpleTerm(
-      TRETEISKY_OSPARIVANIE_CASSATION,
-      inputs?.treteisky_osparivanie_entry_into_force_date,
-    ),
-    treteisky_ispollist_cassation: computeSimpleTerm(
-      TRETEISKY_ISPOLLIST_CASSATION,
-      inputs?.treteisky_ispollist_entry_into_force_date,
-    ),
+    sudebny_prikaz_cassation: sudebnyPrikazCassation,
+    treteisky_osparivanie_cassation: treteiskyOsparivanieCassation,
+    treteisky_ispollist_cassation: treteiskyIspollistCassation,
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
     // предъявление к исполнению — от даты его выдачи взыскателю; ни один из
@@ -2873,12 +2975,28 @@ export function computeMirovoy(inputs, referenceDate = null) {
     inputs.enforcement_interruptions,
   );
 
+  // mirovoy_cassation — узел категории (a): годичный потолок восстановления
+  // (ч. 7 ст. 112). Дата вступления в силу — entry.date (resolveMirovoyEntry),
+  // а НЕ якорь самого срока: если постановление обжаловалось в апелляции,
+  // якорь у mirovoy_cassation — дата изготовления мотивированного
+  // апелляционного определения района (см. MIROVOY_CASSATION_ANCHORS), а
+  // вступает в силу постановление раньше — со дня ПРИНЯТИЯ этого определения
+  // (entry.date), как и в общей цепочке (cassation_ksoyu выше).
+  const mirovoyCassation = computeMirovoyCassation(inputs, appeal, toISO(referenceDate));
+  if (mirovoyCassation) {
+    const cap = restorationOneYearCapResult(
+      entry.date,
+      inputs.mirovoy_cassation_restoration_circumstance_date,
+    );
+    if (cap) mirovoyCassation.restoration_one_year_cap = cap;
+  }
+
   return {
     attendance,
     reasoned_request: request,
     reasoned_making: making,
     appeal,
-    cassation: computeMirovoyCassation(inputs, appeal, toISO(referenceDate)),
+    cassation: mirovoyCassation,
     entry_into_force: { norm: MIROVOY_ENTRY_NORM, ...entry },
     enforcement,
   };
@@ -3262,6 +3380,31 @@ export function computeChain(inputs, options = {}) {
   const entry = resolveEntryIntoForce(inputs, appeal.deadline, options.today);
   const cassation = computeCassation(inputs, entry, toISO(options.today));
   const cassationVs = computeVsCassation(inputs, toISO(options.today));
+  // Годичный потолок восстановления (ч. 7 ст. 112) — cassation_ksoyu и
+  // cassation_vs категории (a). Дата вступления в силу для cassation_ksoyu —
+  // entry.date (решение суда первой инстанции либо, если обжаловалось,
+  // апелляционное определение — см. resolveEntryIntoForce), а НЕ якорь самого
+  // срока: с 01.09.2024 (ФЗ № 135-ФЗ) он при обжаловании ссылается на дату
+  // изготовления мотивированного апелляционного определения, а не на
+  // вступление в силу. Для cassation_vs обжалуемый акт — определение КСОЮ, а
+  // оно, как и определение Судебной коллегии ВС (см. SUPERVISION), вступает в
+  // силу со дня вынесения (ksoyu_ruling_date), а не со дня изготовления
+  // мотивированного определения (ksoyu_ruling_reasoned_date, используемого
+  // как якорь срока в действующей редакции ст. 390.3).
+  if (cassation) {
+    const cap = restorationOneYearCapResult(
+      entry.date,
+      inputs.cassation_ksoyu_restoration_circumstance_date,
+    );
+    if (cap) cassation.restoration_one_year_cap = cap;
+  }
+  if (cassationVs) {
+    const cap = restorationOneYearCapResult(
+      inputs.ksoyu_ruling_date,
+      inputs.cassation_vs_restoration_circumstance_date,
+    );
+    if (cap) cassationVs.restoration_one_year_cap = cap;
+  }
   const enforcement = computeEnforcement(entry, ENFORCEMENT_PRESENTATION, inputs.enforcement_interruptions);
 
   return {
