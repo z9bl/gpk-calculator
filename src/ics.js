@@ -30,6 +30,8 @@ import {
   COURT_ORDER_OBJECTION,
   COURT_ORDER_PRESENTATION,
   PERIODIC_PAYMENTS_PRESENTATION,
+  FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION,
+  FOREIGN_JUDGMENT_RECOGNITION_OBJECTION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
   CHILD_RETURN_APPEAL,
@@ -359,6 +361,38 @@ export function icsTermsFromChain(chain) {
       norm: chain.periodic_payments_presentation.norm.primary,
       ics: PERIODIC_PAYMENTS_PRESENTATION.ics,
       duration: PERIODIC_PAYMENTS_PRESENTATION.duration,
+    });
+  }
+  // Признание и исполнение решений иностранных судов (глава 45 ГПК) — два
+  // независимых узла, каждый считается по своему input: предъявление решения
+  // к принудительному исполнению (ч. 3 ст. 409, три года со дня вступления
+  // решения в законную силу) и возражения относительно признания решения, не
+  // требующего принудительного исполнения (ч. 2 ст. 413, один месяц со дня,
+  // когда заинтересованному лицу стало известно о решении).
+  if (
+    chain &&
+    chain.foreign_judgment_enforcement_presentation &&
+    chain.foreign_judgment_enforcement_presentation.deadline
+  ) {
+    terms.push({
+      title: chain.foreign_judgment_enforcement_presentation.title,
+      deadline: chain.foreign_judgment_enforcement_presentation.deadline,
+      norm: chain.foreign_judgment_enforcement_presentation.norm.primary,
+      ics: FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION.ics,
+      duration: FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.foreign_judgment_recognition_objection &&
+    chain.foreign_judgment_recognition_objection.deadline
+  ) {
+    terms.push({
+      title: chain.foreign_judgment_recognition_objection.title,
+      deadline: chain.foreign_judgment_recognition_objection.deadline,
+      norm: chain.foreign_judgment_recognition_objection.norm.primary,
+      ics: FOREIGN_JUDGMENT_RECOGNITION_OBJECTION.ics,
+      duration: FOREIGN_JUDGMENT_RECOGNITION_OBJECTION.duration,
     });
   }
   // Упрощённое производство: заявление о мотивированном решении и апелляция.

@@ -839,6 +839,18 @@ function independentNodes(source, today = null) {
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
   }
+  // Глава 45 (признание и исполнение решений иностранных судов): два
+  // независимых узла, каждый по своему input — обычный monthTermCard (годится
+  // и для трёхлетнего, и для месячного срока, как у court_order_presentation/
+  // cassation_return_ruling_appeal выше), без attachInterruptions — перерыв
+  // ст. 22 ФЗ № 229-ФЗ к узлу предъявления решения иностранного суда не
+  // подключён (см. комментарий в chain.js).
+  if (terms.foreign_judgment_enforcement_presentation) {
+    cards.push(monthTermCard(terms.foreign_judgment_enforcement_presentation));
+  }
+  if (terms.foreign_judgment_recognition_objection) {
+    cards.push(monthTermCard(terms.foreign_judgment_recognition_objection));
+  }
   // Глава 22.2 (возвращение ребёнка / права доступа): оба срока — в рабочих
   // днях, каждый от своей даты, поэтому обычные workingDayCard.
   if (terms.child_return_appeal) cards.push(workingDayCard(terms.child_return_appeal));

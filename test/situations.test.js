@@ -48,6 +48,8 @@ const ALL_BRANCHES_INPUTS = {
   sudebny_prikaz_received_date: '2025-07-08',
   treteisky_osparivanie_entry_into_force_date: '2025-07-08',
   treteisky_ispollist_entry_into_force_date: '2025-07-08',
+  foreign_judgment_entry_into_force_date: '2023-04-12',
+  foreign_judgment_recognition_aware_date: '2025-07-08',
   foreign_state_default_judgment_service_date: '2025-07-05',
   foreign_state_default_judgment_refusal_date: '2025-08-10',
   review_ground: 'newly_discovered_fact',
