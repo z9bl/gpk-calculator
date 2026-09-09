@@ -857,6 +857,41 @@ test('пересмотр: практика Пленума/Президиума �
   assert.match(REVIEW_GROUNDS.find((g) => g.id === 'vs_practice_change').label, /Пленум\/Президиума? ВС/i);
 });
 
+test('судебный приказ (кассация): карточка показывает, что дата вступления в силу вычислена', () => {
+  const v = buildView(
+    { sudebny_prikaz_received_date: '2025-09-01' },
+    { today: '2025-07-01' },
+  );
+  const card = byId(v.cards, 'sudebny_prikaz_cassation');
+  assert.ok(card);
+  assert.equal(card.kind, 'term');
+  assert.equal(card.deadline, '2025-12-15');
+
+  const detail = card.details.entry_into_force;
+  assert.ok(detail, 'промежуточные данные расчёта должны быть в details');
+  assert.equal(detail.computed, true);
+  assert.equal(detail.date, '2025-09-15');
+  assert.equal(detail.via_postal_storage, false);
+  assert.equal(detail.received_date, '2025-09-01');
+  assert.equal(detail.postal_arrival_date, undefined);
+});
+
+test('судебный приказ (кассация): карточка показывает промежуточное хранение на почте (вариант b)', () => {
+  const v = buildView(
+    { sudebny_prikaz_postal_arrival_date: '2025-08-29' },
+    { today: '2025-07-01' },
+  );
+  const card = byId(v.cards, 'sudebny_prikaz_cassation');
+  assert.ok(card);
+
+  const detail = card.details.entry_into_force;
+  assert.equal(detail.via_postal_storage, true);
+  assert.equal(detail.postal_arrival_date, '2025-08-29');
+  assert.equal(detail.postal_storage_start, '2025-09-01');
+  assert.equal(detail.received_date, '2025-09-08');
+  assert.equal(detail.date, '2025-09-22');
+});
+
 test('практика ВС: карточка показывает обе промежуточные даты и контролирующую', () => {
   const v = buildView(
     {

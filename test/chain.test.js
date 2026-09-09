@@ -1540,53 +1540,112 @@ test('утверждение мирового соглашения: ч. 11 ст.
 // Три независимых узла по образцу утверждения мирового соглашения выше, но с
 // общей нормой срока (ч. 1 ст. 376.1), а не своей.
 
-test('судебный приказ (кассация): 3 месяца со дня вступления в силу (ч. 1 ст. 376.1)', () => {
+// --- Судебный приказ: дата вступления в силу вычисляется, не вводится -----
+//
+// Вариант (a) — дата получения копии приказа известна напрямую:
+// 01.09.2025 (понедельник) → 10 дней на возражения (ст. 128, working_day,
+// нерабочие не считаются) истекают 15.09.2025 (понедельник, десятый рабочий
+// день) → это и есть вступление в силу → +3 месяца → 15.12.2025 (тоже
+// понедельник, переноса нет).
+test('судебный приказ: вариант (a) — дата получения известна напрямую', () => {
   const t = computeIndependentTerms({
-    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+    sudebny_prikaz_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
-  assert.equal(t.anchor, '2025-09-01');
-  assert.equal(t.offset_start, 1);
-  assert.equal(t.deadline, '2025-12-01');
+  assert.equal(t.received_date, '2025-09-01');
+  assert.equal(t.entry_into_force_via_postal_storage, false);
+  assert.equal(t.postal_arrival_date, null);
+  assert.equal(t.entry_into_force, '2025-09-15');
+  assert.equal(t.anchor, '2025-09-15');
+  assert.equal(t.deadline, '2025-12-15');
   assert.deepEqual(t.duration, { value: 3, unit: 'month' });
   assert.match(t.norm.primary, /ч\. 1 ст\. 376\.1/);
   assert.match(t.norm.primary, /п\. 1 ч\. 2 ст\. 377/);
   assert.equal(t.restoration_norm, 'ст. 112 ГПК РФ');
 });
 
-test('судебный приказ (кассация): перенос последнего дня (ч. 2 ст. 108)', () => {
-  // 14.11.2025 + 3 месяца = 14.02.2026 (суббота) → 16.02.2026 (понедельник).
+test('судебный приказ: вариант (a) — прямая дата получения приоритетнее даты прибытия на почту', () => {
+  // Введены оба поля — используется received_date, arrival игнорируется.
   const t = computeIndependentTerms({
-    sudebny_prikaz_entry_into_force_date: '2025-11-14',
+    sudebny_prikaz_received_date: '2025-09-01',
+    sudebny_prikaz_postal_arrival_date: '2025-08-01',
   }).sudebny_prikaz_cassation;
-  assert.equal(t.raw_deadline, '2026-02-14');
-  assert.equal(t.deadline, '2026-02-16');
-  assert.equal(t.shifted, true);
+  assert.equal(t.entry_into_force_via_postal_storage, false);
+  assert.equal(t.entry_into_force, '2025-09-15');
 });
 
-test('судебный приказ (кассация): узла нет без даты вступления в силу', () => {
+// Вариант (b) — известна только дата прибытия отправления на почту.
+// 29.08.2025 — пятница; следующий РАБОЧИЙ день — 01.09.2025 (понедельник,
+// а не 30.08 суббота): это регрессия на требование «со следующего рабочего,
+// а не календарного дня» (п. 32 ПП ВС РФ № 62). Семь КАЛЕНДАРНЫХ дней от
+// 01.09.2025 (с учётом выходных 06–07.09) истекают 08.09.2025 (понедельник) —
+// это и есть дата получения для целей ст. 128; от неё десять рабочих дней на
+// возражения истекают 22.09.2025 (понедельник) → +3 месяца → 22.12.2025.
+test('судебный приказ: вариант (b) — хранение на почте считается со следующего рабочего дня', () => {
+  const t = computeIndependentTerms({
+    sudebny_prikaz_postal_arrival_date: '2025-08-29',
+  }).sudebny_prikaz_cassation;
+  assert.equal(t.postal_arrival_date, '2025-08-29');
+  // Регрессия: следующий рабочий день после пятницы — понедельник, а не
+  // суббота (следующий календарный).
+  assert.equal(t.postal_storage_start, '2025-09-01');
+  assert.equal(t.received_date, '2025-09-08'); // 01.09 + 7 календарных дней
+  assert.equal(t.entry_into_force_via_postal_storage, true);
+  assert.equal(t.entry_into_force, '2025-09-22');
+  assert.equal(t.deadline, '2025-12-22');
+});
+
+test('судебный приказ: вариант (b) — узел без даты получения не появляется, если не введена ни одна из двух дат', () => {
   assert.equal(computeIndependentTerms({}).sudebny_prikaz_cassation, null);
   assert.equal(computeChain(BASE, { today: '2025-09-10' }).sudebny_prikaz_cassation, null);
 });
 
-test('судебный приказ (кассация): узел независим от категории дела и ветви цепочки', () => {
+test('судебный приказ: узел независим от категории дела и ветви цепочки', () => {
   const alone = computeIndependentTerms({
-    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+    sudebny_prikaz_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
-  assert.ok(alone, 'узел считается по одной своей дате');
+  assert.ok(alone, 'узел считается по своим датам');
 
   const chain = computeChain(
-    { ...BASE, sudebny_prikaz_entry_into_force_date: '2025-09-01' },
+    { ...BASE, sudebny_prikaz_received_date: '2025-09-01' },
     { today: '2025-09-10' },
   );
   assert.equal(chain.sudebny_prikaz_cassation.deadline, alone.deadline);
 });
 
-test('судебный приказ (кассация): обжалуется сразу в кассацию, минуя апелляцию', () => {
+test('судебный приказ: обжалуется сразу в кассацию, минуя апелляцию', () => {
   const t = computeIndependentTerms({
-    sudebny_prikaz_entry_into_force_date: '2025-09-01',
+    sudebny_prikaz_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
   assert.match(t.logic, /минуя апелляцию/);
   assert.equal(SUDEBNY_PRIKAZ_CASSATION.norm_versions.length, 1);
+});
+
+// Перенос последнего дня применяется на итоговом трёхмесячном сроке (ст. 108
+// ч. 2): 07.11.2025 (пятница) — следующий рабочий день после прибытия —
+// 10.11.2025 (понедельник, минуя выходные 08–09.11); +7 календарных дней =
+// 17.11.2025 (получение); +10 рабочих дней (ст. 128) = 01.12.2025 (вступление
+// в силу); +3 месяца = 01.03.2026 (воскресенье) → перенос на 02.03.2026
+// (понедельник).
+//
+// НАХОДКА (см. отчёт): ни семидневный срок хранения, ни десятидневный срок
+// возражений структурно не могут закончиться на выходном и потребовать
+// отдельного переноса — у working_day это гарантировано построением (см.
+// комментарий в core/engine/engine.js), а семь календарных дней от уже
+// сдвинутого на рабочий день начала всегда заканчиваются в тот же день
+// недели, то есть тоже на рабочем дне. Перенос в этой цепочке возможен
+// только на итоговом трёхмесячном сроке (ниже) — отдельного теста на
+// «перенос хотя бы в одном промежуточном шаге» не заводим, потому что такой
+// случай физически не наступает.
+test('судебный приказ: перенос последнего дня — только на итоговом трёхмесячном сроке (ч. 2 ст. 108)', () => {
+  const t = computeIndependentTerms({
+    sudebny_prikaz_postal_arrival_date: '2025-11-07',
+  }).sudebny_prikaz_cassation;
+  assert.equal(t.postal_storage_start, '2025-11-10');
+  assert.equal(t.received_date, '2025-11-17');
+  assert.equal(t.entry_into_force, '2025-12-01');
+  assert.equal(t.raw_deadline, '2026-03-01');
+  assert.equal(t.deadline, '2026-03-02');
+  assert.equal(t.shifted, true);
 });
 
 test('оспаривание решения третейского суда (кассация): 3 месяца (ч. 5 ст. 422, ч. 1 ст. 376.1)', () => {

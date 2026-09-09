@@ -9,6 +9,7 @@
 // берётся из системных часов — иначе расчёт был бы недетерминированным.
 
 import { computeDeadline, addDays } from '../core/engine/engine.js';
+import { shiftIfNonWorking } from '../core/calendar/calendar.js';
 import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
 import { toISO, computeSimpleTerm } from '../core/engine/term.js';
 import {
@@ -855,17 +856,15 @@ export function computeIndependentTerms(inputs) {
       inputs?.settlement_approval_ruling_date,
     ),
     // Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) —
-    // три независимых узла по тому же образцу, что и три выше: акт, для
-    // которого апелляционное обжалование не предусмотрено, обжалуется сразу в
-    // кассацию (п. 3 ПП ВС РФ от 22.06.2021 № 17). См. открытый вопрос про
-    // точку отсчёта (день вступления в силу) в комментарии перед определением
-    // констант выше.
-    // condition — '*_entry_into_force_date': каждый узел появляется только
-    // после ввода даты вступления соответствующего акта в законную силу.
-    sudebny_prikaz_cassation: computeSimpleTerm(
-      SUDEBNY_PRIKAZ_CASSATION,
-      inputs?.sudebny_prikaz_entry_into_force_date,
-    ),
+    // три независимых узла: акт, для которого апелляционное обжалование не
+    // предусмотрено, обжалуется сразу в кассацию (п. 3 ПП ВС РФ от 22.06.2021
+    // № 17). У судебного приказа дата вступления в силу вычисляется (см.
+    // computeSudebnyPrikazCassation и комментарий перед SUDEBNY_PRIKAZ_CASSATION
+    // выше); у двух других — вводится напрямую, см. открытый вопрос там же.
+    // condition — sudebny_prikaz_cassation появляется после ввода одной из
+    // дат приказного производства (получения копии или прибытия на почту);
+    // два остальных — после ввода даты вступления акта в законную силу.
+    sudebny_prikaz_cassation: computeSudebnyPrikazCassation(inputs ?? {}),
     treteisky_osparivanie_cassation: computeSimpleTerm(
       TRETEISKY_OSPARIVANIE_CASSATION,
       inputs?.treteisky_osparivanie_entry_into_force_date,
@@ -1153,29 +1152,103 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
 // (ч. 1 ст. 376.1 ГПК РФ), восстановление — на общих основаниях (ст. 112).
 //
 // ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): что считать
-// днём вступления в законную силу для каждого из трёх обжалуемых актов —
-// в частности, для судебного приказа, если он не обжаловался должником в
-// установленный ст. 128 срок, и для определений по ст. 422/427 ГПК, которые,
+// днём вступления в законную силу для определений по ст. 422/427 ГПК — они,
 // в отличие от судебного приказа, не проходят через отдельную процедуру
-// возражений. Модель сознательно не вычисляет эту дату сама (в отличие от
-// MIROVOY_CASSATION, где она выводится из даты апелляционного определения или
-// истечения срока на апелляцию) — пользователь вводит её напрямую, тем же
-// способом, что и у SUPERVISION/CASSATION_RETURN_RULING_APPEAL выше.
+// возражений с известным сроком, и модель сознательно не вычисляет эту дату
+// сама — пользователь вводит её напрямую, тем же способом, что и у
+// SUPERVISION/CASSATION_RETURN_RULING_APPEAL выше. Для судебного приказа
+// такой расчёт сделан — см. блок ниже, перед SUDEBNY_PRIKAZ_CASSATION.
 const DIRECT_CASSATION_CALC = ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'];
+
+// --- Судебный приказ: вступление в законную силу как расчёт, а не ввод -----
+//
+// В отличие от определений по ст. 422/427 (где момент вступления в силу
+// вводится пользователем напрямую — см. открытый вопрос выше), для судебного
+// приказа он выводится: десятидневный срок должника на возражения (ст. 128
+// ГПК РФ) известен и привязан к дате получения копии приказа, а окончание
+// этого срока без поданных возражений — и есть момент вступления приказа в
+// законную силу (п. 3 ПП ВС РФ от 22.06.2021 № 17 — приказ не обжалуется в
+// апелляции, поэтому иного момента вступления в силу для целей кассации нет).
+//
+// Дата получения копии, в свою очередь, не всегда известна пользователю
+// напрямую — она либо вводится (a), либо выводится из даты прибытия почтового
+// отправления и правила о семидневном сроке хранения корреспонденции (b, п. 32
+// ПП ВС РФ от 27.12.2016 № 62). Выбор варианта (a)/(b) — на UI-уровне
+// (радиокнопки), в модели это два поля ввода, из которых используется ровно
+// одно: если введена дата фактического получения, дата прибытия на почту
+// игнорируется, даже если тоже введена.
+//
+// ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): семидневный
+// срок хранения корреспонденции — организационно-почтовое правило (приказ
+// Минцифры/АО «Почта России»), а не процессуальный срок ГПК. П. 32 ПП ВС РФ
+// № 62 предписывает начинать его течение со следующего РАБОЧЕГО дня после
+// поступления отправления, но не уточняет, по какому именно календарю
+// определяется «рабочий день» для этой цели. Модель использует тот же
+// производственный календарь (ст. 111 ТК РФ и постановления о переносе
+// выходных), что и для процессуальных сроков ГПК, — другого источника
+// «рабочих дней» в проекте нет, и альтернатива не обсуждалась.
+//
+// Сам семидневный срок хранения — календарные дни (в отличие от
+// десятидневного срока на возражения, который правилами ст. 107 ч. 3 ГПК
+// РФ отсчитывается без нерабочих дней): его окончание нигде не переносится
+// через выходной — переносится только начало (на первый рабочий день после
+// прибытия), поэтому используются низкоуровневые примитивы ядра (addDays,
+// shiftIfNonWorking), а не computeDeadline/computeSimpleTerm, рассчитанные на
+// оба других типа сроков (день/месяц с переносом последнего дня).
+//
+// @param {object} inputs
+// @returns {{date:string, via_storage:boolean, arrival?:string, storage_start?:string}|null}
+function resolveSudebnyPrikazReceivedDate(inputs) {
+  const direct = toISO(inputs?.sudebny_prikaz_received_date);
+  if (direct != null) return { date: direct, via_storage: false };
+
+  const arrival = toISO(inputs?.sudebny_prikaz_postal_arrival_date);
+  if (arrival == null) return null;
+  // Течение семидневного срока хранения — со следующего рабочего дня после
+  // прибытия отправления (п. 32 ПП ВС РФ № 62), не со следующего календарного.
+  const storageStart = toISO(shiftIfNonWorking(addDays(arrival, 1)));
+  // Сам срок — семь календарных дней, без исключения нерабочих и без
+  // переноса конечной даты (это не процессуальный срок ГПК).
+  const storageEnd = toISO(addDays(storageStart, 7));
+  return { date: storageEnd, via_storage: true, arrival, storage_start: storageStart };
+}
+
+// Десятидневный срок должника на возражения (ст. 128 ГПК РФ) — тот же расчёт,
+// что и у COURT_ORDER_OBJECTION (working_day: нерабочие дни не считаются, по
+// построению последний день уже рабочий — отдельного переноса не требуется).
+// Здесь это не отдельная карточка, а промежуточный шаг: окончание срока без
+// поданных возражений — момент вступления приказа в законную силу.
+const SUDEBNY_PRIKAZ_OBJECTION_STEP = {
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { offset_start: 1 },
+};
+
+// @param {object} inputs
+// @returns {{date:string, received:object}|null} — date: вступление в силу.
+function resolveSudebnyPrikazEntryIntoForce(inputs) {
+  const received = resolveSudebnyPrikazReceivedDate(inputs);
+  if (received == null) return null;
+  const objection = computeDeadline(SUDEBNY_PRIKAZ_OBJECTION_STEP, received.date);
+  return { date: objection.deadline, received };
+}
 
 // Кассационная жалоба на судебный приказ (п. 1 ч. 2 ст. 377 ГПК РФ).
 export const SUDEBNY_PRIKAZ_CASSATION = {
   id: 'sudebny_prikaz_cassation',
   title: 'Кассационная жалоба на судебный приказ',
   duration: { value: 3, unit: 'month' },
-  anchor: { event: 'sudebny_prikaz_entry_into_force_date', offset_start: 1 },
+  anchor: { event: 'sudebny_prikaz_entry_into_force', offset_start: 1 },
   weekend_shift: true,
   ics: true,
   logic:
     'Три месяца со дня вступления судебного приказа в законную силу ' +
     '(ч. 1 ст. 376.1 ГПК РФ). Обжалуется сразу в суд кассационной инстанции, ' +
     'минуя апелляцию: ГПК не предусматривает апелляционного обжалования ' +
-    'судебного приказа (п. 3 ПП ВС РФ от 22.06.2021 № 17).',
+    'судебного приказа (п. 3 ПП ВС РФ от 22.06.2021 № 17). Дата вступления в ' +
+    'законную силу не вводится, а вычисляется: десять дней на возражения ' +
+    'должника (ст. 128 ГПК РФ) от даты получения копии приказа — истечение ' +
+    'этого срока без поданных возражений и есть момент вступления приказа в ' +
+    'законную силу.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
   norm_versions: [
@@ -1183,15 +1256,38 @@ export const SUDEBNY_PRIKAZ_CASSATION = {
       id: 'current',
       from: null,
       to: null,
-      anchor: { event: 'sudebny_prikaz_entry_into_force_date', offset_start: 1 },
+      anchor: { event: 'sudebny_prikaz_entry_into_force', offset_start: 1 },
       norm: {
         primary: 'п. 1 ч. 2 ст. 377, ч. 1 ст. 376.1 ГПК РФ',
         calculation: DIRECT_CASSATION_CALC,
-        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+        clarification: 'ст. 128 ГПК РФ; п. 32 ПП ВС РФ от 27.12.2016 № 62; п. 3 ПП ВС РФ от 22.06.2021 № 17',
       },
     },
   ],
 };
+
+/**
+ * Кассационная жалоба на судебный приказ — с пошаговым выводом даты
+ * вступления в законную силу (см. комментарий перед SUDEBNY_PRIKAZ_CASSATION).
+ * @param {object} inputs
+ * @returns {object|null}
+ */
+function computeSudebnyPrikazCassation(inputs) {
+  const entryIntoForce = resolveSudebnyPrikazEntryIntoForce(inputs);
+  if (entryIntoForce == null) return null;
+  const result = computeSimpleTerm(SUDEBNY_PRIKAZ_CASSATION, entryIntoForce.date);
+  if (result == null) return null;
+  return {
+    ...result,
+    // Промежуточные данные — чтобы карточка показала пользователю, что дата
+    // вступления в силу вычислена, а не введена, и по какому пути.
+    entry_into_force: entryIntoForce.date,
+    entry_into_force_via_postal_storage: entryIntoForce.received.via_storage,
+    received_date: entryIntoForce.received.date,
+    postal_arrival_date: entryIntoForce.received.arrival ?? null,
+    postal_storage_start: entryIntoForce.received.storage_start ?? null,
+  };
+}
 
 // Кассационная жалоба на определение суда по делу об оспаривании решения
 // третейского суда (ч. 5 ст. 422 ГПК РФ).

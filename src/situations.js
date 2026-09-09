@@ -165,13 +165,21 @@ export const SITUATIONS = [
     // сроков в пуле разные: замечания на протокол и частная жалоба — рабочие
     // дни, все остальные узлы этого пула — месяц или три месяца (ч. 1, 2
     // ст. 108).
+    // У судебного приказа дата вступления в силу не вводится, а вычисляется
+    // (п. 32 ПП ВС РФ от 27.12.2016 № 62 + ст. 128 ГПК РФ, см. комментарий
+    // перед SUDEBNY_PRIKAZ_CASSATION в chain.js): два взаимоисключающих поля,
+    // как у periodic_payment_indefinite — sudebny_prikaz_received_date (дата
+    // получена напрямую) имеет приоритет, sudebny_prikaz_postal_arrival_date
+    // (известна только дата прибытия на почту) используется, только если
+    // первое не заполнено.
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
       'cassation_return_ruling_date',
       'arbitration_competence_ruling_received_date',
       'settlement_approval_ruling_date',
-      'sudebny_prikaz_entry_into_force_date',
+      'sudebny_prikaz_received_date',
+      'sudebny_prikaz_postal_arrival_date',
       'treteisky_osparivanie_entry_into_force_date',
       'treteisky_ispollist_entry_into_force_date',
     ],

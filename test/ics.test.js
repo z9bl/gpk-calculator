@@ -364,7 +364,7 @@ const ALL_BRANCHES_INPUTS = {
   // прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
   // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
   // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
-  sudebny_prikaz_entry_into_force_date: '2025-07-08',
+  sudebny_prikaz_received_date: '2025-07-08',
   treteisky_osparivanie_entry_into_force_date: '2025-07-08',
   treteisky_ispollist_entry_into_force_date: '2025-07-08',
   // заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
@@ -577,15 +577,18 @@ test('утверждение мирового соглашения: тот же 
 });
 
 test('судебный приказ (кассация) уходит в .ics (3 месяца → напоминания за 3 и 14 дней)', () => {
+  // sudebny_prikaz_received_date, не entry_into_force_date напрямую: дата
+  // вступления в силу вычисляется (01.09.2027 + 10 рабочих дней = 15.09.2027,
+  // см. test/chain.test.js), .ics-экспорт от этого не должен ломаться.
   const view = buildView(
-    { sudebny_prikaz_entry_into_force_date: '2027-09-01' },
+    { sudebny_prikaz_received_date: '2027-09-01' },
     { today: '2026-07-26' },
   );
   const terms = icsTermsFromView(view);
   const t = terms.find((x) => x.title.includes('судебный приказ'));
   assert.ok(t, 'срок кассационного обжалования судебного приказа в списке экспорта');
   assert.deepEqual(t.duration, { value: 3, unit: 'month' });
-  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.deadline, '2027-12-15');
   assert.match(t.norm, /ч\. 1 ст\. 376\.1/);
 
   const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
@@ -597,13 +600,13 @@ test('судебный приказ (кассация): тот же срок и 
   const chain = computeChain(
     {
       reasoned_decision_date: '2025-03-11',
-      sudebny_prikaz_entry_into_force_date: '2027-09-01',
+      sudebny_prikaz_received_date: '2027-09-01',
     },
     { today: '2026-07-26' },
   );
   const t = icsTermsFromChain(chain).find((x) => x.title.includes('судебный приказ'));
   assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
-  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.deadline, '2027-12-15');
   assert.equal(t.ics, true);
   assert.deepEqual(t.duration, { value: 3, unit: 'month' });
 });

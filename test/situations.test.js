@@ -45,7 +45,7 @@ const ALL_BRANCHES_INPUTS = {
   adoption_reasoned_decision_date: '2025-07-02',
   arbitration_competence_ruling_received_date: '2025-07-08',
   settlement_approval_ruling_date: '2025-07-08',
-  sudebny_prikaz_entry_into_force_date: '2025-07-08',
+  sudebny_prikaz_received_date: '2025-07-08',
   treteisky_osparivanie_entry_into_force_date: '2025-07-08',
   treteisky_ispollist_entry_into_force_date: '2025-07-08',
   foreign_state_default_judgment_service_date: '2025-07-05',
@@ -256,24 +256,38 @@ test('судебный приказ (кассация): узел в незави
     separate.nodes.includes('sudebny_prikaz_cassation'),
     'узел должен лежать в пуле отдельных сроков — рядом с утверждением мирового соглашения',
   );
-  assert.ok(separate.fields.includes('sudebny_prikaz_entry_into_force_date'));
+  // Два взаимоисключающих поля даты (вариант a/b) — оба в этом же пуле.
+  assert.ok(separate.fields.includes('sudebny_prikaz_received_date'));
+  assert.ok(separate.fields.includes('sudebny_prikaz_postal_arrival_date'));
   for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
     assert.ok(
       !s.nodes.includes('sudebny_prikaz_cassation'),
       `${s.id}: узел не привязан к категории дела`,
     );
+    assert.ok(!s.fields.includes('sudebny_prikaz_received_date'), `${s.id}: поле не отсюда`);
     assert.ok(
-      !s.fields.includes('sudebny_prikaz_entry_into_force_date'),
+      !s.fields.includes('sudebny_prikaz_postal_arrival_date'),
       `${s.id}: поле не отсюда`,
     );
   }
 
-  const v = buildView(
-    { sudebny_prikaz_entry_into_force_date: '2025-07-08' },
+  // Вариант (a) — прямая дата получения — одной этой даты достаточно.
+  const viaReceived = buildView(
+    { sudebny_prikaz_received_date: '2025-07-08' },
     { today: '2025-07-01' },
   );
   assert.deepEqual(
-    v.cards.map((c) => c.id),
+    viaReceived.cards.map((c) => c.id),
+    ['sudebny_prikaz_cassation'],
+  );
+
+  // Вариант (b) — только дата прибытия на почту — узел появляется и от неё.
+  const viaPostal = buildView(
+    { sudebny_prikaz_postal_arrival_date: '2025-07-04' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    viaPostal.cards.map((c) => c.id),
     ['sudebny_prikaz_cassation'],
   );
 });
