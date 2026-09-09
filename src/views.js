@@ -599,6 +599,28 @@ function reviewNewCircumstancesCard(term) {
   return card;
 }
 
+// Карточка кассационной жалобы на судебный приказ: обычный monthTermCard плюс
+// промежуточные данные о том, как вычислена дата вступления приказа в
+// законную силу — она не вводится напрямую (см. computeSudebnyPrikazCassation
+// в chain.js), и без этих данных карточка показывала бы только финальный
+// срок, не объясняя, откуда взялась точка отсчёта (десять дней на возражения
+// должника, ст. 128, а при вводе даты прибытия на почту — ещё и семидневный
+// срок хранения корреспонденции, п. 32 ПП ВС РФ от 27.12.2016 № 62, перед ним).
+function sudebnyPrikazCassationCard(term) {
+  const card = monthTermCard(term);
+  card.details.entry_into_force = {
+    date: term.entry_into_force,
+    computed: true, // не введена пользователем — вычислена, в отличие от двух других узлов той же группы
+    via_postal_storage: term.entry_into_force_via_postal_storage,
+    received_date: term.received_date,
+  };
+  if (term.entry_into_force_via_postal_storage) {
+    card.details.entry_into_force.postal_arrival_date = term.postal_arrival_date;
+    card.details.entry_into_force.postal_storage_start = term.postal_storage_start;
+  }
+  return card;
+}
+
 // Карточка предъявления документов о взыскании периодических платежей
 // (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
 // ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
@@ -835,6 +857,24 @@ function independentNodes(source, today = null) {
   // апелляцию.
   if (terms.settlement_approval_cassation_appeal) {
     cards.push(monthTermCard(terms.settlement_approval_cassation_appeal));
+  }
+  // Прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
+  // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
+  // на принудительное исполнение решения третейского суда. Судебный приказ —
+  // через sudebnyPrikazCassationCard (см. выше): дата вступления в силу
+  // вычислена, а не введена, карточке нужны промежуточные данные расчёта.
+  // Два других — обычный monthTermCard, тот же, что и у
+  // settlement_approval_cassation_appeal выше (он не привязан к конкретной
+  // длительности узла).
+  if (terms.sudebny_prikaz_cassation) {
+    cards.push(sudebnyPrikazCassationCard(terms.sudebny_prikaz_cassation));
+  }
+  if (terms.treteisky_osparivanie_cassation) {
+    cards.push(monthTermCard(terms.treteisky_osparivanie_cassation));
+  }
+  if (terms.treteisky_ispollist_cassation) {
+    cards.push(monthTermCard(terms.treteisky_ispollist_cassation));
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже

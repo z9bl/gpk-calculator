@@ -361,6 +361,12 @@ const ALL_BRANCHES_INPUTS = {
   // обжалование определения об утверждении мирового соглашения (любая стадия)
   // (ч. 11 ст. 153.10): независимый узел, якорь — дата вынесения определения
   settlement_approval_ruling_date: '2025-07-08',
+  // прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
+  // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
+  sudebny_prikaz_received_date: '2025-07-08',
+  treteisky_osparivanie_entry_into_force_date: '2025-07-08',
+  treteisky_ispollist_entry_into_force_date: '2025-07-08',
   // заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
   // своя ветка, свои поля — заявление об отмене 2 месяца, апелляция 1/2 месяца
   foreign_state_default_judgment_service_date: '2025-07-05',
@@ -568,6 +574,97 @@ test('утверждение мирового соглашения: тот же 
   assert.equal(t.deadline, '2027-10-01');
   assert.equal(t.ics, true);
   assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('судебный приказ (кассация) уходит в .ics (3 месяца → напоминания за 3 и 14 дней)', () => {
+  // sudebny_prikaz_received_date, не entry_into_force_date напрямую: дата
+  // вступления в силу вычисляется (01.09.2027 + 10 рабочих дней = 15.09.2027,
+  // см. test/chain.test.js), .ics-экспорт от этого не должен ломаться.
+  const view = buildView(
+    { sudebny_prikaz_received_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('судебный приказ'));
+  assert.ok(t, 'срок кассационного обжалования судебного приказа в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-15');
+  assert.match(t.norm, /ч\. 1 ст\. 376\.1/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
+});
+
+test('судебный приказ (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      sudebny_prikaz_received_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('судебный приказ'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-15');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+});
+
+test('оспаривание решения третейского суда (кассация) уходит в .ics', () => {
+  const view = buildView(
+    { treteisky_osparivanie_entry_into_force_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('оспаривании решения третейского суда'));
+  assert.ok(t, 'срок кассационного обжалования в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  assert.match(t.norm, /ч\. 5 ст\. 422/);
+});
+
+test('оспаривание решения третейского суда (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      treteisky_osparivanie_entry_into_force_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) =>
+    x.title.includes('оспаривании решения третейского суда'),
+  );
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.ics, true);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация) уходит в .ics', () => {
+  const view = buildView(
+    { treteisky_ispollist_entry_into_force_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('исполнительного листа на'));
+  assert.ok(t, 'срок кассационного обжалования в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  assert.match(t.norm, /ч\. 5 ст\. 427/);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      treteisky_ispollist_entry_into_force_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('исполнительного листа на'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.ics, true);
 });
 
 test('заочное (иностранное государство): заявление об отмене и апелляция уходят в .ics', () => {

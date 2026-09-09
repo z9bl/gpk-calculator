@@ -78,6 +78,14 @@ export const INPUT_LABELS = {
   arbitration_competence_ruling_received_date:
     'Дата получения постановления третейского суда о компетенции',
   settlement_approval_ruling_date: 'Дата определения об утверждении мирового соглашения',
+  sudebny_prikaz_received_date: 'Дата получения должником копии судебного приказа',
+  sudebny_prikaz_postal_arrival_date:
+    'Дата прибытия судебного приказа в место вручения (по данным почтового отправления)',
+  treteisky_osparivanie_entry_into_force_date:
+    'Дата вступления в силу определения по делу об оспаривании решения третейского суда',
+  treteisky_ispollist_entry_into_force_date:
+    'Дата вступления в силу определения о выдаче/об отказе в выдаче исполнительного листа ' +
+    'на принудительное исполнение решения третейского суда',
   foreign_state_default_judgment_service_date:
     'Дата вручения иностранному государству копии заочного решения',
   foreign_state_default_judgment_cancellation_request_date:

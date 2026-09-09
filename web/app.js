@@ -112,6 +112,22 @@ const INPUT_HINTS = {
     'Один месяц со дня получения (не вынесения!) постановления третейского ' +
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
+  sudebny_prikaz_received_date:
+    'От этой даты — 10 дней на возражения должника (ст. 128); их истечение без ' +
+    'поданных возражений — момент вступления приказа в законную силу, от него ' +
+    'считаются три месяца на кассацию (ч. 1 ст. 376.1)',
+  sudebny_prikaz_postal_arrival_date:
+    'Срок хранения на почте — 7 календарных дней со следующего рабочего дня ' +
+    'после прибытия (п. 32 ПП ВС РФ от 27.12.2016 № 62); днём получения ' +
+    'копии приказа считается день истечения этого срока',
+  treteisky_osparivanie_entry_into_force_date:
+    'Три месяца на кассационное обжалование (ч. 1 ст. 376.1) — минуя ' +
+    'апелляцию, определение по такому делу ею не обжалуется (ч. 5 ст. 422, ' +
+    'п. 3 ПП ВС РФ от 22.06.2021 № 17)',
+  treteisky_ispollist_entry_into_force_date:
+    'Три месяца на кассационное обжалование (ч. 1 ст. 376.1) — минуя ' +
+    'апелляцию, определение по такому делу ею не обжалуется (ч. 5 ст. 427, ' +
+    'п. 3 ПП ВС РФ от 22.06.2021 № 17)',
   settlement_approval_ruling_date:
     'Один месяц на кассационное обжалование (ч. 11 ст. 153.10) — минуя ' +
     'апелляцию, определение об утверждении мирового соглашения ею не ' +
@@ -1444,6 +1460,82 @@ function renderCheckboxField(id, current) {
   return wrap;
 }
 
+// Радиогруппа из нескольких взаимоисключающих вариантов — как renderChoiceField
+// (select), но для случая, когда вариантов мало и выбор удобнее видеть сразу
+// (не открывать выпадающий список). У выбора, в отличие от чекбокса и select,
+// нет собственного поля в inputs — вариант приходит из onChange отдельно.
+function renderRadioGroup(name, options, current, onChange) {
+  const wrap = el('div', 'field radio-field');
+  for (const opt of options) {
+    const lab = el('label', 'radio-option');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = `in-${name}`;
+    input.value = opt.value;
+    input.checked = opt.value === current;
+    input.addEventListener('change', () => {
+      if (input.checked) onChange(opt.value);
+    });
+    lab.appendChild(input);
+    lab.appendChild(el('span', null, opt.label));
+    wrap.appendChild(lab);
+  }
+  return wrap;
+}
+
+// Судебный приказ (кассация, ст. 128 ГПК + п. 32 ПП ВС РФ от 27.12.2016
+// № 62): дата вступления в законную силу вычисляется от даты ПОЛУЧЕНИЯ копии
+// приказа должником, а она известна пользователю одним из двух способов —
+// выбор варианта не идёт в inputs как отдельная дата, это чисто интерфейсное
+// переключение того, какое из двух полей ввода показано (см.
+// resolveSudebnyPrikazReceivedDate в chain.js — там же и приоритет
+// received_date над postal_arrival_date, если почему-то заполнены оба).
+const SUDEBNY_PRIKAZ_MODE_RECEIVED = 'received';
+const SUDEBNY_PRIKAZ_MODE_POSTAL = 'postal';
+
+function sudebnyPrikazMode() {
+  if (state.sudebnyPrikazMode) return state.sudebnyPrikazMode;
+  return state.inputs.sudebny_prikaz_postal_arrival_date != null
+    ? SUDEBNY_PRIKAZ_MODE_POSTAL
+    : SUDEBNY_PRIKAZ_MODE_RECEIVED;
+}
+
+function renderSudebnyPrikazFields(box) {
+  const mode = sudebnyPrikazMode();
+  box.appendChild(
+    renderRadioGroup(
+      'sudebny_prikaz_mode',
+      [
+        { value: SUDEBNY_PRIKAZ_MODE_RECEIVED, label: 'Известна дата получения копии приказа' },
+        {
+          value: SUDEBNY_PRIKAZ_MODE_POSTAL,
+          label: 'Известна только дата прибытия отправления на почту',
+        },
+      ],
+      mode,
+      (value) => {
+        state.sudebnyPrikazMode = value;
+        // Поле неактивного варианта очищаем — иначе после переключения назад
+        // и обратно расчёт молча использует давно введённую дату по варианту,
+        // который сейчас не выбран.
+        if (value === SUDEBNY_PRIKAZ_MODE_RECEIVED) {
+          delete state.inputs.sudebny_prikaz_postal_arrival_date;
+        } else {
+          delete state.inputs.sudebny_prikaz_received_date;
+        }
+        render();
+      },
+    ),
+  );
+  box.appendChild(
+    inviteFieldOrPointer(
+      mode === SUDEBNY_PRIKAZ_MODE_POSTAL
+        ? 'sudebny_prikaz_postal_arrival_date'
+        : 'sudebny_prikaz_received_date',
+    ),
+  );
+}
+
 // Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
 // маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
@@ -1619,7 +1711,12 @@ function renderSituationFields(situation, primaryFilled) {
           'вынесения (ч. 2 ст. 422.1 ГПК), обжалование определения об утверждении ' +
           'мирового соглашения, заключаемого в процессе исполнения судебного акта, — ' +
           'месяц со дня его вынесения, сразу в кассацию, минуя апелляцию ' +
-          '(ч. 11 ст. 153.10 ГПК). Заполните нужную дату.',
+          '(ч. 11 ст. 153.10 ГПК). Кассационная жалоба на судебный приказ, на определения ' +
+          'по делам об оспаривании решений третейских судов и о выдаче исполнительного ' +
+          'листа на их принудительное исполнение — три месяца со дня вступления ' +
+          'обжалуемого акта в законную силу (ч. 1 ст. 376.1 ГПК), тоже минуя апелляцию; у ' +
+          'судебного приказа эта дата не вводится, а вычисляется от даты получения его ' +
+          'копии должником. Заполните нужную дату.',
       ),
     );
   }
@@ -1662,7 +1759,16 @@ function renderSituationFields(situation, primaryFilled) {
     );
   }
   const box = el('div', 'invite');
-  if (situation.id === 'periodic_payments') {
+  if (situation.id === 'separate') {
+    for (const id of situation.fields) {
+      if (id === 'sudebny_prikaz_received_date') {
+        renderSudebnyPrikazFields(box);
+        continue;
+      }
+      if (id === 'sudebny_prikaz_postal_arrival_date') continue; // показано выше вместе с received_date
+      box.appendChild(inviteFieldOrPointer(id));
+    }
+  } else if (situation.id === 'periodic_payments') {
     // Дата окончания периода и чекбокс бессрочности — взаимоисключающие: при
     // бессрочном взыскании дедлайна не существует в принципе, дата ему не
     // нужна (см. computePeriodicPayments в chain.js), поэтому поле даты

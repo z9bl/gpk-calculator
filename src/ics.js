@@ -38,6 +38,9 @@ import {
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
   SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+  SUDEBNY_PRIKAZ_CASSATION,
+  TRETEISKY_OSPARIVANIE_CASSATION,
+  TRETEISKY_ISPOLLIST_CASSATION,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
   REVIEW_NEW_CIRCUMSTANCES_RESTORATION,
   SIMPLIFIED_REASONED_REQUEST,
@@ -235,6 +238,47 @@ export function icsTermsFromChain(chain) {
       norm: chain.settlement_approval_cassation_appeal.norm.primary,
       ics: SETTLEMENT_APPROVAL_CASSATION_APPEAL.ics,
       duration: SETTLEMENT_APPROVAL_CASSATION_APPEAL.duration,
+    });
+  }
+  // Прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1) — три независимых узла по той же логике, что и
+  // settlement_approval_cassation_appeal выше: судебный приказ, определения по
+  // делам об оспаривании решений третейских судов и о выдаче/отказе в выдаче
+  // исполнительного листа на принудительное исполнение решения третейского
+  // суда (п. 3 ПП ВС РФ от 22.06.2021 № 17).
+  if (chain && chain.sudebny_prikaz_cassation && chain.sudebny_prikaz_cassation.deadline) {
+    terms.push({
+      title: chain.sudebny_prikaz_cassation.title,
+      deadline: chain.sudebny_prikaz_cassation.deadline,
+      norm: chain.sudebny_prikaz_cassation.norm.primary,
+      ics: SUDEBNY_PRIKAZ_CASSATION.ics,
+      duration: SUDEBNY_PRIKAZ_CASSATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.treteisky_osparivanie_cassation &&
+    chain.treteisky_osparivanie_cassation.deadline
+  ) {
+    terms.push({
+      title: chain.treteisky_osparivanie_cassation.title,
+      deadline: chain.treteisky_osparivanie_cassation.deadline,
+      norm: chain.treteisky_osparivanie_cassation.norm.primary,
+      ics: TRETEISKY_OSPARIVANIE_CASSATION.ics,
+      duration: TRETEISKY_OSPARIVANIE_CASSATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.treteisky_ispollist_cassation &&
+    chain.treteisky_ispollist_cassation.deadline
+  ) {
+    terms.push({
+      title: chain.treteisky_ispollist_cassation.title,
+      deadline: chain.treteisky_ispollist_cassation.deadline,
+      norm: chain.treteisky_ispollist_cassation.norm.primary,
+      ics: TRETEISKY_ISPOLLIST_CASSATION.ics,
+      duration: TRETEISKY_ISPOLLIST_CASSATION.duration,
     });
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —
