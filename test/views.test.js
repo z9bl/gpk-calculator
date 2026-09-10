@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildView, REVIEW_GROUNDS } from '../src/views.js';
+import { buildView, REVIEW_GROUNDS, ACTION_FACT_INPUT, collectFactInputMaps } from '../src/views.js';
 import { icsTermsFromView } from '../src/ics.js';
 
 const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция → 11.04.2025
@@ -1575,4 +1575,122 @@ test('апелляция мирового: дата апелляционного
   const appeal = byId(v.cards, 'mirovoy_appeal');
   assert.equal(appeal.status, 'computed');
   assert.equal(appeal.overdue, undefined);
+});
+
+// --- ACTION_FACT_INPUT/MISSED_FROM_FILING: автосборка из chain.js -----------
+//
+// До этого рефакторинга обе карты были ручными объектами в views.js — id узла
+// в них приходилось поддерживать в согласии с id в chain.js вручную, и
+// рассинхронизация (опечатка, забытая запись при добавлении узла) не ловилась
+// ни одним тестом (см. docs/core-extraction-audit.md, §6 Вопрос 5, и
+// диагностику с синтетической рассинхронизацией). Теперь fact_input/
+// missed_from_filing — поля самих term-определений chain.js, а карты
+// собираются обходом его экспортов (collectFactInputMaps, по образцу
+// TERM_REGISTRY в term-registry.js).
+
+test('collectFactInputMaps: механизм сборки на синтетических узлах, без knowledge о ГПК', () => {
+  // Синтетический module-namespace — не chain.js, проверяем сам механизм
+  // фильтрации/сборки, а не конкретный узел ГПК.
+  const fakeModule = {
+    WITH_BOTH: { id: 'synthetic_with_both', title: 'x', fact_input: 'synthetic_filed_date', missed_from_filing: true },
+    WITH_FACT_ONLY: { id: 'synthetic_fact_only', title: 'y', fact_input: 'synthetic_other_date' },
+    WITHOUT_FACT: { id: 'synthetic_no_fact', title: 'z' }, // не должен попасть в ACTION_FACT_INPUT
+    NOT_A_TERM: { foo: 'bar' }, // без id — не term-объект, отфильтровывается
+    helperFn: () => {}, // функция-экспорт (как в chain.js) — не term-объект
+  };
+
+  const { actionFactInput, missedFromFiling } = collectFactInputMaps(fakeModule);
+
+  assert.deepEqual(actionFactInput, {
+    synthetic_with_both: 'synthetic_filed_date',
+    synthetic_fact_only: 'synthetic_other_date',
+  });
+  assert.deepEqual([...missedFromFiling], ['synthetic_with_both']);
+});
+
+test('ACTION_FACT_INPUT: 15 узлов из ручной карты (до рефакторинга) воспроизведены автосборкой без расхождений', () => {
+  // Список — точная копия старой ручной карты ACTION_FACT_INPUT (см. диагностику,
+  // шаг 1). Регрессия: если после переноса fact_input в chain.js значение для
+  // любого из этих 15 узлов разойдётся — тест упадёт.
+  const expected = {
+    appeal_general: 'appeal_filed_date',
+    cassation_ksoyu: 'cassation_filed_date',
+    cassation_vs: 'vs_cassation_filed_date',
+    protocol_remarks: 'protocol_remarks_filed_date',
+    simplified_reasoned_request: 'simplified_reasoned_request_date',
+    simplified_reasoned_making: 'simplified_reasoned_date',
+    simplified_appeal: 'simplified_appeal_filed_date',
+    default_judgment_cancellation_request: 'default_judgment_cancellation_request_date',
+    default_judgment_appeal: 'default_judgment_appeal_filed_date',
+    foreign_state_default_judgment_cancellation_request:
+      'foreign_state_default_judgment_cancellation_request_date',
+    foreign_state_default_judgment_appeal: 'foreign_state_default_judgment_appeal_filed_date',
+    mirovoy_reasoned_request: 'mirovoy_request_date',
+    mirovoy_reasoned_making: 'mirovoy_reasoned_date',
+    mirovoy_appeal: 'mirovoy_appeal_ruling_reasoned_date',
+    mirovoy_cassation: 'cassation_filed_date',
+  };
+  for (const [id, field] of Object.entries(expected)) {
+    assert.equal(ACTION_FACT_INPUT[id], field, `fact_input для узла ${id}`);
+  }
+});
+
+test('ACTION_FACT_INPUT: автосборка распространяет fact_input на клоны CASSATION_KSOYU (пробел старой ручной карты — принято по итогам диагностики)', () => {
+  // simplified_cassation_ksoyu / default_judgment_cassation_ksoyu /
+  // foreign_state_default_judgment_cassation_ksoyu — клоны CASSATION_KSOYU
+  // через object spread (`{...CASSATION_KSOYU, id: '...'}`) в chain.js. Они
+  // наследуют fact_input/missed_from_filing вместе со всеми остальными полями
+  // и попадают в автосборку, хотя в старой ручной ACTION_FACT_INPUT их id
+  // никогда не было.
+  //
+  // computeCassationTerm (chain.js) читает inputs.cassation_filed_date для
+  // ВСЕХ четырёх КСОЮ-веток (general/simplified/default_judgment/
+  // foreign_state_default_judgment) одинаково — fact_input у них семантически
+  // верен, а старая ручная карта эти три узла просто пропускала: их статус
+  // после дедлайна был только 'expired', даже при введённой дате подачи, а
+  // должен был быть 'missed'. Решение принято явно (не выведено рефакторингом
+  // по умолчанию): оставить как есть — это исправление пробела, а не
+  // регрессия. Поведенческая проверка — следующим тестом.
+  const expectedExtra = [
+    'default_judgment_cassation_ksoyu',
+    'foreign_state_default_judgment_cassation_ksoyu',
+    'simplified_cassation_ksoyu',
+  ];
+  const oldManualIds = new Set([
+    'appeal_general',
+    'cassation_ksoyu',
+    'cassation_vs',
+    'protocol_remarks',
+    'simplified_reasoned_request',
+    'simplified_reasoned_making',
+    'simplified_appeal',
+    'default_judgment_cancellation_request',
+    'default_judgment_appeal',
+    'foreign_state_default_judgment_cancellation_request',
+    'foreign_state_default_judgment_appeal',
+    'mirovoy_reasoned_request',
+    'mirovoy_reasoned_making',
+    'mirovoy_appeal',
+    'mirovoy_cassation',
+  ]);
+  const extra = Object.keys(ACTION_FACT_INPUT)
+    .filter((id) => !oldManualIds.has(id))
+    .sort();
+  assert.deepEqual(extra, expectedExtra);
+  for (const id of expectedExtra) {
+    assert.equal(ACTION_FACT_INPUT[id], 'cassation_filed_date');
+  }
+});
+
+test('кассация в КСОЮ для упрощённого производства: подача позже дедлайна теперь даёт missed, а не expired', () => {
+  // Раньше (ручная ACTION_FACT_INPUT без simplified_cassation_ksoyu) эта
+  // карточка после дедлайна оставалась 'expired' независимо от введённой
+  // cassation_filed_date — см. тест выше.
+  const v = buildView(
+    { simplified_resolution_date: '2025-12-22', cassation_filed_date: '2026-06-01' },
+    { today: '2026-07-01' },
+  );
+  const cass = byId(v.cards, 'simplified_cassation_ksoyu');
+  assert.equal(cass.deadline, '2026-04-23'); // дедлайн раньше даты подачи — просрочка
+  assert.equal(cass.status, 'missed');
 });

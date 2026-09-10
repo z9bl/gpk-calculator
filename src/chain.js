@@ -34,6 +34,8 @@ export const APPEAL_GENERAL = {
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   // Одна редакция за весь период (см. темпоральную модель, раздел 10 SPEC.md).
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'appeal_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -60,6 +62,8 @@ export const CASSATION_KSOYU = {
   // редакция, действующая на момент подачи кассационной жалобы (иначе — на
   // текущую дату). Отсечка — 01.09.2024, вступление в силу ФЗ № 135-ФЗ.
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'cassation_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'before_135fz',
@@ -177,6 +181,8 @@ export const CASSATION_VS = {
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'vs_cassation_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'before_135fz',
@@ -436,6 +442,8 @@ export const PROTOCOL_REMARKS = {
     'следующего за подписанием, а если он нерабочий — с первого рабочего дня.',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'protocol_remarks_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -1553,6 +1561,8 @@ export const SIMPLIFIED_REASONED_REQUEST = {
     'днях (абз. 2 ч. 3 ст. 107 ГПК РФ, п. 16–17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'simplified_reasoned_request_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -1576,6 +1586,7 @@ export const SIMPLIFIED_REASONED_MAKING = {
     'решения либо со дня подачи апелляционной жалобы. Срок в рабочих днях.',
   midnight_rule: null,
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'simplified_reasoned_date',
   norm_versions: [
     {
       id: 'current',
@@ -1599,6 +1610,8 @@ export const SIMPLIFIED_APPEAL = {
     'днях (п. 17 ПП ВС РФ от 22.06.2021 № 16).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'simplified_appeal_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -1779,6 +1792,8 @@ export const DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     DEFAULT_JUDGMENT_CANCELLED_NOTE,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'default_judgment_cancellation_request_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -1803,6 +1818,8 @@ export const DEFAULT_JUDGMENT_APPEAL = {
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'default_judgment_appeal_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -2104,6 +2121,8 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
     '(ч. 1 ст. 417.10).',
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'foreign_state_default_judgment_cancellation_request_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -2132,6 +2151,8 @@ export const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL = {
   duration: { value: 1, unit: 'month' },
   ics: true,
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'foreign_state_default_judgment_appeal_filed_date',
+  missed_from_filing: true,
 };
 
 const FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL_MIDNIGHT_RULE =
@@ -2401,6 +2422,8 @@ export const MIROVOY_REASONED_REQUEST = {
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'mirovoy_request_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'current',
@@ -2450,6 +2473,7 @@ export const MIROVOY_REASONED_MAKING = {
     'решения. Срок в рабочих днях.',
   midnight_rule: null,
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'mirovoy_reasoned_date',
   norm_versions: [
     {
       id: 'current',
@@ -2470,6 +2494,7 @@ export const MIROVOY_APPEAL = {
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'mirovoy_appeal_ruling_reasoned_date',
   norm_versions: [
     {
       id: 'current',
@@ -2652,6 +2677,8 @@ export const MIROVOY_CASSATION = {
   ics: true,
   midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
   restoration_norm: 'ст. 112 ГПК РФ',
+  fact_input: 'cassation_filed_date',
+  missed_from_filing: true,
   norm_versions: [
     {
       id: 'ksoyu_before_79fz',
