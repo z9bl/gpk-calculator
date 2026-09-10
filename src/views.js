@@ -193,6 +193,9 @@ function cassationCard(cassation) {
   if (cassation.boundary_warning) card.boundary_warning = cassation.boundary_warning;
   if (cassation.exhaustion_warning) card.exhaustion_warning = cassation.exhaustion_warning;
   if (cassation.restoration_norm) card.restoration_norm = cassation.restoration_norm;
+  if (cassation.restoration_one_year_cap) {
+    card.restoration_one_year_cap = cassation.restoration_one_year_cap;
+  }
   attachCalendarWarning(card);
   return card;
 }
@@ -603,6 +606,40 @@ function reviewNewCircumstancesCard(term) {
   return card;
 }
 
+// Карточка кассационной жалобы на судебный приказ: обычный monthTermCard плюс
+// промежуточные данные о том, как вычислена дата вступления приказа в
+// законную силу — она не вводится напрямую (см. computeSudebnyPrikazCassation
+// в chain.js), и без этих данных карточка показывала бы только финальный
+// срок, не объясняя, откуда взялась точка отсчёта (десять дней на возражения
+// должника, ст. 128, а при вводе даты прибытия на почту — ещё и семидневный
+// срок хранения корреспонденции, п. 32 ПП ВС РФ от 27.12.2016 № 62, перед ним).
+function sudebnyPrikazCassationCard(term) {
+  const card = monthTermCard(term);
+  card.details.entry_into_force = {
+    date: term.entry_into_force,
+    computed: true, // не введена пользователем — вычислена, в отличие от двух других узлов той же группы
+    via_postal_storage: term.entry_into_force_via_postal_storage,
+    received_date: term.received_date,
+  };
+  if (term.entry_into_force_via_postal_storage) {
+    card.details.entry_into_force.postal_arrival_date = term.postal_arrival_date;
+    card.details.entry_into_force.postal_storage_start = term.postal_storage_start;
+  }
+  return card;
+}
+
+// Карточка заявления об отмене решения третейского суда (глава 46, ст. 418):
+// обычный monthTermCard плюс отметка о том, какой из двух вариантов субъекта
+// сработал — сторона третейского разбирательства (ч. 2) или лицо, не
+// являющееся стороной, в т.ч. прокурор (ч. 3) — иначе карточка не объясняла
+// бы, откуда взялась точка отсчёта, при заполнении сразу двух полей ввода
+// (см. resolveArbitrationAwardSetasideAnchor в chain.js — приоритет за ч. 2).
+function arbitrationAwardSetasideCard(term) {
+  const card = monthTermCard(term);
+  card.details.applicant_variant = term.applicant_variant;
+  return card;
+}
+
 // Карточка предъявления документов о взыскании периодических платежей
 // (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
 // ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
@@ -818,6 +855,18 @@ function independentNodes(source, today = null) {
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
   }
+  // Глава 45 (признание и исполнение решений иностранных судов): два
+  // независимых узла, каждый по своему input — обычный monthTermCard (годится
+  // и для трёхлетнего, и для месячного срока, как у court_order_presentation/
+  // cassation_return_ruling_appeal выше), без attachInterruptions — перерыв
+  // ст. 22 ФЗ № 229-ФЗ к узлу предъявления решения иностранного суда не
+  // подключён (см. комментарий в chain.js).
+  if (terms.foreign_judgment_enforcement_presentation) {
+    cards.push(monthTermCard(terms.foreign_judgment_enforcement_presentation));
+  }
+  if (terms.foreign_judgment_recognition_objection) {
+    cards.push(monthTermCard(terms.foreign_judgment_recognition_objection));
+  }
   // Глава 22.2 (возвращение ребёнка / права доступа): оба срока — в рабочих
   // днях, каждый от своей даты, поэтому обычные workingDayCard.
   if (terms.child_return_appeal) cards.push(workingDayCard(terms.child_return_appeal));
@@ -839,6 +888,32 @@ function independentNodes(source, today = null) {
   // апелляцию.
   if (terms.settlement_approval_cassation_appeal) {
     cards.push(monthTermCard(terms.settlement_approval_cassation_appeal));
+  }
+  // Прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
+  // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
+  // на принудительное исполнение решения третейского суда. Судебный приказ —
+  // через sudebnyPrikazCassationCard (см. выше): дата вступления в силу
+  // вычислена, а не введена, карточке нужны промежуточные данные расчёта.
+  // Два других — обычный monthTermCard, тот же, что и у
+  // settlement_approval_cassation_appeal выше (он не привязан к конкретной
+  // длительности узла).
+  if (terms.sudebny_prikaz_cassation) {
+    cards.push(sudebnyPrikazCassationCard(terms.sudebny_prikaz_cassation));
+  }
+  if (terms.treteisky_osparivanie_cassation) {
+    cards.push(monthTermCard(terms.treteisky_osparivanie_cassation));
+  }
+  if (terms.treteisky_ispollist_cassation) {
+    cards.push(monthTermCard(terms.treteisky_ispollist_cassation));
+  }
+  // Заявление об отмене решения третейского суда (глава 46, ч. 2, 3 ст. 418):
+  // первая стадия того же процесса, что и treteisky_osparivanie_cassation
+  // выше, но независимый узел (см. комментарий в chain.js) — через
+  // arbitrationAwardSetasideCard, чтобы показать, какой вариант субъекта
+  // сработал.
+  if (terms.arbitration_award_setaside) {
+    cards.push(arbitrationAwardSetasideCard(terms.arbitration_award_setaside));
   }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК):
   // обычный месячный/трёхмесячный рендерер — норма и логика на карточке уже

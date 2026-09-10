@@ -30,6 +30,8 @@ import {
   COURT_ORDER_OBJECTION,
   COURT_ORDER_PRESENTATION,
   PERIODIC_PAYMENTS_PRESENTATION,
+  FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION,
+  FOREIGN_JUDGMENT_RECOGNITION_OBJECTION,
   PROTOCOL_REMARKS,
   PRIVATE_COMPLAINT,
   CHILD_RETURN_APPEAL,
@@ -38,6 +40,10 @@ import {
   CASSATION_RETURN_RULING_APPEAL,
   ARBITRATION_COMPETENCE_APPEAL,
   SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+  SUDEBNY_PRIKAZ_CASSATION,
+  TRETEISKY_OSPARIVANIE_CASSATION,
+  TRETEISKY_ISPOLLIST_CASSATION,
+  COURT_ARBITRATION_AWARD_SETASIDE,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
   REVIEW_NEW_CIRCUMSTANCES_RESTORATION,
   SIMPLIFIED_REASONED_REQUEST,
@@ -237,6 +243,61 @@ export function icsTermsFromChain(chain) {
       duration: SETTLEMENT_APPROVAL_CASSATION_APPEAL.duration,
     });
   }
+  // Прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1) — три независимых узла по той же логике, что и
+  // settlement_approval_cassation_appeal выше: судебный приказ, определения по
+  // делам об оспаривании решений третейских судов и о выдаче/отказе в выдаче
+  // исполнительного листа на принудительное исполнение решения третейского
+  // суда (п. 3 ПП ВС РФ от 22.06.2021 № 17).
+  if (chain && chain.sudebny_prikaz_cassation && chain.sudebny_prikaz_cassation.deadline) {
+    terms.push({
+      title: chain.sudebny_prikaz_cassation.title,
+      deadline: chain.sudebny_prikaz_cassation.deadline,
+      norm: chain.sudebny_prikaz_cassation.norm.primary,
+      ics: SUDEBNY_PRIKAZ_CASSATION.ics,
+      duration: SUDEBNY_PRIKAZ_CASSATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.treteisky_osparivanie_cassation &&
+    chain.treteisky_osparivanie_cassation.deadline
+  ) {
+    terms.push({
+      title: chain.treteisky_osparivanie_cassation.title,
+      deadline: chain.treteisky_osparivanie_cassation.deadline,
+      norm: chain.treteisky_osparivanie_cassation.norm.primary,
+      ics: TRETEISKY_OSPARIVANIE_CASSATION.ics,
+      duration: TRETEISKY_OSPARIVANIE_CASSATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.treteisky_ispollist_cassation &&
+    chain.treteisky_ispollist_cassation.deadline
+  ) {
+    terms.push({
+      title: chain.treteisky_ispollist_cassation.title,
+      deadline: chain.treteisky_ispollist_cassation.deadline,
+      norm: chain.treteisky_ispollist_cassation.norm.primary,
+      ics: TRETEISKY_ISPOLLIST_CASSATION.ics,
+      duration: TRETEISKY_ISPOLLIST_CASSATION.duration,
+    });
+  }
+  // Заявление об отмене решения третейского суда (глава 46, ч. 2, 3 ст. 418
+  // ГПК) — независимый узел: первая стадия того же процесса, что и
+  // treteisky_osparivanie_cassation выше, но якорь вводится напрямую одним из
+  // двух альтернативных полей (см. комментарий в chain.js), не вычисляется
+  // из другого узла цепочки.
+  if (chain && chain.arbitration_award_setaside && chain.arbitration_award_setaside.deadline) {
+    terms.push({
+      title: chain.arbitration_award_setaside.title,
+      deadline: chain.arbitration_award_setaside.deadline,
+      norm: chain.arbitration_award_setaside.norm.primary,
+      ics: COURT_ARBITRATION_AWARD_SETASIDE.ics,
+      duration: COURT_ARBITRATION_AWARD_SETASIDE.duration,
+    });
+  }
   // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК) —
   // независимый узел: считается по своим input (review_ground + дата(-ы)),
   // норма в экспорте — та, что соответствует выбранному основанию (см.
@@ -315,6 +376,38 @@ export function icsTermsFromChain(chain) {
       norm: chain.periodic_payments_presentation.norm.primary,
       ics: PERIODIC_PAYMENTS_PRESENTATION.ics,
       duration: PERIODIC_PAYMENTS_PRESENTATION.duration,
+    });
+  }
+  // Признание и исполнение решений иностранных судов (глава 45 ГПК) — два
+  // независимых узла, каждый считается по своему input: предъявление решения
+  // к принудительному исполнению (ч. 3 ст. 409, три года со дня вступления
+  // решения в законную силу) и возражения относительно признания решения, не
+  // требующего принудительного исполнения (ч. 2 ст. 413, один месяц со дня,
+  // когда заинтересованному лицу стало известно о решении).
+  if (
+    chain &&
+    chain.foreign_judgment_enforcement_presentation &&
+    chain.foreign_judgment_enforcement_presentation.deadline
+  ) {
+    terms.push({
+      title: chain.foreign_judgment_enforcement_presentation.title,
+      deadline: chain.foreign_judgment_enforcement_presentation.deadline,
+      norm: chain.foreign_judgment_enforcement_presentation.norm.primary,
+      ics: FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION.ics,
+      duration: FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION.duration,
+    });
+  }
+  if (
+    chain &&
+    chain.foreign_judgment_recognition_objection &&
+    chain.foreign_judgment_recognition_objection.deadline
+  ) {
+    terms.push({
+      title: chain.foreign_judgment_recognition_objection.title,
+      deadline: chain.foreign_judgment_recognition_objection.deadline,
+      norm: chain.foreign_judgment_recognition_objection.norm.primary,
+      ics: FOREIGN_JUDGMENT_RECOGNITION_OBJECTION.ics,
+      duration: FOREIGN_JUDGMENT_RECOGNITION_OBJECTION.duration,
     });
   }
   // Упрощённое производство: заявление о мотивированном решении и апелляция.

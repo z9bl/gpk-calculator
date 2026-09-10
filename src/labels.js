@@ -78,6 +78,14 @@ export const INPUT_LABELS = {
   arbitration_competence_ruling_received_date:
     'Дата получения постановления третейского суда о компетенции',
   settlement_approval_ruling_date: 'Дата определения об утверждении мирового соглашения',
+  sudebny_prikaz_received_date: 'Дата получения должником копии судебного приказа',
+  sudebny_prikaz_postal_arrival_date:
+    'Дата прибытия судебного приказа в место вручения (по данным почтового отправления)',
+  treteisky_osparivanie_entry_into_force_date:
+    'Дата вступления в силу определения по делу об оспаривании решения третейского суда',
+  treteisky_ispollist_entry_into_force_date:
+    'Дата вступления в силу определения о выдаче/об отказе в выдаче исполнительного листа ' +
+    'на принудительное исполнение решения третейского суда',
   foreign_state_default_judgment_service_date:
     'Дата вручения иностранному государству копии заочного решения',
   foreign_state_default_judgment_cancellation_request_date:
@@ -103,4 +111,40 @@ export const INPUT_LABELS = {
     'Дата получения копии определения об отказе в передаче жалобы для рассмотрения',
   review_last_act_entry_into_force_date:
     'Дата вступления в силу последнего судебного постановления по делу',
+  foreign_judgment_entry_into_force_date: 'Дата вступления в законную силу решения иностранного суда',
+  foreign_judgment_recognition_aware_date:
+    'Дата, когда заинтересованному лицу стало известно о решении иностранного ' +
+    'суда или иностранного третейского суда (арбитража)',
+  arbitration_award_setaside_received_date:
+    'Дата получения стороной третейского разбирательства решения третейского суда',
+  arbitration_award_setaside_aware_date:
+    'Дата, когда лицу, не являющемуся стороной третейского разбирательства, ' +
+    'стало известно или должно было стать известно об оспариваемом решении ' +
+    'третейского суда',
+
+  // Годичный потолок восстановления пропущенного кассационного/надзорного
+  // срока (ч. 7 ст. 112 ГПК РФ) — по одному полю на узел категории (a), см.
+  // CASSATION_SUPERVISORY_RESTORATION_NODE_IDS и restorationOneYearCapResult
+  // в src/chain.js. Поле не обязательно: без него карточка ведёт себя как
+  // раньше (просто restoration_norm), заполняется только когда пользователь
+  // спрашивает, реалистично ли восстановление.
+  cassation_ksoyu_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация в КСОЮ)',
+  cassation_vs_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация в ВС РФ)',
+  supervision_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (надзорная жалоба)',
+  settlement_approval_cassation_appeal_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (обжалование ' +
+    'определения об утверждении мирового соглашения)',
+  sudebny_prikaz_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация на судебный приказ)',
+  treteisky_osparivanie_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация по делу ' +
+    'об оспаривании решения третейского суда)',
+  treteisky_ispollist_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация на выдачу ' +
+    'исполнительного листа на исполнение решения третейского суда)',
+  mirovoy_cassation_restoration_circumstance_date:
+    'Дата обстоятельства — уважительной причины пропуска (кассация по делам мировых судей)',
 };

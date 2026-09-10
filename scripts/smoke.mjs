@@ -3,14 +3,20 @@
 // показе .fatal. Ловит синтаксические и рантайм-ошибки app.js/views.js, которые
 // `node --test` не видит (он не исполняет модули в браузере).
 //
-// Запуск: node test/smoke.mjs  (нужен пакет playwright и браузер chromium).
-// В окружении можно указать путь к chromium: PW_CHROMIUM_PATH=/путь/к/chrome.
-// Если PW_CHROMIUM_PATH не задан и штатный запуск падает с "Executable doesn't
-// exist" — см. findFallbackChromium ниже.
+// Запуск: node scripts/smoke.mjs  (нужен пакет playwright и браузер chromium).
+//
+// В контейнере Claude Code браузер лежит по фиксированному пути
+// (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers), и его ревизия — часть образа,
+// а не репозитория: она может не совпадать с тем, что playwright из
+// node_modules ожидает найти сам, и меняться со временем независимо от
+// package.json. Поэтому путь к chromium ищем автоматически (findChromiumExecutable
+// ниже) по стандартным путям установки — вручную ничего прописывать не нужно.
+// Если нужен конкретный браузер, PW_CHROMIUM_PATH=/путь/к/chrome всё ещё
+// перебивает автоопределение.
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { existsSync, readdirSync } from 'node:fs';
+import { readFile, readdir, realpath } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -27,6 +33,43 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
 };
+
+// Ищет установленный браузер chromium по стандартным путям, не полагаясь на
+// то, что ревизия, которую ожидает playwright из node_modules, совпадает с
+// тем, что реально лежит на диске (см. комментарий в шапке файла). Явный
+// PW_CHROMIUM_PATH имеет приоритет. Возвращает undefined, если ничего не
+// нашлось, — тогда playwright ищет браузер сам обычным способом (штатный
+// случай вне контейнера Claude Code, например после `playwright install`).
+async function findChromiumExecutable() {
+  if (process.env.PW_CHROMIUM_PATH) return process.env.PW_CHROMIUM_PATH;
+
+  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean);
+  for (const root of roots) {
+    // Готовый симлинк на текущую ревизию — так устроен контейнер Claude Code.
+    const link = join(root, 'chromium');
+    if (existsSync(link)) {
+      try {
+        return await realpath(link);
+      } catch {
+        // битый симлинк — ищем ниже по каталогам ревизий
+      }
+    }
+    // Иначе перебираем каталоги chromium-<revision>/chrome-linux/chrome —
+    // так playwright раскладывает браузер на Linux.
+    let entries;
+    try {
+      entries = await readdir(root);
+    } catch {
+      continue;
+    }
+    const revision = entries.filter((name) => /^chromium-\d+$/.test(name)).sort().at(-1);
+    if (revision) {
+      const candidate = join(root, revision, 'chrome-linux', 'chrome');
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
 
 // Минимальный статический сервер из корня репозитория.
 const server = createServer(async (req, res) => {
@@ -52,62 +95,9 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, resolve));
 const port = server.address().port;
 
-// Playwright резолвит бинарник браузера по ревизии, зашитой в установленный
-// npm-пакет (см. playwright-core/browsers.json) — и для headless-запуска (без
-// явного headless: false) это, начиная с недавних версий Playwright, отдельный
-// бинарник chrome-headless-shell, а не chrome-linux/chrome. В managed-окружениях
-// с предустановленным браузером (PLAYWRIGHT_BROWSERS_PATH) эта ревизия
-// закреплена на момент сборки окружения, а package.json обычно пинит playwright
-// диапазоном (^) — со временем `npm install` подтягивает новую версию пакета,
-// ожидающую более новую ревизию браузера, которой в окружении ещё нет. Тогда
-// обычный запуск падает с "Executable doesn't exist", а PW_CHROMIUM_PATH никто
-// не выставил вручную.
-//
-// findFallbackChromium ищет полный (не headless-shell) бинарник chrome,
-// который сам факт запуска через executablePath уже подходит для обычного
-// headless-режима (в отличие от отсутствующего chrome-headless-shell) —
-// используется только как запасной путь, если штатный запуск упал именно с
-// этой ошибкой и PW_CHROMIUM_PATH не задан явно.
-function findFallbackChromium() {
-  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean);
-  for (const root of roots) {
-    // Удобный симлинк chromium → chromium-<ревизия>/chrome-linux/chrome, если он есть.
-    const symlink = join(root, 'chromium');
-    if (existsSync(symlink)) return symlink;
-    // Иначе ищем сами: любая chromium-<ревизия>/chrome-linux/chrome.
-    let entries;
-    try {
-      entries = readdirSync(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || !/^chromium-\d+$/.test(entry.name)) continue;
-      const candidate = join(root, entry.name, 'chrome-linux', 'chrome');
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return null;
-}
-
 const problems = [];
-const launchOpts = process.env.PW_CHROMIUM_PATH
-  ? { executablePath: process.env.PW_CHROMIUM_PATH }
-  : {};
-let browser;
-try {
-  browser = await chromium.launch(launchOpts);
-} catch (err) {
-  // Ретраим фолбэком только эту конкретную ошибку и только если путь не был
-  // задан явно (явный PW_CHROMIUM_PATH, который сам не работает, — это
-  // осознанная настройка окружения, подменять её молча не нужно).
-  if (process.env.PW_CHROMIUM_PATH || !/Executable doesn't exist/.test(String(err.message))) {
-    throw err;
-  }
-  const fallback = findFallbackChromium();
-  if (!fallback) throw err;
-  browser = await chromium.launch({ executablePath: fallback });
-}
+const executablePath = await findChromiumExecutable();
+const browser = await chromium.launch(executablePath ? { executablePath } : {});
 const page = await browser.newPage();
 page.on('console', (m) => {
   if (m.type() === 'error') problems.push(`console error: ${m.text()}`);

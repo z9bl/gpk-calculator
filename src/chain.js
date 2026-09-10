@@ -9,6 +9,7 @@
 // берётся из системных часов — иначе расчёт был бы недетерминированным.
 
 import { computeDeadline, addDays } from '../core/engine/engine.js';
+import { shiftIfNonWorking } from '../core/calendar/calendar.js';
 import { pickVersion, computeVersionedTerm } from '../core/engine/versioning.js';
 import { toISO, computeSimpleTerm } from '../core/engine/term.js';
 import {
@@ -17,6 +18,42 @@ import {
   withInterruptions as genericWithInterruptions,
   computeInterruptibleTerm as genericComputeInterruptibleTerm,
 } from '../core/engine/interruption.js';
+import { checkRestorationOneYearCap } from '../core/engine/restoration.js';
+
+// --- Годичный потолок восстановления (ч. 7 ст. 112 ГПК РФ) ------------------
+//
+// Механика проверки — core/engine/restoration.js (предметно-независима);
+// здесь — только подключение к узлам кассации/надзора категории (a) (см.
+// CASSATION_SUPERVISORY_RESTORATION_NODE_IDS ниже). Единая функция для всех
+// восьми узлов, а не своя копия проверки в каждом — расчёт этой проверки
+// нигде не дублируется.
+const RESTORATION_ONE_YEAR_CAP_NORM = 'ч. 7 ст. 112 ГПК РФ';
+
+/**
+ * Результат проверки годичного потолка для карточки узла категории (a).
+ *
+ * Пока пользователь не ввёл дату обстоятельства — уважительной причины
+ * пропуска, проверять нечего: это обычное состояние формы (пользователь ещё
+ * не спрашивает про восстановление), а не ошибка, поэтому null, а не
+ * предупреждение по умолчанию. Дата вступления в силу отсутствует по той же
+ * причине, что и у остального узла на этой стадии расчёта (событие ещё не
+ * разрешилось, дата не введена) — тоже null.
+ *
+ * @param {string|null|undefined} entryIntoForceDate — дата вступления
+ *   обжалуемого постановления в законную силу (не обязательно совпадает с
+ *   якорем самого срока — см. cassation_ksoyu/cassation_vs/mirovoy_cassation,
+ *   где якорь после реформы 2024/2026 гг. может ссылаться на дату
+ *   изготовления мотивированного определения, а не на вступление в силу).
+ * @param {*} circumstanceDateInput — сырое значение нового поля ввода узла.
+ * @returns {{within_cap:boolean, cap_deadline:string, circumstance_date:string, norm:string}|null}
+ */
+function restorationOneYearCapResult(entryIntoForceDate, circumstanceDateInput) {
+  const circumstance = toISO(circumstanceDateInput);
+  if (circumstance == null) return null;
+  const cap = checkRestorationOneYearCap(entryIntoForceDate, circumstance);
+  if (cap == null) return null;
+  return { ...cap, circumstance_date: circumstance, norm: RESTORATION_ONE_YEAR_CAP_NORM };
+}
 
 // --- Определения сроков (п. 4.2 SPEC.md) --------------------------------------
 
@@ -675,6 +712,124 @@ function computePeriodicPayments(inputs) {
   );
 }
 
+// Признание и исполнение решений иностранных судов (глава 45 ГПК).
+//
+// Два независимых узла одной главы, разной механики — как судебный приказ и
+// периодические платежи выше, а не ветвь с внутренними связями: у каждого
+// свой якорь, свой input, ни один не является предпосылкой для другого.
+//
+// Глава 45 разделяет два разных производства: решения, ТРЕБУЮЩИЕ
+// принудительного исполнения (ст. 409–412), и решения, НЕ требующие его —
+// признаваемые без принудительного исполнения (ст. 413–415). Каждый узел ниже
+// относится только к своему производству; о том, нужно ли предупреждение на
+// карточке узла 1 про эту границу производств, — см. открытый вопрос в
+// сопроводительном отчёте о добавлении этих узлов.
+//
+// Применимость к решениям иностранных третейских судов (арбитражей) —
+// НЕ одинакова у двух узлов, несмотря на общее название главы 45
+// («...решений иностранных судов и иностранных третейских судов
+// (арбитражей)»): название главы — не текст конкретной статьи, а
+// распространение статьи требует прямой отсылки внутри её самой или в
+// другой статье, явно её называющей.
+//   узел 2 (ст. 413) — распространяется: ст. 416 ГПК РФ прямо и буквально
+//     расширяет правила именно ст. 411–413 (кроме ч. 2 ст. 411 и п. 1–4, 6
+//     ч. 1 ст. 412) на решения иностранных третейских судов (арбитражей), а
+//     ст. 413 в этот диапазон входит.
+//   узел 1 (ст. 409) — ст. 416 его НЕ упоминает (диапазон — именно
+//     ст. 411–413, не ст. 409–410), и в тексте самой ст. 409 третейские суды/
+//     арбитражи тоже не упомянуты. Раньше здесь была ссылка на
+//     несуществующую «абз. 2 ч. 1 ст. 409» как основание распространения —
+//     это ошибка, исправлена. Узел 1 и его формулировки для пользователя
+//     ограничены буквальным текстом ч. 3 ст. 409 — «решение иностранного
+//     суда», без расширения на третейские решения/арбитраж. Нужно ли когда-
+//     либо осознанно завести для арбитражных решений отдельный охват (и на
+//     каком основании, если не на ст. 409/416) — открытый вопрос, не решён
+//     здесь, см. отчёт.
+
+export const FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION = {
+  id: 'foreign_judgment_enforcement_presentation',
+  title: 'Предъявление решения иностранного суда к принудительному исполнению',
+  duration: { value: 3, unit: 'year' },
+  anchor: { event: 'foreign_judgment_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  // Перерыв по ст. 22 ФЗ № 229-ФЗ здесь НЕ подключён (в отличие от
+  // court_order_presentation): решение иностранного суда само по себе не
+  // входит в перечень исполнительных документов ст. 12 ФЗ № 229-ФЗ — им
+  // становится исполнительный лист, выдаваемый российским судом уже ПОСЛЕ
+  // разрешения на принудительное исполнение (ст. 411), а этот трёхлетний срок —
+  // до того, на обращение с ходатайством в российский суд. Перерыв в задаче не
+  // упомянут, отдельной модели для него здесь нет.
+  logic:
+    'Три года со дня вступления в законную силу решения иностранного суда ' +
+    '(ч. 3 ст. 409 ГПК РФ). Пропущенный по уважительной причине срок может ' +
+    'быть восстановлен российским судом в порядке ст. 112 ГПК РФ — ' +
+    'восстановление прямо предусмотрено самой нормой.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'foreign_judgment_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 3 ст. 409 ГПК РФ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+// Возражения заинтересованного лица относительно признания решения
+// иностранного суда, не требующего принудительного исполнения (ч. 2 ст. 413
+// ГПК РФ) — второе производство главы 45, отдельное от предъявления к
+// исполнению выше.
+//
+// Точка отсчёта СУБЪЕКТИВНАЯ: день, когда заинтересованному лицу СТАЛО
+// ИЗВЕСТНО о решении иностранного суда, а не день его вынесения и не день
+// вступления в силу. Это не факт, который калькулятор может вычислить, —
+// как и дата открытия обстоятельств у REVIEW_GROUNDS (глава 42) или дата
+// получения копии у COURT_ORDER_OBJECTION/ARBITRATION_COMPETENCE_APPEAL,
+// он только вводится пользователем. Инвентаризация перед добавлением узла
+// (core/engine) показала: движку всё равно, объективный якорь срока или
+// субъективный, — computeDeadline/computeSimpleTerm работают с любой датой
+// одинаково, отдельного примитива «срок от даты, когда узнал» в ядре нет и
+// не требуется — практически как узнал участник процесса, сама система
+// определить не может, поэтому отдельного механизма для этого события тоже
+// нет ни у одного из процитированных выше узлов.
+export const FOREIGN_JUDGMENT_RECOGNITION_OBJECTION = {
+  id: 'foreign_judgment_recognition_objection',
+  title: 'Возражения относительно признания решения иностранного суда',
+  duration: { value: 1, unit: 'month' },
+  anchor: { event: 'foreign_judgment_recognition_aware_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Один месяц со дня, когда заинтересованному лицу стало известно о решении ' +
+    'иностранного суда, не требующем принудительного исполнения (ч. 2 ст. 413 ' +
+    'ГПК РФ) — не со дня вынесения решения и не со дня вступления его в силу. ' +
+    'Восстановление пропущенного срока нормой прямо не упомянуто, но ' +
+    'применяется общее правило ч. 1 ст. 112 ГПК РФ — исключения для этого ' +
+    'случая в законе нет. Распространяется также на решения иностранных ' +
+    'третейских судов (арбитражей) — ст. 416 ГПК РФ расширяет правила ' +
+    'ст. 413 на них.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'foreign_judgment_recognition_aware_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 2 ст. 413 ГПК РФ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
 // Дела о возвращении ребёнка и об осуществлении прав доступа (глава 22.2 ГПК).
 //
 // Специальная категория дел из §11.4 SPEC.md: по делам, рассматриваемым на
@@ -821,18 +976,100 @@ function computeInterruptibleTerm(term, baseAnchorDate, interruptions) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
   const reviewResult = computeReviewNewCircumstancesResult(inputs ?? {});
+
+  // Надзорная жалоба (глава 41.1) — узел категории (a): годичный потолок
+  // восстановления (ч. 7 ст. 112) подключается через общую функцию
+  // restorationOneYearCapResult, а не копируется в расчёт. Дата вступления
+  // обжалуемого постановления в силу для надзора — та же vs_ruling_date, что
+  // и якорь самого срока (см. логику SUPERVISION: определение Судебной
+  // коллегии ВС вступает в силу со дня вынесения).
+  const supervision = computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date);
+  if (supervision) {
+    const cap = restorationOneYearCapResult(
+      inputs?.vs_ruling_date,
+      inputs?.supervision_restoration_circumstance_date,
+    );
+    if (cap) supervision.restoration_one_year_cap = cap;
+  }
+
+  // Обжалование определения об утверждении мирового соглашения (ч. 11
+  // ст. 153.10) — прямая кассация, узел категории (a). Дата вступления в
+  // силу обжалуемого определения — та же settlement_approval_ruling_date,
+  // что и якорь срока (акт, не подлежащий апелляции, вступает в силу со дня
+  // вынесения).
+  const settlementApprovalCassationAppeal = computeSimpleTerm(
+    SETTLEMENT_APPROVAL_CASSATION_APPEAL,
+    inputs?.settlement_approval_ruling_date,
+  );
+  if (settlementApprovalCassationAppeal) {
+    const cap = restorationOneYearCapResult(
+      inputs?.settlement_approval_ruling_date,
+      inputs?.settlement_approval_cassation_appeal_restoration_circumstance_date,
+    );
+    if (cap) settlementApprovalCassationAppeal.restoration_one_year_cap = cap;
+  }
+
+  // Прямая кассация на судебный приказ, узел категории (a): дата вступления
+  // приказа в законную силу не вводится, а вычисляется
+  // (resolveSudebnyPrikazEntryIntoForce) — берём её же для годичного потолка,
+  // а не якорь срока напрямую (у sudebny_prikaz_cassation они совпадают, но
+  // вычисленная дата уже есть готовой в computeSudebnyPrikazCassation).
+  const sudebnyPrikazCassation = computeSudebnyPrikazCassation(inputs ?? {});
+  if (sudebnyPrikazCassation) {
+    const cap = restorationOneYearCapResult(
+      sudebnyPrikazCassation.entry_into_force,
+      inputs?.sudebny_prikaz_cassation_restoration_circumstance_date,
+    );
+    if (cap) sudebnyPrikazCassation.restoration_one_year_cap = cap;
+  }
+
+  // Прямая кассация на определения по третейским делам (ч. 5 ст. 422, ч. 5
+  // ст. 427) — узлы категории (a); дата вступления в силу вводится напрямую
+  // (см. открытый вопрос у SUDEBNY_PRIKAZ_CASSATION выше) и служит одновременно
+  // якорем срока и точкой отсчёта годичного потолка.
+  const treteiskyOsparivanieCassation = computeSimpleTerm(
+    TRETEISKY_OSPARIVANIE_CASSATION,
+    inputs?.treteisky_osparivanie_entry_into_force_date,
+  );
+  if (treteiskyOsparivanieCassation) {
+    const cap = restorationOneYearCapResult(
+      inputs?.treteisky_osparivanie_entry_into_force_date,
+      inputs?.treteisky_osparivanie_cassation_restoration_circumstance_date,
+    );
+    if (cap) treteiskyOsparivanieCassation.restoration_one_year_cap = cap;
+  }
+
+  const treteiskyIspollistCassation = computeSimpleTerm(
+    TRETEISKY_ISPOLLIST_CASSATION,
+    inputs?.treteisky_ispollist_entry_into_force_date,
+  );
+  if (treteiskyIspollistCassation) {
+    const cap = restorationOneYearCapResult(
+      inputs?.treteisky_ispollist_entry_into_force_date,
+      inputs?.treteisky_ispollist_cassation_restoration_circumstance_date,
+    );
+    if (cap) treteiskyIspollistCassation.restoration_one_year_cap = cap;
+  }
+
+  // Заявление об отмене решения третейского суда (ч. 2, 3 ст. 418 ГПК РФ,
+  // глава 46) — см. комментарий и computeArbitrationAwardSetaside перед
+  // COURT_ARBITRATION_AWARD_SETASIDE выше. Годичный потолок восстановления
+  // (ч. 7 ст. 112) к узлу не подключён: это не кассационная/надзорная жалоба,
+  // а первичное заявление в суд первой инстанции.
+  const arbitrationAwardSetaside = computeArbitrationAwardSetaside(inputs ?? {});
+
   return {
     protocol_remarks: remarks,
     protocol_remarks_review: review,
     // condition (бывшее поле PRIVATE_COMPLAINT) — 'interim_ruling_date': узел
     // появляется только после ввода даты определения суда первой инстанции.
     private_complaint: computeSimpleTerm(PRIVATE_COMPLAINT, inputs?.interim_ruling_date),
-    supervision: computeSimpleTerm(SUPERVISION, inputs?.vs_ruling_date),
+    supervision,
     // Обжалование определения о возврате кассационной жалобы (ч. 1 ст. 379.2):
     // событие стадии кассации, возможное по делу любой категории, — поэтому
     // независимый узел, а не часть какой-либо ветви цепочки.
@@ -858,10 +1095,29 @@ export function computeIndependentTerms(inputs) {
     // в кассацию, независимый узел по тому же образцу, что и два выше.
     // condition (бывшее поле) — 'settlement_approval_ruling_date': узел
     // появляется только после ввода даты определения об утверждении соглашения.
-    settlement_approval_cassation_appeal: computeSimpleTerm(
-      SETTLEMENT_APPROVAL_CASSATION_APPEAL,
-      inputs?.settlement_approval_ruling_date,
-    ),
+    settlement_approval_cassation_appeal: settlementApprovalCassationAppeal,
+    // Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) —
+    // три независимых узла: акт, для которого апелляционное обжалование не
+    // предусмотрено, обжалуется сразу в кассацию (п. 3 ПП ВС РФ от 22.06.2021
+    // № 17). У судебного приказа дата вступления в силу вычисляется (см.
+    // computeSudebnyPrikazCassation и комментарий перед SUDEBNY_PRIKAZ_CASSATION
+    // выше); у двух других — вводится напрямую, см. открытый вопрос там же.
+    // condition — sudebny_prikaz_cassation появляется после ввода одной из
+    // дат приказного производства (получения копии или прибытия на почту);
+    // два остальных — после ввода даты вступления акта в законную силу.
+    sudebny_prikaz_cassation: sudebnyPrikazCassation,
+    treteisky_osparivanie_cassation: treteiskyOsparivanieCassation,
+    treteisky_ispollist_cassation: treteiskyIspollistCassation,
+    // Заявление об отмене решения третейского суда (ч. 2, 3 ст. 418 ГПК РФ) —
+    // первая стадия того же процесса, что и treteisky_osparivanie_cassation
+    // выше (кассация на определение суда по этому заявлению), но независимый
+    // узел: якорь не вычисляется из другого узла цепочки, а вводится
+    // напрямую, одним из двух альтернативных полей (см. комментарий перед
+    // COURT_ARBITRATION_AWARD_SETASIDE в chain.js).
+    // condition — arbitration_award_setaside появляется после ввода одной из
+    // двух дат (получения решения стороной либо того, когда узнало лицо, не
+    // являющееся стороной).
+    arbitration_award_setaside: arbitrationAwardSetaside,
     // Приказное производство: два независимых узла одной ситуации. Возражения
     // должника (ст. 128) считаются от даты получения копии приказа,
     // предъявление к исполнению — от даты его выдачи взыскателю; ни один из
@@ -881,6 +1137,29 @@ export function computeIndependentTerms(inputs) {
       inputs?.enforcement_interruptions,
     ),
     periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
+    // Признание и исполнение решений иностранных судов (глава 45 ГПК): два
+    // независимых узла одной главы — предъявление к принудительному
+    // исполнению (ч. 3 ст. 409) и возражения относительно признания решения,
+    // не требующего принудительного исполнения (ч. 2 ст. 413). См. комментарий
+    // перед FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION выше. Годичный потолок
+    // восстановления (ч. 7 ст. 112) сюда не подключён — ни один из узлов не
+    // является кассационной/надзорной жалобой (см.
+    // CASSATION_SUPERVISORY_RESTORATION_NODE_IDS ниже), обычное восстановление
+    // по ст. 112 отражено только через restoration_norm на самом узле.
+    // condition (foreign_judgment_enforcement_presentation) —
+    // 'foreign_judgment_entry_into_force_date': узел появляется только после
+    // ввода даты вступления решения иностранного суда в законную силу.
+    foreign_judgment_enforcement_presentation: computeSimpleTerm(
+      FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION,
+      inputs?.foreign_judgment_entry_into_force_date,
+    ),
+    // condition (foreign_judgment_recognition_objection) —
+    // 'foreign_judgment_recognition_aware_date': узел появляется только после
+    // ввода даты, когда заинтересованному лицу стало известно о решении.
+    foreign_judgment_recognition_objection: computeSimpleTerm(
+      FOREIGN_JUDGMENT_RECOGNITION_OBJECTION,
+      inputs?.foreign_judgment_recognition_aware_date,
+    ),
     // Дела о возвращении ребёнка (глава 22.2): два независимых узла одной
     // ситуации — как у судебного приказа, а не ветвь с внутренними связями,
     // как mirovoy/simplified. Апелляция считается от даты решения в
@@ -1127,6 +1406,353 @@ export const SETTLEMENT_APPROVAL_CASSATION_APPEAL = {
     },
   ],
 };
+
+// Прямая кассация, минуя апелляцию (общий трёхмесячный срок ст. 376.1) — три
+// независимых узла по образцу SETTLEMENT_APPROVAL_CASSATION_APPEAL выше: акты,
+// для которых ГПК не предусматривает апелляционного обжалования, перечислены
+// одним списком в п. 3 ПП ВС РФ от 22.06.2021 № 17 (судебный приказ,
+// определение об утверждении мирового соглашения, определения по делам об
+// оспаривании решений третейских судов и о выдаче/отказе в выдаче
+// исполнительного листа на принудительное исполнение решения третейского
+// суда). В отличие от SETTLEMENT_APPROVAL_CASSATION_APPEAL (месяц, ч. 11
+// ст. 153.10 — своя норма срока) эти три подчиняются общему правилу кассации:
+// три месяца со дня вступления обжалуемого определения в законную силу
+// (ч. 1 ст. 376.1 ГПК РФ), восстановление — на общих основаниях (ст. 112).
+//
+// ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): что считать
+// днём вступления в законную силу для определений по ст. 422/427 ГПК — они,
+// в отличие от судебного приказа, не проходят через отдельную процедуру
+// возражений с известным сроком, и модель сознательно не вычисляет эту дату
+// сама — пользователь вводит её напрямую, тем же способом, что и у
+// SUPERVISION/CASSATION_RETURN_RULING_APPEAL выше. Для судебного приказа
+// такой расчёт сделан — см. блок ниже, перед SUDEBNY_PRIKAZ_CASSATION.
+const DIRECT_CASSATION_CALC = ['ч. 3 ст. 107 ГПК РФ', 'ч. 1, 2 ст. 108 ГПК РФ'];
+
+// --- Судебный приказ: вступление в законную силу как расчёт, а не ввод -----
+//
+// В отличие от определений по ст. 422/427 (где момент вступления в силу
+// вводится пользователем напрямую — см. открытый вопрос выше), для судебного
+// приказа он выводится: десятидневный срок должника на возражения (ст. 128
+// ГПК РФ) известен и привязан к дате получения копии приказа, а окончание
+// этого срока без поданных возражений — и есть момент вступления приказа в
+// законную силу (п. 3 ПП ВС РФ от 22.06.2021 № 17 — приказ не обжалуется в
+// апелляции, поэтому иного момента вступления в силу для целей кассации нет).
+//
+// Дата получения копии, в свою очередь, не всегда известна пользователю
+// напрямую — она либо вводится (a), либо выводится из даты прибытия почтового
+// отправления и правила о семидневном сроке хранения корреспонденции (b, п. 32
+// ПП ВС РФ от 27.12.2016 № 62). Выбор варианта (a)/(b) — на UI-уровне
+// (радиокнопки), в модели это два поля ввода, из которых используется ровно
+// одно: если введена дата фактического получения, дата прибытия на почту
+// игнорируется, даже если тоже введена.
+//
+// ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): семидневный
+// срок хранения корреспонденции — организационно-почтовое правило (приказ
+// Минцифры/АО «Почта России»), а не процессуальный срок ГПК. П. 32 ПП ВС РФ
+// № 62 предписывает начинать его течение со следующего РАБОЧЕГО дня после
+// поступления отправления, но не уточняет, по какому именно календарю
+// определяется «рабочий день» для этой цели. Модель использует тот же
+// производственный календарь (ст. 111 ТК РФ и постановления о переносе
+// выходных), что и для процессуальных сроков ГПК, — другого источника
+// «рабочих дней» в проекте нет, и альтернатива не обсуждалась.
+//
+// Сам семидневный срок хранения — календарные дни (в отличие от
+// десятидневного срока на возражения, который правилами ст. 107 ч. 3 ГПК
+// РФ отсчитывается без нерабочих дней): переносится только начало (на первый
+// рабочий день после прибытия), поэтому используются низкоуровневые
+// примитивы ядра (addDays, shiftIfNonWorking), а не computeDeadline/
+// computeSimpleTerm, рассчитанные на оба других типа сроков (день/месяц с
+// переносом последнего дня).
+//
+// ВТОРОЙ ОТКРЫТЫЙ ВОПРОС, юридически неочевидный (не решается в рамках этой
+// задачи, см. отчёт): семь календарных дней от рабочего дня — НЕ обязательно
+// снова рабочий день, вопреки распространённой интуиции «неделя — и тот же
+// день недели». Нерабочие праздничные дни производственного календаря
+// (1 января, 23 февраля, 8 марта, 1 и 9 мая, 12 июня, 4 ноября и т. п.) —
+// фиксированные календарные даты, не привязанные к дню недели, и конец
+// семидневного срока хранения может попасть ровно на такую дату (пример:
+// следующий рабочий день после прибытия — 24.04, четверг; +7 календарных
+// дней — 01.05, нерабочий праздничный, тоже четверг). Модель СОЗНАТЕЛЬНО НЕ
+// применяет к этой дате shiftIfNonWorking: семидневное хранение — не срок,
+// установленный ГПК (ст. 107, 108 к нему формально не относятся), а день
+// истечения хранения по п. 32 ПП ВС РФ № 62 — это дата, которой закон
+// связывает ФАКТ (юридическую фикцию) получения корреспонденции, а не
+// процессуальный срок, чей последний день можно перенести. Перенос дня,
+// которым признаётся факт получения, на следующий рабочий день не имеет
+// прямого текстового основания ни в ст. 108 ГПК, ни в п. 32 ПП ВС РФ № 62.
+// Это решение — консервативный выбор «не расширять правило переноса на то,
+// что переносом прямо не названо», а не установленная норма; см. тест
+// «...дата истечения хранения на нерабочем празднике не переносится (открытый
+// вопрос)» в test/chain.test.js — он фиксирует именно это поведение как
+// осознанное, а не молчаливое.
+//
+// @param {object} inputs
+// @returns {{date:string, via_storage:boolean, arrival?:string, storage_start?:string}|null}
+function resolveSudebnyPrikazReceivedDate(inputs) {
+  const direct = toISO(inputs?.sudebny_prikaz_received_date);
+  if (direct != null) return { date: direct, via_storage: false };
+
+  const arrival = toISO(inputs?.sudebny_prikaz_postal_arrival_date);
+  if (arrival == null) return null;
+  // Течение семидневного срока хранения — со следующего рабочего дня после
+  // прибытия отправления (п. 32 ПП ВС РФ № 62), не со следующего календарного.
+  const storageStart = toISO(shiftIfNonWorking(addDays(arrival, 1)));
+  // Сам срок — семь календарных дней, без исключения нерабочих и без
+  // переноса конечной даты (это не процессуальный срок ГПК).
+  const storageEnd = toISO(addDays(storageStart, 7));
+  return { date: storageEnd, via_storage: true, arrival, storage_start: storageStart };
+}
+
+// Десятидневный срок должника на возражения (ст. 128 ГПК РФ) — тот же расчёт,
+// что и у COURT_ORDER_OBJECTION (working_day: нерабочие дни не считаются, по
+// построению последний день уже рабочий — отдельного переноса не требуется).
+// Здесь это не отдельная карточка, а промежуточный шаг: окончание срока без
+// поданных возражений — момент вступления приказа в законную силу.
+const SUDEBNY_PRIKAZ_OBJECTION_STEP = {
+  duration: { value: 10, unit: 'working_day' },
+  anchor: { offset_start: 1 },
+};
+
+// @param {object} inputs
+// @returns {{date:string, received:object}|null} — date: вступление в силу.
+function resolveSudebnyPrikazEntryIntoForce(inputs) {
+  const received = resolveSudebnyPrikazReceivedDate(inputs);
+  if (received == null) return null;
+  const objection = computeDeadline(SUDEBNY_PRIKAZ_OBJECTION_STEP, received.date);
+  return { date: objection.deadline, received };
+}
+
+// Кассационная жалоба на судебный приказ (п. 1 ч. 2 ст. 377 ГПК РФ).
+export const SUDEBNY_PRIKAZ_CASSATION = {
+  id: 'sudebny_prikaz_cassation',
+  title: 'Кассационная жалоба на судебный приказ',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'sudebny_prikaz_entry_into_force', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления судебного приказа в законную силу ' +
+    '(ч. 1 ст. 376.1 ГПК РФ). Обжалуется сразу в суд кассационной инстанции, ' +
+    'минуя апелляцию: ГПК не предусматривает апелляционного обжалования ' +
+    'судебного приказа (п. 3 ПП ВС РФ от 22.06.2021 № 17). Дата вступления в ' +
+    'законную силу не вводится, а вычисляется: десять дней на возражения ' +
+    'должника (ст. 128 ГПК РФ) от даты получения копии приказа — истечение ' +
+    'этого срока без поданных возражений и есть момент вступления приказа в ' +
+    'законную силу.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'sudebny_prikaz_entry_into_force', offset_start: 1 },
+      norm: {
+        primary: 'п. 1 ч. 2 ст. 377, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'ст. 128 ГПК РФ; п. 32 ПП ВС РФ от 27.12.2016 № 62; п. 3 ПП ВС РФ от 22.06.2021 № 17',
+      },
+    },
+  ],
+};
+
+/**
+ * Кассационная жалоба на судебный приказ — с пошаговым выводом даты
+ * вступления в законную силу (см. комментарий перед SUDEBNY_PRIKAZ_CASSATION).
+ * @param {object} inputs
+ * @returns {object|null}
+ */
+function computeSudebnyPrikazCassation(inputs) {
+  const entryIntoForce = resolveSudebnyPrikazEntryIntoForce(inputs);
+  if (entryIntoForce == null) return null;
+  const result = computeSimpleTerm(SUDEBNY_PRIKAZ_CASSATION, entryIntoForce.date);
+  if (result == null) return null;
+  return {
+    ...result,
+    // Промежуточные данные — чтобы карточка показала пользователю, что дата
+    // вступления в силу вычислена, а не введена, и по какому пути.
+    entry_into_force: entryIntoForce.date,
+    entry_into_force_via_postal_storage: entryIntoForce.received.via_storage,
+    received_date: entryIntoForce.received.date,
+    postal_arrival_date: entryIntoForce.received.arrival ?? null,
+    postal_storage_start: entryIntoForce.received.storage_start ?? null,
+  };
+}
+
+// Кассационная жалоба на определение суда по делу об оспаривании решения
+// третейского суда (ч. 5 ст. 422 ГПК РФ).
+export const TRETEISKY_OSPARIVANIE_CASSATION = {
+  id: 'treteisky_osparivanie_cassation',
+  title: 'Кассационная жалоба на определение по делу об оспаривании решения третейского суда',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'treteisky_osparivanie_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления в законную силу определения суда по делу об ' +
+    'оспаривании решения третейского суда (ч. 1 ст. 376.1 ГПК РФ). Обжалуется ' +
+    'сразу в суд кассационной инстанции, минуя апелляцию (ч. 5 ст. 422, п. 3 ' +
+    'ПП ВС РФ от 22.06.2021 № 17).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'treteisky_osparivanie_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 5 ст. 422, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+      },
+    },
+  ],
+};
+
+// Кассационная жалоба на определение суда о выдаче исполнительного листа на
+// принудительное исполнение решения третейского суда или об отказе в выдаче
+// такого листа (ч. 5 ст. 427 ГПК РФ).
+export const TRETEISKY_ISPOLLIST_CASSATION = {
+  id: 'treteisky_ispollist_cassation',
+  title:
+    'Кассационная жалоба на определение о выдаче исполнительного листа на ' +
+    'принудительное исполнение решения третейского суда (или об отказе в выдаче)',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'treteisky_ispollist_entry_into_force_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня вступления в законную силу определения суда о выдаче ' +
+    'исполнительного листа на принудительное исполнение решения третейского ' +
+    'суда или об отказе в выдаче такого листа (ч. 1 ст. 376.1 ГПК РФ). ' +
+    'Обжалуется сразу в суд кассационной инстанции, минуя апелляцию (ч. 5 ' +
+    'ст. 427, п. 3 ПП ВС РФ от 22.06.2021 № 17).',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'treteisky_ispollist_entry_into_force_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 5 ст. 427, ч. 1 ст. 376.1 ГПК РФ',
+        calculation: DIRECT_CASSATION_CALC,
+        clarification: 'п. 3 ПП ВС РФ от 22.06.2021 № 17',
+      },
+    },
+  ],
+};
+
+// Заявление об отмене решения третейского суда (глава 46 ГПК, ст. 418) — это
+// ПЕРВОЕ обращение в суд, а не следующая стадия: не путать с
+// TRETEISKY_OSPARIVANIE_CASSATION выше — та кассационная жалоба подаётся на
+// ОПРЕДЕЛЕНИЕ суда, вынесенное по итогам рассмотрения ИМЕННО этого заявления
+// (ч. 5 ст. 422), то есть на следующей стадии того же процесса, и с другим
+// предметом (определение суда, а не решение третейского суда) и другой
+// инстанцией (кассационный суд общей юрисдикции, а не районный суд —
+// компетентный суд для самого заявления, ч. 2 ст. 418). Инвентаризация перед
+// добавлением узла: аналог по смыслу — выдача исполнительного листа на
+// принудительное исполнение решения третейского суда (глава 47, ст. 425) —
+// в модели пока не раскрыт как отдельный узел вообще (есть только
+// TRETEISKY_ISPOLLIST_CASSATION, кассация на определение суда по этому
+// вопросу), переиспользовать оттуда нечего.
+//
+// Норма даёт один и тот же трёхмесячный срок двум разным субъектам с разной
+// точкой отсчёта:
+//   (a) сторона третейского разбирательства (ч. 2 ст. 418) — от дня
+//       получения СТОРОНОЙ, обратившейся с заявлением, оспариваемого
+//       решения третейского суда;
+//   (b) лицо, не являющееся стороной третейского разбирательства, в
+//       отношении прав и обязанностей которого вынесено решение, а также
+//       прокурор в установленных случаях (ч. 3 ст. 418) — от дня, когда это
+//       лицо узнало или должно было узнать об оспариваемом решении.
+// Точка отсчёта (b) субъективна — тот же паттерн ввода, что и у
+// FOREIGN_JUDGMENT_RECOGNITION_OBJECTION выше (когда узнало заинтересованное
+// лицо, калькулятор вычислить не может, это чистый input). Это один и тот же
+// срок с двумя альтернативными якорями, а не два разных срока, — поэтому узел
+// один, а не два: выбор варианта на UI-уровне (радио), в модели — два поля
+// ввода, из которых используется ровно одно. Приоритет между ними — по
+// образцу resolveSudebnyPrikazReceivedDate выше (там приоритет решён в пользу
+// более прямого/узкого факта, дата получения, над более общим/расчётным):
+// здесь так же вариант (a), дата получения стороной, приоритетнее варианта
+// (b), даты, когда узнало лицо, не являющееся стороной, если заполнены оба
+// поля.
+//
+// Восстановление: сама ст. 418 восстановление не упоминает, но применяется
+// общее правило ч. 1 ст. 112 ГПК РФ — прямого исключения для этого срока в
+// кодексе нет (тот же паттерн, что у FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION/
+// FOREIGN_JUDGMENT_RECOGNITION_OBJECTION выше). Годичный потолок ч. 7 ст. 112
+// СЮДА НЕ ПОДКЛЮЧЁН и не должен быть: это не кассационная и не надзорная
+// жалоба, а первичное заявление в суд первой инстанции (районный суд) — узел
+// не входит в CASSATION_SUPERVISORY_RESTORATION_NODE_IDS ниже.
+//
+// ОТКРЫТЫЙ ВОПРОС (не решается в рамках этой задачи, см. отчёт): норма
+// (ч. 2 ст. 418) оговаривает «если иное не предусмотрено международным
+// договором Российской Федерации, федеральным законом» — сам трёхмесячный
+// срок может быть изменён специальным законом или международным договором
+// для отдельных категорий третейских решений. Модель этого не учитывает и
+// всегда считает общий трёхмесячный срок.
+//
+// @param {object} inputs
+// @returns {{date:string, applicant:'party'|'non_party'}|null}
+function resolveArbitrationAwardSetasideAnchor(inputs) {
+  const received = toISO(inputs?.arbitration_award_setaside_received_date);
+  if (received != null) return { date: received, applicant: 'party' };
+  const aware = toISO(inputs?.arbitration_award_setaside_aware_date);
+  if (aware == null) return null;
+  return { date: aware, applicant: 'non_party' };
+}
+
+export const COURT_ARBITRATION_AWARD_SETASIDE = {
+  id: 'arbitration_award_setaside',
+  title: 'Заявление об отмене решения третейского суда',
+  duration: { value: 3, unit: 'month' },
+  anchor: { event: 'arbitration_award_setaside_anchor_date', offset_start: 1 },
+  weekend_shift: true,
+  ics: true,
+  logic:
+    'Три месяца со дня получения стороной третейского разбирательства, ' +
+    'обратившейся с заявлением, оспариваемого решения третейского суда ' +
+    '(ч. 2 ст. 418 ГПК РФ) — либо, для лица, не являющегося стороной ' +
+    'третейского разбирательства, в отношении прав и обязанностей которого ' +
+    'вынесено решение, а также для прокурора в установленных случаях, — со ' +
+    'дня, когда это лицо узнало или должно было узнать об оспариваемом ' +
+    'решении третейского суда (ч. 3 ст. 418 ГПК РФ). Подаётся в районный суд, ' +
+    'на территории которого принято решение третейского суда. Восстановление ' +
+    'пропущенного срока нормой прямо не упомянуто, но применяется общее ' +
+    'правило ч. 1 ст. 112 ГПК РФ — исключения для этого случая в законе нет.',
+  midnight_rule: 'ч. 3 ст. 108 ГПК РФ — сдача на почту до 24:00 последнего дня',
+  restoration_norm: 'ст. 112 ГПК РФ',
+  norm_versions: [
+    {
+      id: 'current',
+      from: null,
+      to: null,
+      anchor: { event: 'arbitration_award_setaside_anchor_date', offset_start: 1 },
+      norm: {
+        primary: 'ч. 2, 3 ст. 418 ГПК РФ',
+        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+      },
+    },
+  ],
+};
+
+/**
+ * Заявление об отмене решения третейского суда — анкер зависит от того,
+ * какое из двух полей заполнено (см. resolveArbitrationAwardSetasideAnchor и
+ * комментарий перед COURT_ARBITRATION_AWARD_SETASIDE выше).
+ * @param {object} inputs
+ * @returns {object|null}
+ */
+function computeArbitrationAwardSetaside(inputs) {
+  const anchor = resolveArbitrationAwardSetasideAnchor(inputs);
+  if (anchor == null) return null;
+  const result = computeSimpleTerm(COURT_ARBITRATION_AWARD_SETASIDE, anchor.date);
+  if (result == null) return null;
+  return { ...result, applicant_variant: anchor.applicant };
+}
 
 // Пересмотр по вновь открывшимся/новым обстоятельствам (глава 42 ГПК,
 // ст. 392–395 — §11.3 SPEC.md). Семь оснований: шесть без особых развилок —
@@ -2641,12 +3267,28 @@ export function computeMirovoy(inputs, referenceDate = null) {
     inputs.enforcement_interruptions,
   );
 
+  // mirovoy_cassation — узел категории (a): годичный потолок восстановления
+  // (ч. 7 ст. 112). Дата вступления в силу — entry.date (resolveMirovoyEntry),
+  // а НЕ якорь самого срока: если постановление обжаловалось в апелляции,
+  // якорь у mirovoy_cassation — дата изготовления мотивированного
+  // апелляционного определения района (см. MIROVOY_CASSATION_ANCHORS), а
+  // вступает в силу постановление раньше — со дня ПРИНЯТИЯ этого определения
+  // (entry.date), как и в общей цепочке (cassation_ksoyu выше).
+  const mirovoyCassation = computeMirovoyCassation(inputs, appeal, toISO(referenceDate));
+  if (mirovoyCassation) {
+    const cap = restorationOneYearCapResult(
+      entry.date,
+      inputs.mirovoy_cassation_restoration_circumstance_date,
+    );
+    if (cap) mirovoyCassation.restoration_one_year_cap = cap;
+  }
+
   return {
     attendance,
     reasoned_request: request,
     reasoned_making: making,
     appeal,
-    cassation: computeMirovoyCassation(inputs, appeal, toISO(referenceDate)),
+    cassation: mirovoyCassation,
     entry_into_force: { norm: MIROVOY_ENTRY_NORM, ...entry },
     enforcement,
   };
@@ -3032,6 +3674,31 @@ export function computeChain(inputs, options = {}) {
   const entry = resolveEntryIntoForce(inputs, appeal.deadline, options.today);
   const cassation = computeCassation(inputs, entry, toISO(options.today));
   const cassationVs = computeVsCassation(inputs, toISO(options.today));
+  // Годичный потолок восстановления (ч. 7 ст. 112) — cassation_ksoyu и
+  // cassation_vs категории (a). Дата вступления в силу для cassation_ksoyu —
+  // entry.date (решение суда первой инстанции либо, если обжаловалось,
+  // апелляционное определение — см. resolveEntryIntoForce), а НЕ якорь самого
+  // срока: с 01.09.2024 (ФЗ № 135-ФЗ) он при обжаловании ссылается на дату
+  // изготовления мотивированного апелляционного определения, а не на
+  // вступление в силу. Для cassation_vs обжалуемый акт — определение КСОЮ, а
+  // оно, как и определение Судебной коллегии ВС (см. SUPERVISION), вступает в
+  // силу со дня вынесения (ksoyu_ruling_date), а не со дня изготовления
+  // мотивированного определения (ksoyu_ruling_reasoned_date, используемого
+  // как якорь срока в действующей редакции ст. 390.3).
+  if (cassation) {
+    const cap = restorationOneYearCapResult(
+      entry.date,
+      inputs.cassation_ksoyu_restoration_circumstance_date,
+    );
+    if (cap) cassation.restoration_one_year_cap = cap;
+  }
+  if (cassationVs) {
+    const cap = restorationOneYearCapResult(
+      inputs.ksoyu_ruling_date,
+      inputs.cassation_vs_restoration_circumstance_date,
+    );
+    if (cap) cassationVs.restoration_one_year_cap = cap;
+  }
   const enforcement = computeEnforcement(entry, ENFORCEMENT_PRESENTATION, inputs.enforcement_interruptions);
 
   return {
@@ -3056,3 +3723,50 @@ export function computeChain(inputs, options = {}) {
     mirovoy: computeMirovoy(inputs, toISO(options.today)),
   };
 }
+
+// Узлы кассационного/надзорного обжалования, на которые распространяется
+// годичный потолок восстановления пропущенного срока (ч. 7 ст. 112 ГПК РФ в
+// редакции ФЗ от 01.04.2025 № 49-ФЗ; до неё — абз. 2 ч. 6 ст. 112 в той же по
+// смыслу редакции). Норма касается ТОЛЬКО кассационных и надзорных жалоб,
+// представлений — апелляционные узлы (APPEAL_GENERAL, CHILD_RETURN_APPEAL,
+// ADOPTION_APPEAL, SIMPLIFIED_APPEAL, DEFAULT_JUDGMENT_APPEAL,
+// FOREIGN_STATE_DEFAULT_JUDGMENT_APPEAL, MIROVOY_APPEAL) в этот список не
+// входят, как и узлы, ссылающиеся на ст. 112 ГПК РФ, но не являющиеся ни
+// кассационной/надзорной, ни апелляционной жалобой (замечания на протокол,
+// частная жалоба на определение суда первой инстанции, предъявление
+// исполнительного листа/приказа к исполнению, заявления о мотивированном
+// решении, пересмотр по новым обстоятельствам — глава 42 ГПК живёт по своей
+// норме, ч. 2 ст. 394).
+//
+// ОТКРЫТЫЙ ВОПРОС, НЕ РЕШЁННЫЙ в рамках этой задачи (требует решения
+// владельца продукта, а не разработчика): CASSATION_RETURN_RULING_APPEAL
+// (обжалование определения о возврате кассационной жалобы, ч. 1 ст. 379.2) и
+// ARBITRATION_COMPETENCE_APPEAL (отмена постановления третейского суда о
+// компетенции, ч. 2 ст. 422.1) в список НЕ включены, но это не решённый
+// вопрос, а открытый — текст ч. 7 ст. 112 не даёт однозначного ответа, какая
+// это категория. Аргументы за то, чтобы годичный потолок к ним применялся:
+// оба обжалуются «в порядке и в срок для кассационного обжалования» и
+// фактически являются частью кассационной стадии дела — если правило вообще
+// защищает интерес в определённости после истечения года, этот интерес
+// одинаково присутствует и здесь. Аргументы против: буквально ни один из
+// двух не есть «кассационная или надзорная жалоба» на итоговое судебное
+// постановление по делу — это обжалование ПРОЦЕССУАЛЬНОГО определения самой
+// кассационной инстанции (в первом случае) либо предварительного постановления
+// третейского суда о компетенции (во втором), а исключительный характер
+// восстановления (формулировка «только в исключительных случаях») по общему
+// принципу токования исключений не должен расширяться на случаи, прямо не
+// названные в норме. До решения этого вопроса оба узла НЕ подключены к
+// проверке — годичный потолок к ним не применяется.
+//
+// Список собирается из id самих term-констант, а не хардкодится строками:
+// переименование id узла ломает сборку, а не расходится с ней молча.
+export const CASSATION_SUPERVISORY_RESTORATION_NODE_IDS = [
+  CASSATION_KSOYU.id,
+  CASSATION_VS.id,
+  SUPERVISION.id,
+  SETTLEMENT_APPROVAL_CASSATION_APPEAL.id,
+  SUDEBNY_PRIKAZ_CASSATION.id,
+  TRETEISKY_OSPARIVANIE_CASSATION.id,
+  TRETEISKY_ISPOLLIST_CASSATION.id,
+  MIROVOY_CASSATION.id,
+];

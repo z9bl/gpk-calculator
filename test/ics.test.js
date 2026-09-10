@@ -347,6 +347,16 @@ const ALL_BRANCHES_INPUTS = {
   court_order_issued_date: '2023-04-12',
   // периодические платежи (независимый трек, ч. 4 ст. 21 ФЗ № 229-ФЗ)
   periodic_payment_period_end_date: '2023-04-12',
+  // признание и исполнение решений иностранных судов (глава 45 ГПК): два
+  // независимых узла — предъявление к принудительному исполнению (ч. 3
+  // ст. 409) и возражения относительно признания (ч. 2 ст. 413)
+  foreign_judgment_entry_into_force_date: '2023-04-12',
+  foreign_judgment_recognition_aware_date: '2025-07-08',
+  // заявление об отмене решения третейского суда (глава 46 ГПК, ст. 418):
+  // независимый узел, якорь — дата получения решения стороной (приоритетный
+  // вариант (a); вариант (b), aware_date, здесь не нужен — см. приоритет в
+  // resolveArbitrationAwardSetasideAnchor)
+  arbitration_award_setaside_received_date: '2025-07-08',
   // возвращение ребёнка / права доступа (глава 22.2 ГПК): апелляция от решения
   // в окончательной форме (ч. 1 ст. 244.17) и частная жалоба от определения
   // суда первой инстанции (ч. 1 ст. 244.18) — два независимых узла
@@ -361,6 +371,12 @@ const ALL_BRANCHES_INPUTS = {
   // обжалование определения об утверждении мирового соглашения (любая стадия)
   // (ч. 11 ст. 153.10): независимый узел, якорь — дата вынесения определения
   settlement_approval_ruling_date: '2025-07-08',
+  // прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
+  // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
+  // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
+  sudebny_prikaz_received_date: '2025-07-08',
+  treteisky_osparivanie_entry_into_force_date: '2025-07-08',
+  treteisky_ispollist_entry_into_force_date: '2025-07-08',
   // заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
   // своя ветка, свои поля — заявление об отмене 2 месяца, апелляция 1/2 месяца
   foreign_state_default_judgment_service_date: '2025-07-05',
@@ -568,6 +584,97 @@ test('утверждение мирового соглашения: тот же 
   assert.equal(t.deadline, '2027-10-01');
   assert.equal(t.ics, true);
   assert.deepEqual(t.duration, { value: 1, unit: 'month' });
+});
+
+test('судебный приказ (кассация) уходит в .ics (3 месяца → напоминания за 3 и 14 дней)', () => {
+  // sudebny_prikaz_received_date, не entry_into_force_date напрямую: дата
+  // вступления в силу вычисляется (01.09.2027 + 10 рабочих дней = 15.09.2027,
+  // см. test/chain.test.js), .ics-экспорт от этого не должен ломаться.
+  const view = buildView(
+    { sudebny_prikaz_received_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('судебный приказ'));
+  assert.ok(t, 'срок кассационного обжалования судебного приказа в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-15');
+  assert.match(t.norm, /ч\. 1 ст\. 376\.1/);
+
+  const ics = buildICS([t], { referenceDate: '2026-07-26', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${t.deadline.replace(/-/g, '')}`));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2); // за 3 и за 14 дней
+});
+
+test('судебный приказ (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      sudebny_prikaz_received_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('судебный приказ'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-15');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+});
+
+test('оспаривание решения третейского суда (кассация) уходит в .ics', () => {
+  const view = buildView(
+    { treteisky_osparivanie_entry_into_force_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('оспаривании решения третейского суда'));
+  assert.ok(t, 'срок кассационного обжалования в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  assert.match(t.norm, /ч\. 5 ст\. 422/);
+});
+
+test('оспаривание решения третейского суда (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      treteisky_osparivanie_entry_into_force_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) =>
+    x.title.includes('оспаривании решения третейского суда'),
+  );
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.ics, true);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация) уходит в .ics', () => {
+  const view = buildView(
+    { treteisky_ispollist_entry_into_force_date: '2027-09-01' },
+    { today: '2026-07-26' },
+  );
+  const terms = icsTermsFromView(view);
+  const t = terms.find((x) => x.title.includes('исполнительного листа на'));
+  assert.ok(t, 'срок кассационного обжалования в списке экспорта');
+  assert.deepEqual(t.duration, { value: 3, unit: 'month' });
+  assert.equal(t.deadline, '2027-12-01');
+  assert.match(t.norm, /ч\. 5 ст\. 427/);
+});
+
+test('выдача исполнительного листа на решение третейского суда (кассация): тот же срок и через icsTermsFromChain', () => {
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      treteisky_ispollist_entry_into_force_date: '2027-09-01',
+    },
+    { today: '2026-07-26' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('исполнительного листа на'));
+  assert.ok(t, 'узел не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2027-12-01');
+  assert.equal(t.ics, true);
 });
 
 test('заочное (иностранное государство): заявление об отмене и апелляция уходят в .ics', () => {

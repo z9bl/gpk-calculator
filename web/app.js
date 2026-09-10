@@ -112,12 +112,44 @@ const INPUT_HINTS = {
     'Один месяц со дня получения (не вынесения!) постановления третейского ' +
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
+  sudebny_prikaz_received_date:
+    'От этой даты — 10 дней на возражения должника (ст. 128); их истечение без ' +
+    'поданных возражений — момент вступления приказа в законную силу, от него ' +
+    'считаются три месяца на кассацию (ч. 1 ст. 376.1)',
+  sudebny_prikaz_postal_arrival_date:
+    'Срок хранения на почте — 7 календарных дней со следующего рабочего дня ' +
+    'после прибытия (п. 32 ПП ВС РФ от 27.12.2016 № 62); днём получения ' +
+    'копии приказа считается день истечения этого срока',
+  treteisky_osparivanie_entry_into_force_date:
+    'Три месяца на кассационное обжалование (ч. 1 ст. 376.1) — минуя ' +
+    'апелляцию, определение по такому делу ею не обжалуется (ч. 5 ст. 422, ' +
+    'п. 3 ПП ВС РФ от 22.06.2021 № 17)',
+  treteisky_ispollist_entry_into_force_date:
+    'Три месяца на кассационное обжалование (ч. 1 ст. 376.1) — минуя ' +
+    'апелляцию, определение по такому делу ею не обжалуется (ч. 5 ст. 427, ' +
+    'п. 3 ПП ВС РФ от 22.06.2021 № 17)',
   settlement_approval_ruling_date:
     'Один месяц на кассационное обжалование (ч. 11 ст. 153.10) — минуя ' +
     'апелляцию, определение об утверждении мирового соглашения ею не ' +
     'обжалуется. Срок суда на рассмотрение вопроса об утверждении (месяц со ' +
     'дня поступления заявления, ч. 4 ст. 153.10) в модель не входит — это ' +
     'не срок участника',
+  foreign_judgment_entry_into_force_date:
+    'Три года на предъявление к принудительному исполнению (ч. 3 ст. 409 ГПК ' +
+    'РФ) — относится к решениям, требующим принудительного исполнения ' +
+    '(ст. 409–412 ГПК), не к признанию решений без него (ст. 413–415 ГПК)',
+  foreign_judgment_recognition_aware_date:
+    'Один месяц со дня, когда заинтересованному лицу стало известно о решении ' +
+    '(ч. 2 ст. 413 ГПК РФ) — не со дня вынесения решения и не со дня вступления ' +
+    'его в силу; относится к решениям, не требующим принудительного исполнения',
+  arbitration_award_setaside_received_date:
+    'Три месяца со дня получения этой даты (ч. 2 ст. 418 ГПК РФ) — для стороны ' +
+    'третейского разбирательства, обратившейся с заявлением',
+  arbitration_award_setaside_aware_date:
+    'Три месяца со дня, когда лицо узнало или должно было узнать о решении ' +
+    '(ч. 3 ст. 418 ГПК РФ) — для лица, не являющегося стороной третейского ' +
+    'разбирательства, в отношении прав и обязанностей которого оно вынесено, ' +
+    'а также для прокурора в установленных случаях',
   foreign_state_default_judgment_service_date:
     'Дело в отсутствие представителя иностранного государства рассматривается ' +
     'по правилам главы 22 ГПК РФ (заочное производство), но с другими сроками ' +
@@ -145,6 +177,30 @@ const INPUT_HINTS = {
   review_last_act_entry_into_force_date:
     'Шестимесячный потолок (ч. 3 ст. 394 ГПК РФ, первое предложение): срок не может быть ' +
     'позднее шести месяцев с этой даты, даже если трёхмесячный компонент истекает позже',
+  cassation_ksoyu_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  cassation_vs_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  supervision_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  settlement_approval_cassation_appeal_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  sudebny_prikaz_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  treteisky_osparivanie_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  treteisky_ispollist_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
+  mirovoy_cassation_restoration_circumstance_date:
+    'Заполните, только если пропущенный срок нужно восстановить: покажем, укладывается ли ' +
+    'обстоятельство в годичный потолок ч. 7 ст. 112 ГПК РФ',
 };
 
 // Подписи полей для истёкшего срока. Пока срок идёт, речь о возможной подаче;
@@ -414,6 +470,10 @@ function renderTermCard(card, opts = {}) {
 
   if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
 
+  if (card.restoration_one_year_cap) {
+    c.appendChild(renderRestorationOneYearCap(card.restoration_one_year_cap));
+  }
+
   if (card.alternative) c.appendChild(renderAlternative(card));
 
   // Практика ВС (vs_practice_change, п. 5 ч. 4 ст. 392): обе промежуточные
@@ -620,6 +680,42 @@ function renderExhaustionWarning(w) {
   if (w.calculation_note) rows.push(el('div', 'hint', w.calculation_note));
   rows.push(el('div', 'hint', w.clarification ? `${w.norm} · ${w.clarification}` : w.norm));
   return collapsedWarning('Требуется исчерпание способов обжалования', rows);
+}
+
+// Годичный потолок восстановления пропущенного кассационного/надзорного
+// срока (ч. 7 ст. 112 ГПК РФ): показывается, только когда пользователь ввёл
+// дату обстоятельства — уважительной причины пропуска (card.restoration_one_year_cap,
+// см. restorationOneYearCapResult в src/chain.js). За пределами потолка —
+// не просто предупреждение, а прямое указание на законодательный запрет
+// восстановления, поэтому не сворачиваем в <details> и используем класс
+// .miss, как у уже пропущенного срока — это тоже блокирующее обстоятельство,
+// а не то, что можно свернуть и не заметить.
+function renderRestorationOneYearCap(cap) {
+  const box = el('div');
+  if (cap.within_cap) {
+    box.appendChild(
+      el(
+        'div',
+        'hint',
+        `Обстоятельство (${isoToRu(cap.circumstance_date)}) укладывается в годичный ` +
+          `потолок восстановления — не позднее ${isoToRu(cap.cap_deadline)} (${cap.norm}). ` +
+          'Это не гарантирует восстановление: суд ещё должен признать причину ' +
+          'пропуска уважительной.',
+      ),
+    );
+  } else {
+    box.appendChild(
+      el(
+        'div',
+        'miss',
+        `Обстоятельство (${isoToRu(cap.circumstance_date)}) — позже годичного потолка ` +
+          `восстановления, истёкшего ${isoToRu(cap.cap_deadline)}. По ${cap.norm} в этом ` +
+          'случае восстановление пропущенного срока прямо исключено законом, а не ' +
+          'оставлено на усмотрение суда.',
+      ),
+    );
+  }
+  return box;
 }
 
 function renderBoundaryWarning(bw) {
@@ -1444,6 +1540,139 @@ function renderCheckboxField(id, current) {
   return wrap;
 }
 
+// Радиогруппа из нескольких взаимоисключающих вариантов — как renderChoiceField
+// (select), но для случая, когда вариантов мало и выбор удобнее видеть сразу
+// (не открывать выпадающий список). У выбора, в отличие от чекбокса и select,
+// нет собственного поля в inputs — вариант приходит из onChange отдельно.
+function renderRadioGroup(name, options, current, onChange) {
+  const wrap = el('div', 'field radio-field');
+  for (const opt of options) {
+    const lab = el('label', 'radio-option');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = `in-${name}`;
+    input.value = opt.value;
+    input.checked = opt.value === current;
+    input.addEventListener('change', () => {
+      if (input.checked) onChange(opt.value);
+    });
+    lab.appendChild(input);
+    lab.appendChild(el('span', null, opt.label));
+    wrap.appendChild(lab);
+  }
+  return wrap;
+}
+
+// Судебный приказ (кассация, ст. 128 ГПК + п. 32 ПП ВС РФ от 27.12.2016
+// № 62): дата вступления в законную силу вычисляется от даты ПОЛУЧЕНИЯ копии
+// приказа должником, а она известна пользователю одним из двух способов —
+// выбор варианта не идёт в inputs как отдельная дата, это чисто интерфейсное
+// переключение того, какое из двух полей ввода показано (см.
+// resolveSudebnyPrikazReceivedDate в chain.js — там же и приоритет
+// received_date над postal_arrival_date, если почему-то заполнены оба).
+const SUDEBNY_PRIKAZ_MODE_RECEIVED = 'received';
+const SUDEBNY_PRIKAZ_MODE_POSTAL = 'postal';
+
+function sudebnyPrikazMode() {
+  if (state.sudebnyPrikazMode) return state.sudebnyPrikazMode;
+  return state.inputs.sudebny_prikaz_postal_arrival_date != null
+    ? SUDEBNY_PRIKAZ_MODE_POSTAL
+    : SUDEBNY_PRIKAZ_MODE_RECEIVED;
+}
+
+function renderSudebnyPrikazFields(box) {
+  const mode = sudebnyPrikazMode();
+  box.appendChild(
+    renderRadioGroup(
+      'sudebny_prikaz_mode',
+      [
+        { value: SUDEBNY_PRIKAZ_MODE_RECEIVED, label: 'Известна дата получения копии приказа' },
+        {
+          value: SUDEBNY_PRIKAZ_MODE_POSTAL,
+          label: 'Известна только дата прибытия отправления на почту',
+        },
+      ],
+      mode,
+      (value) => {
+        state.sudebnyPrikazMode = value;
+        // Поле неактивного варианта очищаем — иначе после переключения назад
+        // и обратно расчёт молча использует давно введённую дату по варианту,
+        // который сейчас не выбран.
+        if (value === SUDEBNY_PRIKAZ_MODE_RECEIVED) {
+          delete state.inputs.sudebny_prikaz_postal_arrival_date;
+        } else {
+          delete state.inputs.sudebny_prikaz_received_date;
+        }
+        render();
+      },
+    ),
+  );
+  box.appendChild(
+    inviteFieldOrPointer(
+      mode === SUDEBNY_PRIKAZ_MODE_POSTAL
+        ? 'sudebny_prikaz_postal_arrival_date'
+        : 'sudebny_prikaz_received_date',
+    ),
+  );
+}
+
+// Заявление об отмене решения третейского суда (глава 46 ГПК, ст. 418): один
+// и тот же трёхмесячный срок у двух разных субъектов заявления с разной
+// точкой отсчёта — выбор варианта не идёт в inputs отдельным полем, это чисто
+// интерфейсное переключение того, какое из двух полей ввода показано (см.
+// resolveArbitrationAwardSetasideAnchor в chain.js — там же и приоритет
+// received_date над aware_date, если заполнены оба), по тому же образцу, что
+// и renderSudebnyPrikazFields выше.
+const ARBITRATION_AWARD_SETASIDE_MODE_PARTY = 'party';
+const ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY = 'non_party';
+
+function arbitrationAwardSetasideMode() {
+  if (state.arbitrationAwardSetasideMode) return state.arbitrationAwardSetasideMode;
+  return state.inputs.arbitration_award_setaside_aware_date != null
+    ? ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY
+    : ARBITRATION_AWARD_SETASIDE_MODE_PARTY;
+}
+
+function renderArbitrationAwardSetasideFields(box) {
+  const mode = arbitrationAwardSetasideMode();
+  box.appendChild(
+    renderRadioGroup(
+      'arbitration_award_setaside_mode',
+      [
+        {
+          value: ARBITRATION_AWARD_SETASIDE_MODE_PARTY,
+          label: 'Я сторона третейского разбирательства',
+        },
+        {
+          value: ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY,
+          label:
+            'Я не являюсь стороной, но решение касается моих прав, или я прокурор',
+        },
+      ],
+      mode,
+      (value) => {
+        state.arbitrationAwardSetasideMode = value;
+        // Поле неактивного варианта очищаем — иначе после переключения назад
+        // и обратно расчёт молча использует давно введённую дату по варианту,
+        // который сейчас не выбран.
+        if (value === ARBITRATION_AWARD_SETASIDE_MODE_PARTY) {
+          delete state.inputs.arbitration_award_setaside_aware_date;
+        } else {
+          delete state.inputs.arbitration_award_setaside_received_date;
+        }
+        render();
+      },
+    ),
+  );
+  box.appendChild(
+    inviteFieldOrPointer(
+      mode === ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY
+        ? 'arbitration_award_setaside_aware_date'
+        : 'arbitration_award_setaside_received_date',
+    ),
+  );
+}
+
 // Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
 // маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
 const REDACTION_FIELD = {
@@ -1619,7 +1848,24 @@ function renderSituationFields(situation, primaryFilled) {
           'вынесения (ч. 2 ст. 422.1 ГПК), обжалование определения об утверждении ' +
           'мирового соглашения, заключаемого в процессе исполнения судебного акта, — ' +
           'месяц со дня его вынесения, сразу в кассацию, минуя апелляцию ' +
-          '(ч. 11 ст. 153.10 ГПК). Заполните нужную дату.',
+          '(ч. 11 ст. 153.10 ГПК). Кассационная жалоба на судебный приказ, на определения ' +
+          'по делам об оспаривании решений третейских судов и о выдаче исполнительного ' +
+          'листа на их принудительное исполнение — три месяца со дня вступления ' +
+          'обжалуемого акта в законную силу (ч. 1 ст. 376.1 ГПК), тоже минуя апелляцию; у ' +
+          'судебного приказа эта дата не вводится, а вычисляется от даты получения его ' +
+          'копии должником. Признание и исполнение решений иностранных судов (глава 45 ' +
+          'ГПК) — два отдельных срока: предъявление решения к принудительному ' +
+          'исполнению — три года со дня вступления решения в законную силу (ч. 3 ст. 409 ' +
+          'ГПК), и возражения относительно признания решения, не требующего ' +
+          'принудительного исполнения, — один месяц со дня, когда заинтересованное лицо ' +
+          'о решении узнало (ч. 2 ст. 413 ГПК); второй срок распространяется также на ' +
+          'решения иностранных третейских судов (арбитражей) — ст. 416 ГПК. Заявление об ' +
+          'отмене решения третейского суда (глава 46 ГПК) — три месяца, но точка отсчёта ' +
+          'зависит от субъекта: со дня получения решения стороной третейского ' +
+          'разбирательства (ч. 2 ст. 418) либо со дня, когда об оспариваемом решении ' +
+          'узнало или должно было узнать лицо, не являющееся стороной, в отношении прав ' +
+          'и обязанностей которого оно вынесено, либо прокурор (ч. 3 ст. 418) — выберите ' +
+          'вариант переключателем. Заполните нужную дату.',
       ),
     );
   }
@@ -1662,7 +1908,21 @@ function renderSituationFields(situation, primaryFilled) {
     );
   }
   const box = el('div', 'invite');
-  if (situation.id === 'periodic_payments') {
+  if (situation.id === 'separate') {
+    for (const id of situation.fields) {
+      if (id === 'sudebny_prikaz_received_date') {
+        renderSudebnyPrikazFields(box);
+        continue;
+      }
+      if (id === 'sudebny_prikaz_postal_arrival_date') continue; // показано выше вместе с received_date
+      if (id === 'arbitration_award_setaside_received_date') {
+        renderArbitrationAwardSetasideFields(box);
+        continue;
+      }
+      if (id === 'arbitration_award_setaside_aware_date') continue; // показано выше вместе с received_date
+      box.appendChild(inviteFieldOrPointer(id));
+    }
+  } else if (situation.id === 'periodic_payments') {
     // Дата окончания периода и чекбокс бессрочности — взаимоисключающие: при
     // бессрочном взыскании дедлайна не существует в принципе, дата ему не
     // нужна (см. computePeriodicPayments в chain.js), поэтому поле даты

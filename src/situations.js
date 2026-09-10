@@ -23,7 +23,17 @@ export const SITUATIONS = [
     // Основное поле ветви — статическое, в разметке страницы. Хранится по id:
     // от его заполненности зависит показ блока уточняющих дат.
     primary_field: 'reasoned_decision_date',
-    fields: ['vs_ruling_date'],
+    // *_restoration_circumstance_date — необязательные поля годичного
+    // потолка восстановления (ч. 7 ст. 112 ГПК РФ, см.
+    // CASSATION_SUPERVISORY_RESTORATION_NODE_IDS в chain.js): заполняются,
+    // только если пользователь спрашивает про восстановление пропущенного
+    // кассационного/надзорного срока, а не как часть обычного расчёта.
+    fields: [
+      'vs_ruling_date',
+      'cassation_ksoyu_restoration_circumstance_date',
+      'cassation_vs_restoration_circumstance_date',
+      'supervision_restoration_circumstance_date',
+    ],
     nodes: [
       'appeal_general',
       'entry_into_force',
@@ -36,7 +46,10 @@ export const SITUATIONS = [
   {
     id: 'mirovoy',
     label: 'Решение мирового судьи',
-    fields: ['mirovoy_resolution_date'],
+    // mirovoy_cassation_restoration_circumstance_date — годичный потолок
+    // восстановления (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви
+    // 'general' выше.
+    fields: ['mirovoy_resolution_date', 'mirovoy_cassation_restoration_circumstance_date'],
     nodes: [
       'mirovoy_reasoned_request',
       'mirovoy_reasoned_making',
@@ -154,16 +167,61 @@ export const SITUATIONS = [
     // соглашения, заключаемого в процессе исполнения судебного акта
     // (ч. 11 ст. 153.10) — по той же логике: акт, для которого апелляция не
     // предусмотрена, обжалуется сразу в кассацию, независимо от категории
-    // дела. Единицы сроков в пуле разные: замечания на протокол и частная
-    // жалоба — рабочие дни, возврат кассационной жалобы, отмена постановления
-    // третейского суда и обжалование определения об утверждении мирового
-    // соглашения — месяц (ч. 1, 2 ст. 108).
+    // дела. Той же логике подчинены ещё три узла: кассация на судебный приказ
+    // (п. 1 ч. 2 ст. 377), на определение по делу об оспаривании решения
+    // третейского суда (ч. 5 ст. 422) и на определение о выдаче/отказе в
+    // выдаче исполнительного листа на принудительное исполнение решения
+    // третейского суда (ч. 5 ст. 427) — все три перечислены одним списком с
+    // определением об утверждении мирового соглашения в п. 3 ПП ВС РФ от
+    // 22.06.2021 № 17, но в отличие от него считаются по общему трёхмесячному
+    // сроку кассации (ч. 1 ст. 376.1), а не по своей норме срока. Единицы
+    // сроков в пуле разные: замечания на протокол и частная жалоба — рабочие
+    // дни, все остальные узлы этого пула — месяц или три месяца (ч. 1, 2
+    // ст. 108).
+    // У судебного приказа дата вступления в силу не вводится, а вычисляется
+    // (п. 32 ПП ВС РФ от 27.12.2016 № 62 + ст. 128 ГПК РФ, см. комментарий
+    // перед SUDEBNY_PRIKAZ_CASSATION в chain.js): два взаимоисключающих поля,
+    // как у periodic_payment_indefinite — sudebny_prikaz_received_date (дата
+    // получена напрямую) имеет приоритет, sudebny_prikaz_postal_arrival_date
+    // (известна только дата прибытия на почту) используется, только если
+    // первое не заполнено.
+    // *_restoration_circumstance_date — годичный потолок восстановления
+    // (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви 'general' выше;
+    // здесь — у трёх узлов прямой кассации пула, для которых предусмотрен
+    // (settlement_approval_cassation_appeal, sudebny_prikaz_cassation,
+    // treteisky_osparivanie_cassation, treteisky_ispollist_cassation).
+    // foreign_judgment_entry_into_force_date /
+    // foreign_judgment_recognition_aware_date — глава 45 ГПК (признание и
+    // исполнение решений иностранных судов): два независимых узла, каждый со
+    // своей датой, годичный потолок к ним не подключён (см. комментарий в
+    // chain.js перед FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION) — поэтому
+    // у них нет отдельного поля *_restoration_circumstance_date.
+    // arbitration_award_setaside_received_date /
+    // arbitration_award_setaside_aware_date — глава 46 ГПК (заявление об
+    // отмене решения третейского суда, ст. 418): один узел с двумя
+    // взаимоисключающими полями, как у sudebny_prikaz_* выше — приоритет за
+    // received_date (вариант (a), сторона третейского разбирательства), если
+    // заполнены оба (см. resolveArbitrationAwardSetasideAnchor в chain.js).
+    // Годичный потолок к узлу не подключён по той же причине, что и у главы
+    // 45, — своего поля *_restoration_circumstance_date тоже нет.
     fields: [
       'protocol_signed_date',
       'interim_ruling_date',
       'cassation_return_ruling_date',
       'arbitration_competence_ruling_received_date',
       'settlement_approval_ruling_date',
+      'settlement_approval_cassation_appeal_restoration_circumstance_date',
+      'sudebny_prikaz_received_date',
+      'sudebny_prikaz_postal_arrival_date',
+      'sudebny_prikaz_cassation_restoration_circumstance_date',
+      'treteisky_osparivanie_entry_into_force_date',
+      'treteisky_osparivanie_cassation_restoration_circumstance_date',
+      'treteisky_ispollist_entry_into_force_date',
+      'treteisky_ispollist_cassation_restoration_circumstance_date',
+      'foreign_judgment_entry_into_force_date',
+      'foreign_judgment_recognition_aware_date',
+      'arbitration_award_setaside_received_date',
+      'arbitration_award_setaside_aware_date',
     ],
     nodes: [
       'protocol_remarks',
@@ -172,6 +230,12 @@ export const SITUATIONS = [
       'cassation_return_ruling_appeal',
       'arbitration_competence_appeal',
       'settlement_approval_cassation_appeal',
+      'sudebny_prikaz_cassation',
+      'treteisky_osparivanie_cassation',
+      'treteisky_ispollist_cassation',
+      'foreign_judgment_enforcement_presentation',
+      'foreign_judgment_recognition_objection',
+      'arbitration_award_setaside',
     ],
   },
   {
