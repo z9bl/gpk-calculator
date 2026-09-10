@@ -2,7 +2,7 @@
 // текстовый список сроков (core/export/links.js). Только сами функции
 // модуля и синтетические фикстуры — без импортов из src/. Тесты, которые
 // проверяют согласованность этих функций с предметными данными или с
-// другим путём экспорта (.ics), выделены в export-links.integration.test.js.
+// другим путём экспорта (.ics), выделены в test/integration/export-links.test.js.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
