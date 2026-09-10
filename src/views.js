@@ -26,6 +26,10 @@ import {
   REVIEW_GROUNDS,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
 } from './chain.js';
+// Пространственный импорт — только для автосборки ACTION_FACT_INPUT/
+// MISSED_FROM_FILING ниже (см. комментарий там). По тому же образцу, что и
+// `import * as chainModule` в term-registry.js для TERM_REGISTRY.
+import * as chainModule from './chain.js';
 
 // Перерыв срока (ст. 22 ФЗ № 229-ФЗ) — константы модели нужны и интерфейсу:
 // список оснований для выпадающего списка и текст предупреждения о ч. 3.1.
@@ -973,51 +977,50 @@ function independentNodes(source, today = null) {
 // подачи и она позже дедлайна — там установлен факт пропуска. Здесь факта нет,
 // известно только, что срок прошёл.
 //
-// Узел → input, которым подтверждается совершение действия. Если он введён,
-// срок по календарю больше не «висит»: подано вовремя или с пропуском —
-// разбирается по факту (статус 'missed'), а не по текущей дате. Узел, которого
-// в карте нет, подтвердить нечем — для него достаточно сравнения с датой.
-export const ACTION_FACT_INPUT = {
-  appeal_general: 'appeal_filed_date',
-  cassation_ksoyu: 'cassation_filed_date',
-  cassation_vs: 'vs_cassation_filed_date',
-  protocol_remarks: 'protocol_remarks_filed_date',
-  simplified_reasoned_request: 'simplified_reasoned_request_date',
-  simplified_reasoned_making: 'simplified_reasoned_date',
-  simplified_appeal: 'simplified_appeal_filed_date',
-  default_judgment_cancellation_request: 'default_judgment_cancellation_request_date',
-  default_judgment_appeal: 'default_judgment_appeal_filed_date',
-  foreign_state_default_judgment_cancellation_request:
-    'foreign_state_default_judgment_cancellation_request_date',
-  foreign_state_default_judgment_appeal: 'foreign_state_default_judgment_appeal_filed_date',
-  mirovoy_reasoned_request: 'mirovoy_request_date',
-  mirovoy_reasoned_making: 'mirovoy_reasoned_date',
-  mirovoy_appeal: 'mirovoy_appeal_ruling_reasoned_date',
-  mirovoy_cassation: 'cassation_filed_date',
-};
-
-// Узлы, у которых подтверждающий факт — это именно дата подачи заявителем.
-// Только для них поздняя дата означает пропуск срока со ст. 112 в подсказке.
+// Узел → input, которым подтверждается совершение действия (ACTION_FACT_INPUT)
+// и множество узлов, у которых подтверждающий факт — именно дата подачи
+// заявителем, а не что-то другое (MISSED_FROM_FILING). Если ACTION_FACT_INPUT
+// для узла введён, срок по календарю больше не «висит»: подано вовремя или с
+// пропуском — разбирается по факту (статус 'missed'), а не по текущей дате.
+// Узел, которого в карте нет, подтвердить нечем — для него достаточно
+// сравнения с датой. MISSED_FROM_FILING сужает это дальше: у сроков суда
+// (изготовление мотивированного решения) поздняя дата — нарушение судом, а не
+// пропуск заявителя, и восстановление по ст. 112 к ней неприменимо; у
+// апелляции по делу мирового судьи известна только дата апелляционного
+// определения, а не дата подачи жалобы, — такие узлы в ACTION_FACT_INPUT есть,
+// а в MISSED_FROM_FILING нет.
 //
-// Остальные подтверждаются датой другого рода: у сроков суда (изготовление
-// мотивированного решения) поздняя дата — нарушение судом, а не пропуск
-// заявителя, и восстановление по ст. 112 к ней неприменимо; у апелляции по делу
-// мирового судьи известна только дата апелляционного определения, а не дата
-// подачи жалобы.
-const MISSED_FROM_FILING = new Set([
-  'appeal_general',
-  'cassation_ksoyu',
-  'cassation_vs',
-  'protocol_remarks',
-  'simplified_reasoned_request',
-  'simplified_appeal',
-  'default_judgment_cancellation_request',
-  'default_judgment_appeal',
-  'foreign_state_default_judgment_cancellation_request',
-  'foreign_state_default_judgment_appeal',
-  'mirovoy_reasoned_request',
-  'mirovoy_cassation',
-]);
+// Обе карты собираются автоматически из полей fact_input/missed_from_filing на
+// самих term-определениях chain.js — по образцу TERM_REGISTRY в
+// term-registry.js (`import * as chainModule` + обход экспортов), а не
+// задаются здесь вручную. Раньше это были отдельные ручные карты — id узла в
+// них приходилось поддерживать в согласии с id в chain.js вручную, и
+// рассинхронизация (опечатка, забытая запись при добавлении узла) не ловилась
+// ни одним тестом (см. диагностику, docs/core-extraction-audit.md, §6
+// Вопрос 5). Теперь fact_input/missed_from_filing — часть самого узла,
+// наравне с restoration_norm и midnight_rule, поэтому вопрос «есть ли узел в
+// карте» больше не может разойтись с вопросом «есть ли узел в chain.js
+// вообще» — это один и тот же объект.
+//
+// collectFactInputMaps вынесена отдельно и экспортирована ради теста самого
+// механизма сборки — на синтетическом module-namespace-объекте, а не на
+// настоящих узлах ГПК (которые проверяются собственным regression-тестом).
+export function collectFactInputMaps(moduleExports) {
+  const terms = Object.values(moduleExports).filter(
+    (v) => v && typeof v === 'object' && typeof v.id === 'string',
+  );
+  const actionFactInput = Object.fromEntries(
+    terms.filter((term) => typeof term.fact_input === 'string').map((term) => [term.id, term.fact_input]),
+  );
+  const missedFromFiling = new Set(
+    terms.filter((term) => term.missed_from_filing === true).map((term) => term.id),
+  );
+  return { actionFactInput, missedFromFiling };
+}
+
+const { actionFactInput: ACTION_FACT_INPUT, missedFromFiling: MISSED_FROM_FILING } =
+  collectFactInputMaps(chainModule);
+export { ACTION_FACT_INPUT };
 
 // markExpired — тонкая обёртка над core/view/cards.js с ГПК-данными
 // (ACTION_FACT_INPUT, MISSED_FROM_FILING). Норма восстановления
