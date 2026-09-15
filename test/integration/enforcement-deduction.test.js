@@ -1,0 +1,304 @@
+// Вычет периода из срока предъявления (ч. 3.1 ст. 22 ФЗ № 229-ФЗ) — полный
+// поток от входных данных до карточки: inputs → computeChain → buildView.
+//
+// Тест намеренно интеграционный (см. CLAUDE.md о границах test/): проверяется
+// не арифметика ядра (она покрыта test/core/deduction.test.js на синтетических
+// данных), а согласованность трёх слоёв — что основание из DEDUCTION_TYPES
+// доезжает от поля ввода до подписи на карточке, что событие ч. 3.1 не
+// попадает в ветвь перерыва и наоборот, и что вычет работает во всех ветвях
+// предъявления ИЛ, а не только в общей цепочке.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  buildView,
+  DEDUCTION_TYPE_LABELS,
+  DEDUCTION_IGNORED_TEXT,
+} from '../../src/views.js';
+import {
+  computeChain,
+  computeIndependentTerms,
+  computeSimplified,
+  computeMirovoy,
+  computeDefaultJudgment,
+  computeDefaultJudgmentForeignState,
+  DEDUCTION_TYPES,
+  partitionEnforcementEvents,
+} from '../../src/chain.js';
+
+// Те же базовые ориентиры, что и у тестов перерыва в test/chain.test.js:
+// BASE + today 01.05.2025 → вступление в силу 12.04.2025, предъявление ИЛ без
+// событий — 12.04.2028.
+const BASE = { resolution_date: '2025-03-11', reasoned_decision_date: '2025-03-12' };
+const TODAY = { today: '2025-05-01' };
+const ENF_BASE_ANCHOR = '2025-04-15';
+const ENF_BASE_DEADLINE = '2028-04-17';
+
+const card = (inputs) =>
+  buildView({ ...BASE, ...inputs }, TODAY).cards.find((c) => c.id === 'enforcement_presentation');
+
+// Период 01.05.2025 — 01.09.2025 = 123 дня.
+const PERIOD = { type: 'creditor_request', from: '2025-05-01', to: '2025-09-01' };
+
+test('базовые ориентиры ветви (страховка от молчаливого сдвига остальных тестов)', () => {
+  const plain = card({});
+  assert.equal(plain.deadline, ENF_BASE_DEADLINE);
+  assert.equal(plain.deductions, undefined);
+  assert.equal(plain.deducted_days, undefined);
+  assert.equal(plain.deduction_assumption, undefined);
+  assert.equal(plain.details.deduction_norm, undefined);
+});
+
+test('одно событие ч. 3.1 доезжает до карточки с подписью основания и длиной периода', () => {
+  const c = card({ enforcement_interruptions: [PERIOD] });
+  assert.equal(c.deducted_days, 123);
+  assert.equal(c.deadline_before_deduction, ENF_BASE_DEADLINE);
+  assert.equal(c.deadline, '2027-12-14');
+  assert.equal(c.deductions.length, 1);
+  assert.equal(c.deductions[0].label, DEDUCTION_TYPE_LABELS.creditor_request);
+  assert.equal(c.deductions[0].days, 123);
+  assert.equal(c.deductions[0].from, '2025-05-01');
+  assert.equal(c.deductions[0].to, '2025-09-01');
+  // Норма и логика ч. 3.1 — в раскрывающихся деталях, допущения — рядом с датой.
+  assert.match(c.details.deduction_norm, /ч\. 3\.1 ст\. 22/);
+  assert.match(c.details.deduction_logic, /вычитается/);
+  assert.equal(c.deduction_assumption.code, 'deduction_assumptions');
+  assert.match(c.deduction_assumption.norm, /ч\. 3\.1/);
+});
+
+test('оба основания ч. 3.1 считаются по одной формуле', () => {
+  const request = card({ enforcement_interruptions: [PERIOD] });
+  const obstruction = card({
+    enforcement_interruptions: [{ ...PERIOD, type: 'creditor_obstruction' }],
+  });
+  assert.equal(obstruction.deadline, request.deadline);
+  assert.equal(obstruction.deducted_days, request.deducted_days);
+  // Различаются только подписью — пользователь должен видеть, что он выбрал.
+  assert.notEqual(obstruction.deductions[0].label, request.deductions[0].label);
+  assert.equal(obstruction.deductions[0].label, DEDUCTION_TYPE_LABELS.creditor_obstruction);
+});
+
+test('несколько периодов суммируются (ASSUMPTION), история отсортирована', () => {
+  const c = card({
+    enforcement_interruptions: [
+      { type: 'creditor_obstruction', from: '2026-01-01', to: '2026-01-21' }, // 20
+      PERIOD, // 123
+    ],
+  });
+  assert.equal(c.deducted_days, 143);
+  assert.deepEqual(
+    c.deductions.map((e) => e.from),
+    ['2025-05-01', '2026-01-01'],
+  );
+});
+
+test('непригодный период виден на карточке с причиной и на срок не влияет', () => {
+  const c = card({
+    enforcement_interruptions: [{ type: 'creditor_request', from: '2025-09-01', to: '2025-05-01' }],
+  });
+  assert.equal(c.deducted_days, 0);
+  assert.equal(c.deadline, ENF_BASE_DEADLINE);
+  assert.equal(c.deductions[0].ignored, true);
+  assert.equal(c.deductions[0].ignored_text, DEDUCTION_IGNORED_TEXT.negative_period);
+});
+
+test('период больше срока: дедлайн упирается в начало течения и помечен флагом', () => {
+  const c = card({
+    enforcement_interruptions: [{ type: 'creditor_request', from: '2015-01-01', to: '2025-01-01' }],
+  });
+  assert.equal(c.deduction_exhausts_term, true);
+  // Дальше начала течения срока дедлайн не опускается.
+  assert.ok(c.deadline >= ENF_BASE_ANCHOR);
+  assert.ok(c.deadline < ENF_BASE_DEADLINE);
+});
+
+// --- Разделение двух ветвей ст. 22 ------------------------------------------
+
+test('событие ч. 3.1 не попадает в ветвь перерыва, событие ч. 1–3 — в ветвь вычета', () => {
+  const { interruptions, deductions } = partitionEnforcementEvents([
+    PERIOD,
+    { type: 'presentment', date: '2026-06-01' },
+    { type: 'creditor_obstruction', from: '2026-01-01', to: '2026-01-21' },
+  ]);
+  assert.deepEqual(
+    interruptions.map((e) => e.type),
+    ['presentment'],
+  );
+  assert.deepEqual(
+    deductions.map((e) => e.type),
+    ['creditor_request', 'creditor_obstruction'],
+  );
+});
+
+test('событие ч. 3.1 в одиночку не создаёт истории перерывов и не двигает якорь', () => {
+  const c = card({ enforcement_interruptions: [PERIOD] });
+  assert.equal(c.interruptions, undefined);
+  assert.equal(c.restarted_from, undefined);
+  // Точка отсчёта прежняя: ч. 3.1 меняет длину срока, а не отсчёт.
+  assert.equal(c.base_anchor, undefined);
+});
+
+test('нераспознанное основание по-прежнему видно в истории перерывов', () => {
+  // Разделение не должно ронять «чужие» события в никуда: они уходят в ветвь
+  // перерыва и помечаются там как непонятое основание.
+  const c = card({ enforcement_interruptions: [{ type: 'nonsense', date: '2026-06-01' }] });
+  assert.equal(c.interruptions.length, 1);
+  assert.equal(c.interruptions[0].ignored_reason, 'unknown_type');
+  assert.equal(c.deductions, undefined);
+});
+
+test('перерыв и вычет вместе: рестарт даёт полный срок, из него вычитается сумма (ASSUMPTION)', () => {
+  const c = card({
+    enforcement_interruptions: [PERIOD, { type: 'presentment', date: '2026-06-01' }],
+  });
+  // Перерыв: три года от 01.06.2026 → 01.06.2029, без оглядки на вычет.
+  assert.equal(c.restarted_from, '2026-06-01');
+  assert.equal(c.deadline_before_deduction, '2029-06-01');
+  // Затем из полученного срока вычитаются 123 дня — хотя период лежит ДО
+  // перерыва. Это принятое допущение, а не вывод из текста нормы.
+  assert.equal(c.deducted_days, 123);
+  assert.equal(c.deadline, '2029-01-29');
+  // Обе истории на карточке — они читаются по-разному и не заменяют друг друга.
+  assert.equal(c.interruptions.length, 1);
+  assert.equal(c.deductions.length, 1);
+});
+
+// --- Подключение ко всем узлам предъявления ---------------------------------
+
+test('вычет работает во всех шести узлах предъявления, включая иностранное государство', () => {
+  const events = [PERIOD];
+
+  const general = computeChain({ ...BASE, enforcement_interruptions: events }, TODAY).enforcement;
+  assert.equal(general.deducted_days, 123);
+
+  const simplified = computeSimplified(
+    {
+      simplified_resolution_date: '2025-03-11',
+      simplified_appeal_filed_date: '2025-03-20',
+      simplified_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(simplified.deducted_days, 123);
+
+  const mirovoy = computeMirovoy(
+    {
+      mirovoy_resolution_date: '2025-03-11',
+      mirovoy_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(mirovoy.deducted_days, 123);
+
+  const dj = computeDefaultJudgment(
+    {
+      default_judgment_service_date: '2025-03-11',
+      default_judgment_appeal_filed_date: '2025-04-01',
+      default_judgment_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(dj.deducted_days, 123);
+
+  // Заочное решение против иностранного государства (глава 45.1): шестой узел,
+  // своя копия term с собственным id. До этого кейса ветвь была единственной
+  // из шести, не покрытой тестом, — подключение держалось на одном лишь
+  // вызове computeEnforcement в chain.js.
+  const foreignState = computeDefaultJudgmentForeignState(
+    {
+      foreign_state_default_judgment_service_date: '2025-01-10',
+      foreign_state_default_judgment_appeal_filed_date: '2025-04-01',
+      foreign_state_default_judgment_appeal_ruling_date: '2025-06-02',
+      enforcement_interruptions: events,
+    },
+    '2025-07-01',
+  ).enforcement;
+  assert.equal(foreignState.id, 'foreign_state_default_judgment_enforcement_presentation');
+  assert.equal(foreignState.deducted_days, 123);
+  assert.equal(foreignState.deadline_before_deduction, '2028-06-02');
+  assert.equal(foreignState.deadline, '2028-01-31');
+
+  // Судебный приказ — тот же общий список событий, отдельный расчётный путь
+  // (computeInterruptibleTerm, а не computeEnforcement).
+  const order = computeIndependentTerms({
+    court_order_issued_date: '2023-04-12',
+    enforcement_interruptions: events,
+  }).court_order_presentation;
+  assert.equal(order.deducted_days, 123);
+  assert.equal(order.deadline_before_deduction, '2026-04-13');
+  assert.equal(order.deadline, '2025-12-10');
+});
+
+test('периодические платежи вычетом не затрагиваются (ст. 22 к ним не сведена)', () => {
+  const plain = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
+    .periodic_payments_presentation;
+  const withEvents = computeIndependentTerms({
+    periodic_payment_period_end_date: '2023-04-12',
+    enforcement_interruptions: [PERIOD],
+  }).periodic_payments_presentation;
+  assert.deepEqual(withEvents, plain);
+  assert.equal(withEvents.deductions, undefined);
+});
+
+// --- Проверка ввода: пересечение периодов -----------------------------------
+
+test('пересекающиеся периоды дают предупреждение на карточке', () => {
+  const c = card({
+    enforcement_interruptions: [
+      PERIOD, // 01.05.2025 — 01.09.2025
+      { type: 'creditor_obstruction', from: '2025-07-01', to: '2025-11-01' },
+    ],
+  });
+  assert.equal(c.deduction_overlap_warning.code, 'deduction_overlap');
+  assert.match(c.deduction_overlap_warning.norm, /ч\. 3\.1 ст\. 22/);
+  // Пары названы явно — иначе пользователю искать их среди всех периодов самому.
+  assert.deepEqual(c.deduction_overlap_warning.pairs, [
+    { a: { from: '2025-05-01', to: '2025-09-01' }, b: { from: '2025-07-01', to: '2025-11-01' } },
+  ]);
+});
+
+test('предупреждение о пересечении расчёт не меняет', () => {
+  // Валидация предотвращает неверный ввод, но арифметику под него не
+  // подстраивает: 123 + 123 = 246 дней, общие дни вычитаются дважды.
+  const c = card({
+    enforcement_interruptions: [
+      PERIOD,
+      { type: 'creditor_obstruction', from: '2025-07-01', to: '2025-11-01' },
+    ],
+  });
+  assert.equal(c.deducted_days, 246);
+  assert.equal(c.deadline_before_deduction, ENF_BASE_DEADLINE);
+  assert.equal(c.deadline, '2027-08-13');
+});
+
+test('непересекающиеся периоды предупреждения не дают', () => {
+  const c = card({
+    enforcement_interruptions: [
+      PERIOD, // 01.05.2025 — 01.09.2025
+      { type: 'creditor_obstruction', from: '2026-01-01', to: '2026-01-21' },
+    ],
+  });
+  assert.equal(c.deduction_overlap_warning, undefined);
+  assert.equal(c.deducted_days, 143);
+});
+
+test('одиночный период предупреждения не даёт', () => {
+  assert.equal(card({ enforcement_interruptions: [PERIOD] }).deduction_overlap_warning, undefined);
+});
+
+// --- Согласованность списков оснований и подписей ---------------------------
+
+test('у каждого основания ч. 3.1 есть подпись, и лишних подписей нет', () => {
+  // Та же проверка, что защищает INTERRUPTION_TYPE_LABELS: id живут в chain.js,
+  // подписи — в views.js, и разъехаться они не должны.
+  const ids = DEDUCTION_TYPES.map((t) => t.id).sort();
+  assert.deepEqual(Object.keys(DEDUCTION_TYPE_LABELS).sort(), ids);
+  for (const type of DEDUCTION_TYPES) {
+    assert.match(type.norm, /ч\. 3\.1 ст\. 22/);
+    assert.ok(DEDUCTION_TYPE_LABELS[type.id].length > 0);
+  }
+});

@@ -23,6 +23,7 @@ import {
   reasonedDelayVersionFor,
   INTERRUPTION_TYPES,
   INTERRUPTION_SCOPE_WARNING,
+  DEDUCTION_TYPES,
   REVIEW_GROUNDS,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
 } from './chain.js';
@@ -31,10 +32,13 @@ import {
 // `import * as chainModule` в term-registry.js для TERM_REGISTRY.
 import * as chainModule from './chain.js';
 
-// Перерыв срока (ст. 22 ФЗ № 229-ФЗ) — константы модели нужны и интерфейсу:
-// список оснований для выпадающего списка и текст предупреждения о ч. 3.1.
-// Отдаём их через слой представления, чтобы web/app.js не тянул chain.js.
-export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING };
+// События ст. 22 ФЗ № 229-ФЗ — константы модели нужны и интерфейсу: два списка
+// оснований для одного выпадающего списка (перерыв ч. 1–3 и вычет ч. 3.1),
+// предупреждение о выборе основания и текст допущений ч. 3.1. Отдаём их через
+// слой представления, чтобы web/app.js не тянул chain.js. Текст допущений
+// ч. 3.1 сюда не попадает: он приезжает на карточку вместе с расчётом
+// (card.deduction_assumption), отдельной константой интерфейсу не нужен.
+export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING, DEDUCTION_TYPES };
 
 // Основания пересмотра по вновь открывшимся/новым обстоятельствам (глава 42
 // ГПК) — список для dropdown в UI, по тому же образцу: подпись поля даты и
@@ -73,6 +77,23 @@ export const INTERRUPTION_TYPE_LABELS = {
     'Возврат документа взыскателю: взыскание невозможно (ч. 3 ст. 22, п. 3, 4 ч. 1 ст. 46)',
 };
 
+// Подписи оснований вычета (ч. 3.1 ст. 22) — в том же выпадающем списке, что и
+// основания перерыва выше: для пользователя это один вопрос «почему срок
+// изменился», разные у них только арифметика и число запрашиваемых дат.
+// Идентификаторы — из DEDUCTION_TYPES (chain.js).
+export const DEDUCTION_TYPE_LABELS = {
+  creditor_request: 'Окончание ИП по заявлению взыскателя (ч. 3.1 ст. 22)',
+  creditor_obstruction:
+    'Окончание ИП из-за действий взыскателя, препятствующих исполнению (ч. 3.1 ст. 22)',
+};
+
+// Подписи двух дат отрезка ч. 3.1. Обе обязательны: без любой из них отрезок не
+// измерить, и событие в расчёт не идёт.
+export const DEDUCTION_DATE_LABELS = {
+  from: 'Дата предъявления исполнительного документа к исполнению',
+  to: 'Дата окончания исполнительного производства по этому основанию',
+};
+
 // Почему событие не принято в расчёт. Молча выбрасывать нельзя: пользователь
 // должен видеть, что введённая им дата на срок не повлияла, и почему.
 export const INTERRUPTION_IGNORED_TEXT = {
@@ -81,6 +102,16 @@ export const INTERRUPTION_IGNORED_TEXT = {
   before_anchor:
     'Событие раньше начала течения срока — в расчёт не принято: прерывать ещё ' +
     'не начавшийся срок нечем.',
+};
+
+// То же для событий-вычетов: у них своя причина отказа (обратный порядок дат),
+// а «нет даты» означает, что не заполнена хотя бы одна из двух.
+export const DEDUCTION_IGNORED_TEXT = {
+  no_date: 'Указаны не обе даты периода — событие в расчёт не принято.',
+  unknown_type: 'Основание не распознано — событие в расчёт не принято.',
+  negative_period:
+    'Окончание производства раньше предъявления документа — период измерить ' +
+    'нельзя, событие в расчёт не принято.',
 };
 
 // Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
@@ -226,6 +257,41 @@ function attachInterruptions(card, term) {
   card.details.interruption_logic = term.interruption_logic;
 }
 
+// История вычетов (ч. 3.1 ст. 22 ФЗ № 229-ФЗ) на карточке: список периодов с
+// подписями оснований, обеими датами и длиной в днях, суммарный вычет, дедлайн
+// до вычета, норма и логика в details, список допущений.
+//
+// Расчёт уже уменьшен в chain.js — здесь только показываем, из чего и сколько
+// вычтено. Отдельно от attachInterruptions: у перерыва и вычета разные поля и
+// разный смысл, и на одной карточке могут встретиться оба.
+function attachDeductions(card, term) {
+  if (!term.deductions || term.deductions.length === 0) return;
+  card.deductions = term.deductions.map((event) => {
+    const row = {
+      ...event,
+      label: DEDUCTION_TYPE_LABELS[event.type] ?? 'Основание не распознано',
+    };
+    if (event.ignored) row.ignored_text = DEDUCTION_IGNORED_TEXT[event.ignored_reason];
+    return row;
+  });
+  card.deducted_days = term.deducted_days;
+  // Дедлайн до вычета — иначе на карточке не видно, из чего вычитали: точка
+  // отсчёта не сдвигается, и по ней уменьшение срока не прочитать.
+  card.deadline_before_deduction = term.deadline_before_deduction;
+  // Срок выбран вычетом полностью: дальше уменьшать некуда (см. граничный
+  // случай в core/engine/deduction.js).
+  if (term.deduction_exhausts_term) card.deduction_exhausts_term = true;
+  card.deduction_assumption = term.deduction_assumption;
+  // Ошибка ввода (пересекающиеся периоды) — не свойство расчёта, поэтому
+  // отдельным полем, а не внутри deduction_assumption: допущения стоят всегда,
+  // это предупреждение — только когда есть что исправлять.
+  if (term.deduction_overlap_warning) {
+    card.deduction_overlap_warning = term.deduction_overlap_warning;
+  }
+  card.details.deduction_norm = term.deduction_norm;
+  card.details.deduction_logic = term.deduction_logic;
+}
+
 // Карточка срока предъявления ИЛ. Смежные случаи (card.stubs) сейчас пусты —
 // все раскрыты узлами; поле остаётся, чтобы следующий случай было куда класть.
 function enforcementCard(enf) {
@@ -245,6 +311,7 @@ function enforcementCard(enf) {
     stubs: ENFORCEMENT_STUBS,
   };
   attachInterruptions(card, enf);
+  attachDeductions(card, enf);
   attachCalendarWarning(card);
   return card;
 }
@@ -848,8 +915,10 @@ function independentNodes(source, today = null) {
   if (terms.court_order_objection) cards.push(courtOrderObjectionCard(terms.court_order_objection));
   if (terms.court_order_presentation) {
     const courtOrderPresentationCard = monthTermCard(terms.court_order_presentation);
-    // Прерываемый срок (ст. 22 ФЗ № 229-ФЗ) — история перерывов на карточке.
+    // Изменяемый срок (ст. 22 ФЗ № 229-ФЗ) — история перерывов и вычетов
+    // на карточке.
     attachInterruptions(courtOrderPresentationCard, terms.court_order_presentation);
+    attachDeductions(courtOrderPresentationCard, terms.court_order_presentation);
     cards.push(courtOrderPresentationCard);
   }
   if (terms.periodic_payments_presentation) {
