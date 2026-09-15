@@ -127,10 +127,11 @@ if ((await page.locator('#results .card').count()) < 1) {
   problems.push('после ввода даты карточки не появились');
 }
 
-// Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ): список событий на
-// карточке ИЛ добавляет строку и пересчитывает срок от даты события. Проверяем
-// в браузере — расчёт покрыт node --test, а вот повторяемый список полей
-// (добавление строки, маска даты, перерисовка) живёт только в app.js.
+// События ст. 22 ФЗ № 229-ФЗ на карточке ИЛ: список добавляет строку и
+// пересчитывает срок — перерыв (ч. 1–3) от даты события, вычет (ч. 3.1) на
+// длину периода. Проверяем в браузере — расчёт покрыт node --test, а вот
+// повторяемый список полей (добавление строки, смена основания с
+// перерисовкой набора полей, маска даты) живёт только в app.js.
 const ilCard = page
   .locator('#results .card')
   .filter({ hasText: 'Предъявление исполнительного листа к исполнению' });
@@ -140,10 +141,10 @@ if ((await ilCard.count()) !== 1) {
   if ((await ilCard.locator('.interruption-scope').count()) === 0) {
     problems.push('предупреждение о ч. 3.1 ст. 22 не показано рядом с полем');
   }
-  await ilCard.getByRole('button', { name: 'Добавить перерыв' }).click();
+  await ilCard.getByRole('button', { name: 'Добавить событие' }).click();
   await page.waitForTimeout(100);
   if ((await page.locator('#in-interruption-0-type').count()) === 0) {
-    problems.push('строка перерыва не добавилась');
+    problems.push('строка события не добавилась');
   }
   await page.fill('#in-interruption-0-date', '15.06.2026');
   await page.waitForTimeout(200);
@@ -162,6 +163,43 @@ if ((await ilCard.count()) !== 1) {
   }
   if ((await ilCard.locator('.deadline').first().innerText()).trim() === '15.06.2029') {
     problems.push('после удаления перерыва срок не пересчитался обратно');
+  }
+
+  // Вычет по ч. 3.1: смена основания в том же списке должна заменить одно поле
+  // даты на два, а введённый период — уменьшить срок, не сдвигая точку отсчёта.
+  // Базовый расчёт при дате 11.03.2024: вступление в силу 12.04.2024, срок ИЛ
+  // до 12.04.2027. Период 01.05.2024 — 01.09.2024 = 123 дня → 10.12.2026
+  // (четверг, переносить не нужно).
+  await ilCard.getByRole('button', { name: 'Добавить событие' }).click();
+  await page.waitForTimeout(100);
+  await page.selectOption('#in-interruption-0-type', 'creditor_request');
+  await page.waitForTimeout(200);
+  if ((await page.locator('#in-interruption-0-date').count()) !== 0) {
+    problems.push('после выбора основания ч. 3.1 осталось поле одной даты');
+  }
+  if (
+    (await page.locator('#in-interruption-0-from').count()) === 0 ||
+    (await page.locator('#in-interruption-0-to').count()) === 0
+  ) {
+    problems.push('после выбора основания ч. 3.1 не появились два поля дат');
+  }
+  await page.fill('#in-interruption-0-from', '01.05.2024');
+  await page.waitForTimeout(100);
+  // С одной заполненной датой период не измерить — срок меняться не должен.
+  if ((await ilCard.locator('.deadline').first().innerText()).trim() !== '12.04.2027') {
+    problems.push('период с одной датой уже повлиял на срок');
+  }
+  await page.fill('#in-interruption-0-to', '01.09.2024');
+  await page.waitForTimeout(200);
+  const deducted = (await ilCard.locator('.deadline').first().innerText()).trim();
+  if (deducted !== '10.12.2026') {
+    problems.push(`после вычета ч. 3.1 ждали 10.12.2026, получили «${deducted}»`);
+  }
+  if ((await ilCard.locator('.deduction-history').count()) === 0) {
+    problems.push('история вычетов на карточке не показана');
+  }
+  if ((await ilCard.locator('.deduction-assumption').count()) === 0) {
+    problems.push('допущения по ч. 3.1 не показаны рядом с расчётом');
   }
 }
 

@@ -1244,11 +1244,12 @@ test('перерыв: карточка несёт предупреждение �
   const warning = byId(v.cards, 'enforcement_presentation').interruption_warning;
   assert.equal(warning.code, 'interruption_scope');
   assert.match(warning.norm, /3\.1/);
-  // Смысл: сюда идёт только возврат по невозможности взыскания; отзыв самим
-  // взыскателем считается по другому правилу и завысит срок.
-  assert.match(warning.text, /невозможност/i);
+  // Смысл: сюда идёт только возврат по невозможности взыскания; окончание ИП по
+  // вине самого взыскателя считается по другому правилу (ч. 3.1) и завысит срок,
+  // если выбрать не то основание.
+  assert.match(warning.text, /невозможно/i);
   assert.match(warning.text, /ч\. 3\.1/);
-  assert.match(warning.text, /завысит/);
+  assert.match(warning.text, /завысить/);
 });
 
 test('перерыв: без событий карточка не обрастает полями истории', () => {

@@ -7,6 +7,9 @@ import {
   INTERRUPTION_TYPES,
   INTERRUPTION_TYPE_LABELS,
   INTERRUPTION_SCOPE_WARNING,
+  DEDUCTION_TYPES,
+  DEDUCTION_TYPE_LABELS,
+  DEDUCTION_DATE_LABELS,
   REVIEW_GROUNDS,
 } from '../src/views.js';
 import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
@@ -162,8 +165,10 @@ const INPUT_HINTS = {
   foreign_state_default_judgment_appeal_filed_date:
     'Дата вступления решения в силу, если оно не отменено',
   enforcement_interruptions:
-    'Каждое событие перезапускает трёхлетний срок: он идёт заново от последнего по дате ' +
-    '(ч. 1–3 ст. 22 ФЗ № 229-ФЗ), время до перерыва не засчитывается',
+    'Перерыв (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) перезапускает трёхлетний срок от последнего по ' +
+    'дате события, время до перерыва не засчитывается; окончание производства по вине ' +
+    'взыскателя (ч. 3.1) срок не перезапускает, а уменьшает на время, пока шло ' +
+    'производство — там нужны две даты',
   review_circumstance_date:
     'Три месяца со дня, указанного в норме карточки ниже (ч. 1 ст. 394 ГПК РФ) — точка ' +
     'отсчёта зависит от выбранного основания',
@@ -430,8 +435,10 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(el('div', 'note', opts.conditionNote));
   }
 
-  // Перерывы срока (ст. 22 ФЗ № 229-ФЗ): история введённых событий.
+  // События ст. 22 ФЗ № 229-ФЗ: история введённого. Два блока, а не один —
+  // перерыв и вычет читаются по-разному и могут встретиться на одной карточке.
   if (card.interruptions) c.appendChild(renderInterruptionHistory(card));
+  if (card.deductions) c.appendChild(renderDeductionHistory(card));
 
   if (card.warnings) {
     for (const w of card.warnings) {
@@ -489,41 +496,122 @@ function renderTermCard(card, opts = {}) {
   return c;
 }
 
-// --- Перерывы срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
+// --- События, изменяющие срок предъявления (ст. 22 ФЗ № 229-ФЗ) --------------
 //
-// Повторяемый список: у каждой строки основание и дата. Черновик живёт отдельно
-// от state.inputs по той же причине, что и rawDates: render() пересобирает поля
-// заново, а строка с недобранной датой должна остаться на экране — в расчёт при
-// этом она не идёт.
+// Повторяемый список: у каждой строки основание и дата (или две — см. ниже).
+// Черновик живёт отдельно от state.inputs по той же причине, что и rawDates:
+// render() пересобирает поля заново, а строка с недобранной датой должна
+// остаться на экране — в расчёт при этом она не идёт.
+//
+// Оснований два класса, и от выбранного зависит, сколько дат спрашивать:
+//   перерыв (ч. 1–3) — одна дата события, срок идёт заново от неё;
+//   вычет (ч. 3.1)   — две даты (предъявление → окончание ИП), из срока
+//                      уходит измеренный ими период.
+// Список один: для пользователя это один вопрос «почему срок изменился», а
+// разбирает события по ветвям модель (partitionEnforcementEvents в chain.js).
 const interruptionDraft = [];
 
 const DEFAULT_INTERRUPTION_TYPE = INTERRUPTION_TYPES[0].id;
 
-// Черновик → input модели: только строки с полной существующей датой.
+const DEDUCTION_TYPE_IDS = new Set(DEDUCTION_TYPES.map((t) => t.id));
+
+// Основание требует двух дат (ч. 3.1), а не одной.
+function isDeductionType(typeId) {
+  return DEDUCTION_TYPE_IDS.has(typeId);
+}
+
+// Черновик → input модели: только строки со всеми нужными датами. Строка
+// вычета без одной из двух дат не идёт в расчёт целиком — половина периода
+// измерению не поддаётся.
+//
+// Сырой текст всех трёх полей (raw / rawFrom / rawTo) хранится в строке
+// одновременно и при смене основания не стирается: пользователь может
+// переключиться туда-обратно, не потеряв набранного.
 function syncInterruptions() {
-  const ready = interruptionDraft
-    .map((row) => ({ type: row.type, date: ruToISO(row.raw) }))
-    .filter((row) => row.date != null);
+  const ready = [];
+  for (const row of interruptionDraft) {
+    if (isDeductionType(row.type)) {
+      const from = ruToISO(row.rawFrom ?? '');
+      const to = ruToISO(row.rawTo ?? '');
+      if (from != null && to != null) ready.push({ type: row.type, from, to });
+    } else {
+      const date = ruToISO(row.raw ?? '');
+      if (date != null) ready.push({ type: row.type, date });
+    }
+  }
   if (ready.length) state.inputs.enforcement_interruptions = ready;
   else delete state.inputs.enforcement_interruptions;
 }
 
-// Одна строка списка: основание (выпадающий список) + дата + кнопка удаления.
-function renderInterruptionRow(row, index) {
-  const wrap = el('div', 'field interruption-row');
-  const typeId = `in-interruption-${index}-type`;
-  const dateId = `in-interruption-${index}-date`;
+// Одно поле даты внутри строки события: подпись, маска, разбор ошибки.
+// Вынесено отдельно, потому что у строки их может быть и одно, и два, а вся
+// обвязка (id, восстановление ошибки из сырого текста, маска) одинаковая.
+//
+// commit(raw) кладёт набранное в нужное поле строки черновика — какое именно,
+// решает вызывающий код.
+function renderEventDateField(wrap, { id, label, value, className, commit }) {
+  const dateLabel = el('label', className, label);
+  dateLabel.setAttribute('for', id);
+  wrap.appendChild(dateLabel);
+  const input = el('input');
+  input.type = 'text';
+  input.id = id;
+  input.setAttribute('inputmode', 'numeric');
+  input.placeholder = 'ДД.ММ.ГГГГ';
+  input.autocomplete = 'off';
+  input.value = value;
+  wrap.appendChild(input);
+  const err = el('p', 'field-error');
+  // Строка пересоздаётся при каждой перерисовке — состояние ошибки
+  // восстанавливаем из сырого текста, как в renderInviteField.
+  err.textContent = dateFieldError(value);
+  if (err.textContent) input.classList.add('invalid');
+  wrap.appendChild(err);
+  attachDateMask(input, (_input, parsed) => {
+    commit(parsed.raw);
+    syncInterruptions();
+    render();
+  });
+}
 
-  const typeLabel = el('label', null, 'Основание перерыва');
+// Одна строка списка: основание (выпадающий список) + одна или две даты +
+// кнопка удаления. Сколько дат — зависит от выбранного основания: перерыв
+// (ч. 1–3) описывается одним днём, вычет (ч. 3.1) — периодом из двух.
+function renderInterruptionRow(row, index) {
+  const deduction = isDeductionType(row.type);
+  const rowClass = deduction ? 'field interruption-row deduction-row' : 'field interruption-row';
+  const wrap = el('div', rowClass);
+  const typeId = `in-interruption-${index}-type`;
+
+  const typeLabel = el('label', null, 'Основание изменения срока');
   typeLabel.setAttribute('for', typeId);
   wrap.appendChild(typeLabel);
   const select = el('select');
   select.id = typeId;
-  for (const type of INTERRUPTION_TYPES) {
-    const option = el('option', null, INTERRUPTION_TYPE_LABELS[type.id]);
-    option.value = type.id;
-    if (type.id === row.type) option.selected = true;
-    select.appendChild(option);
+  // Две группы в одном списке: у них разная арифметика, и видеть границу между
+  // ними важнее, чем экономить строку в выпадающем списке.
+  const groups = [
+    {
+      label: 'Перерыв срока (ч. 1–3 ст. 22)',
+      types: INTERRUPTION_TYPES,
+      labels: INTERRUPTION_TYPE_LABELS,
+    },
+    {
+      label: 'Вычет периода из срока (ч. 3.1 ст. 22)',
+      types: DEDUCTION_TYPES,
+      labels: DEDUCTION_TYPE_LABELS,
+    },
+  ];
+  for (const group of groups) {
+    const optgroup = el('optgroup');
+    optgroup.label = group.label;
+    for (const type of group.types) {
+      const option = el('option', null, group.labels[type.id]);
+      option.value = type.id;
+      if (type.id === row.type) option.selected = true;
+      optgroup.appendChild(option);
+    }
+    select.appendChild(optgroup);
   }
   select.addEventListener('change', () => {
     row.type = select.value;
@@ -532,28 +620,36 @@ function renderInterruptionRow(row, index) {
   });
   wrap.appendChild(select);
 
-  const dateLabel = el('label', 'interruption-date-label', 'Дата события');
-  dateLabel.setAttribute('for', dateId);
-  wrap.appendChild(dateLabel);
-  const input = el('input');
-  input.type = 'text';
-  input.id = dateId;
-  input.setAttribute('inputmode', 'numeric');
-  input.placeholder = 'ДД.ММ.ГГГГ';
-  input.autocomplete = 'off';
-  input.value = row.raw;
-  wrap.appendChild(input);
-  const err = el('p', 'field-error');
-  // Строка пересоздаётся при каждой перерисовке — состояние ошибки
-  // восстанавливаем из сырого текста, как в renderInviteField.
-  err.textContent = dateFieldError(row.raw);
-  if (err.textContent) input.classList.add('invalid');
-  wrap.appendChild(err);
-  attachDateMask(input, (_input, parsed) => {
-    row.raw = parsed.raw;
-    syncInterruptions();
-    render();
-  });
+  if (deduction) {
+    renderEventDateField(wrap, {
+      id: `in-interruption-${index}-from`,
+      label: DEDUCTION_DATE_LABELS.from,
+      value: row.rawFrom ?? '',
+      className: 'interruption-date-label',
+      commit: (raw) => {
+        row.rawFrom = raw;
+      },
+    });
+    renderEventDateField(wrap, {
+      id: `in-interruption-${index}-to`,
+      label: DEDUCTION_DATE_LABELS.to,
+      value: row.rawTo ?? '',
+      className: 'interruption-date-label',
+      commit: (raw) => {
+        row.rawTo = raw;
+      },
+    });
+  } else {
+    renderEventDateField(wrap, {
+      id: `in-interruption-${index}-date`,
+      label: 'Дата события',
+      value: row.raw ?? '',
+      className: 'interruption-date-label',
+      commit: (raw) => {
+        row.raw = raw;
+      },
+    });
+  }
 
   const remove = el('button', 'row-remove', 'Удалить');
   remove.type = 'button';
@@ -566,28 +662,30 @@ function renderInterruptionRow(row, index) {
   return wrap;
 }
 
-// Редактор списка — на карточке прерываемого срока (card.interruptible).
+// Редактор списка — на карточке изменяемого срока (card.interruptible).
 function renderInterruptions() {
   const box = el('div', 'note interruptions');
   box.appendChild(
     el(
       'div',
       null,
-      'Срок прерывался? Добавьте события — срок пойдёт заново от последнего по дате.',
+      'Исполнительный лист уже предъявлялся? Добавьте события — от основания зависит, ' +
+        'пойдёт ли срок заново или уменьшится на время прошлого производства.',
     ),
   );
   box.appendChild(el('p', 'hint', INPUT_HINTS.enforcement_interruptions));
   interruptionDraft.forEach((row, index) => box.appendChild(renderInterruptionRow(row, index)));
 
-  const add = el('button', 'row-add', 'Добавить перерыв');
+  const add = el('button', 'row-add', 'Добавить событие');
   add.type = 'button';
   add.addEventListener('click', () => {
-    interruptionDraft.push({ type: DEFAULT_INTERRUPTION_TYPE, raw: '' });
+    interruptionDraft.push({ type: DEFAULT_INTERRUPTION_TYPE, raw: '', rawFrom: '', rawTo: '' });
     const index = interruptionDraft.length - 1;
     syncInterruptions();
     render();
     // render() пересобрал DOM — фокус ставим уже на новое поле, иначе строка
-    // появляется, а курсор остаётся на кнопке.
+    // появляется, а курсор остаётся на кнопке. Новая строка всегда создаётся с
+    // основанием-перерывом, поэтому поле у неё одно.
     document.getElementById(`in-interruption-${index}-date`)?.focus();
   });
   box.appendChild(add);
@@ -626,6 +724,82 @@ function renderInterruptionHistory(card) {
           `(${isoToRu(card.base_anchor)}).`,
     ),
   );
+  return box;
+}
+
+// Склонение слова «день» при числе — для строки «вычтено N дней».
+function daysWord(n) {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'дней';
+  const mod10 = n % 10;
+  if (mod10 === 1) return 'день';
+  if (mod10 >= 2 && mod10 <= 4) return 'дня';
+  return 'дней';
+}
+
+// История вычетов на карточке (ч. 3.1 ст. 22): какие периоды введены, сколько
+// дней каждый из них занял, что не принято в расчёт и из какой даты вычитали.
+//
+// Отдельный блок от истории перерывов: у события ч. 3.1 две даты вместо одной,
+// и точка отсчёта у срока не меняется — меняется его длина, поэтому строка
+// «срок течёт заново с …» здесь была бы неверной.
+function renderDeductionHistory(card) {
+  const box = el('div', 'interruption-history deduction-history');
+  box.appendChild(
+    el('div', 'interruption-history-title', 'Периоды, вычитаемые из срока (ч. 3.1 ст. 22)'),
+  );
+  const list = el('ul', 'interruption-list');
+  for (const event of card.deductions) {
+    const item = el('li', event.ignored ? 'interruption ignored' : 'interruption');
+    const period =
+      event.from && event.to ? `${isoToRu(event.from)} — ${isoToRu(event.to)}` : '—';
+    item.appendChild(el('span', 'interruption-date', period));
+    item.appendChild(el('span', 'interruption-label', event.label));
+    if (!event.ignored) {
+      item.appendChild(el('span', 'deduction-days', `${event.days} ${daysWord(event.days)}`));
+    }
+    if (event.ignored_text) item.appendChild(el('div', 'hint', event.ignored_text));
+    list.appendChild(item);
+  }
+  box.appendChild(list);
+
+  if (card.deduction_exhausts_term) {
+    // Граничный случай: периодов набралось больше, чем сам срок. Дата на
+    // карточке упёрлась в день начала течения срока — без этой строки она
+    // читалась бы как обычный расчёт.
+    box.appendChild(
+      el(
+        'div',
+        'warn',
+        `Сумма периодов (${card.deducted_days} ${daysWord(card.deducted_days)}) больше самого ` +
+          `трёхлетнего срока: вычитать дальше нечего. Показана дата начала течения срока — ` +
+          `по этому расчёту срок предъявления исчерпан полностью.`,
+      ),
+    );
+  } else if (card.deducted_days > 0) {
+    box.appendChild(
+      el(
+        'div',
+        'hint',
+        `Из срока вычтено ${card.deducted_days} ${daysWord(card.deducted_days)}: без вычета он ` +
+          `истекал бы ${isoToRu(card.deadline_before_deduction)}. Точка отсчёта при этом не ` +
+          `меняется — уменьшается длина срока (ч. 3.1 ст. 22).`,
+      ),
+    );
+  } else {
+    box.appendChild(
+      el('div', 'hint', 'Ни один период в расчёт не принят — срок не уменьшен.'),
+    );
+  }
+
+  // Допущения показываем рядом с расчётом, а не в раскрывающихся деталях: они
+  // не подтверждены по первоисточнику и влияют на саму дату.
+  if (card.deduction_assumption) {
+    const warn = el('div', 'warn deduction-assumption');
+    warn.appendChild(el('div', null, card.deduction_assumption.text));
+    warn.appendChild(el('div', 'hint', card.deduction_assumption.norm));
+    box.appendChild(warn);
+  }
   return box;
 }
 
