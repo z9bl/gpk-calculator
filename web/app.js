@@ -663,7 +663,11 @@ function renderInterruptionRow(row, index) {
 }
 
 // Редактор списка — на карточке изменяемого срока (card.interruptible).
-function renderInterruptions() {
+//
+// card нужен, чтобы показать рядом с полями предупреждение о пересечении
+// периодов: это ошибка ВВОДА, и место ей там, где её исправляют, а не в
+// истории расчёта ниже.
+function renderInterruptions(card) {
   const box = el('div', 'note interruptions');
   box.appendChild(
     el(
@@ -675,6 +679,22 @@ function renderInterruptions() {
   );
   box.appendChild(el('p', 'hint', INPUT_HINTS.enforcement_interruptions));
   interruptionDraft.forEach((row, index) => box.appendChild(renderInterruptionRow(row, index)));
+
+  if (card?.deduction_overlap_warning) {
+    const warn = el('div', 'warn deduction-overlap');
+    warn.appendChild(el('div', null, card.deduction_overlap_warning.text));
+    for (const pair of card.deduction_overlap_warning.pairs) {
+      warn.appendChild(
+        el(
+          'div',
+          'hint',
+          `Пересекаются: ${isoToRu(pair.a.from)} — ${isoToRu(pair.a.to)} и ` +
+            `${isoToRu(pair.b.from)} — ${isoToRu(pair.b.to)}.`,
+        ),
+      );
+    }
+    box.appendChild(warn);
+  }
 
   const add = el('button', 'row-add', 'Добавить событие');
   add.type = 'button';
@@ -1461,7 +1481,7 @@ function render() {
         }
         // Перерыв срока предъявления (ст. 22 ФЗ № 229-ФЗ) — повторяемый
         // список событий у узлов ИЛ и судебного приказа.
-        if (card.interruptible) termEl.appendChild(renderInterruptions());
+        if (card.interruptible) termEl.appendChild(renderInterruptions(card));
         // Заглушки рядом с узлом (напр. предъявление ИЛ). Список пуст — все
         // смежные случаи раскрыты узлами; заголовок без содержимого не рисуем.
         if (card.stubs && card.stubs.length) termEl.appendChild(renderRelatedStubs(card.stubs));

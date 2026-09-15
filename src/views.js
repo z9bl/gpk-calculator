@@ -282,6 +282,12 @@ function attachDeductions(card, term) {
   // случай в core/engine/deduction.js).
   if (term.deduction_exhausts_term) card.deduction_exhausts_term = true;
   card.deduction_assumption = term.deduction_assumption;
+  // Ошибка ввода (пересекающиеся периоды) — не свойство расчёта, поэтому
+  // отдельным полем, а не внутри deduction_assumption: допущения стоят всегда,
+  // это предупреждение — только когда есть что исправлять.
+  if (term.deduction_overlap_warning) {
+    card.deduction_overlap_warning = term.deduction_overlap_warning;
+  }
   card.details.deduction_norm = term.deduction_norm;
   card.details.deduction_logic = term.deduction_logic;
 }

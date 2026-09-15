@@ -201,6 +201,28 @@ if ((await ilCard.count()) !== 1) {
   if ((await ilCard.locator('.deduction-assumption').count()) === 0) {
     problems.push('допущения по ч. 3.1 не показаны рядом с расчётом');
   }
+  if ((await ilCard.locator('.deduction-overlap').count()) !== 0) {
+    problems.push('предупреждение о пересечении показано на одном периоде');
+  }
+
+  // Проверка ввода: второй период, перекрывающий первый, должен дать
+  // предупреждение рядом с полями — при этом расчёт не меняется иначе, чем на
+  // сумму обоих периодов (валидация арифметику не подстраивает).
+  await ilCard.getByRole('button', { name: 'Добавить событие' }).click();
+  await page.waitForTimeout(100);
+  await page.selectOption('#in-interruption-1-type', 'creditor_obstruction');
+  await page.waitForTimeout(200);
+  await page.fill('#in-interruption-1-from', '01.07.2024');
+  await page.fill('#in-interruption-1-to', '01.11.2024');
+  await page.waitForTimeout(200);
+  if ((await ilCard.locator('.deduction-overlap').count()) === 0) {
+    problems.push('пересекающиеся периоды не дали предупреждения о вводе');
+  }
+  // 123 + 123 = 246 дней от 12.04.2027 → 09.08.2026 (воскресенье → 10.08.2026).
+  const overlapped = (await ilCard.locator('.deadline').first().innerText()).trim();
+  if (overlapped !== '10.08.2026') {
+    problems.push(`при пересечении ждали 10.08.2026, получили «${overlapped}»`);
+  }
 }
 
 await browser.close();

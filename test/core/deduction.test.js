@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   deductionEvents,
+  overlappingDeductions,
   totalDeductedDays,
   withDeductions,
 } from '../../core/engine/deduction.js';
@@ -213,6 +214,101 @@ test('сумма нескольких периодов тоже упираетс
   assert.equal(deducted.deducted_days, 1460);
   assert.equal(deducted.raw_deadline, '2025-04-13');
   assert.equal(deducted.deduction_exhausts_term, true);
+});
+
+// --- Пересечение отрезков (проверка ввода, не правило расчёта) ---------------
+
+const events = (list) => deductionEvents(list, TYPES);
+
+test('непересекающиеся отрезки пар не дают', () => {
+  assert.deepEqual(
+    overlappingDeductions(
+      events([
+        { type: 'alpha', from: '2025-01-01', to: '2025-03-01' },
+        { type: 'beta', from: '2025-06-01', to: '2025-09-01' },
+      ]),
+    ),
+    [],
+  );
+  assert.deepEqual(overlappingDeductions(events([])), []);
+  assert.deepEqual(
+    overlappingDeductions(events([{ type: 'alpha', from: '2025-01-01', to: '2025-03-01' }])),
+    [],
+  );
+});
+
+test('смыкание встык пересечением не считается', () => {
+  // По ст. 191 ГК РФ день начала в длину отрезка не входит, поэтому общий день
+  // принадлежит только одному из двух отрезков — перекрытия нет.
+  assert.deepEqual(
+    overlappingDeductions(
+      events([
+        { type: 'alpha', from: '2025-01-01', to: '2025-06-01' },
+        { type: 'beta', from: '2025-06-01', to: '2025-09-01' },
+      ]),
+    ),
+    [],
+  );
+});
+
+test('частичное перекрытие и вложение отрезков обнаруживаются', () => {
+  const partial = overlappingDeductions(
+    events([
+      { type: 'alpha', from: '2025-01-01', to: '2025-06-01' },
+      { type: 'beta', from: '2025-03-01', to: '2025-09-01' },
+    ]),
+  );
+  assert.equal(partial.length, 1);
+  assert.equal(partial[0].a.from, '2025-01-01');
+  assert.equal(partial[0].b.from, '2025-03-01');
+
+  const nested = overlappingDeductions(
+    events([
+      { type: 'alpha', from: '2025-01-01', to: '2025-12-01' },
+      { type: 'beta', from: '2025-03-01', to: '2025-04-01' },
+    ]),
+  );
+  assert.equal(nested.length, 1);
+});
+
+test('три взаимно пересекающихся отрезка дают три пары', () => {
+  const pairs = overlappingDeductions(
+    events([
+      { type: 'alpha', from: '2025-01-01', to: '2025-12-01' },
+      { type: 'beta', from: '2025-02-01', to: '2025-11-01' },
+      { type: 'alpha', from: '2025-03-01', to: '2025-10-01' },
+    ]),
+  );
+  assert.equal(pairs.length, 3);
+});
+
+test('непригодные отрезки на пересечение не проверяются', () => {
+  // Они и в сумму не идут — предупреждать о них как о пересечении значило бы
+  // требовать исправить то, что на расчёт уже не влияет.
+  assert.deepEqual(
+    overlappingDeductions(
+      events([
+        { type: 'alpha', from: '2025-01-01', to: '2025-06-01' },
+        { type: 'gamma', from: '2025-03-01', to: '2025-09-01' }, // не наше основание
+      ]),
+    ),
+    [],
+  );
+});
+
+test('обнаружение пересечения на арифметику не влияет', () => {
+  // Ключевое разделение: проверка ввода отдельно, формула сложения отдельно.
+  // Пересекающиеся отрезки складываются целиком, как и любые другие.
+  const overlapping = events([
+    { type: 'alpha', from: '2025-01-01', to: '2025-01-11' }, // 10
+    { type: 'beta', from: '2025-01-06', to: '2025-01-16' }, // 10, из них 5 общих
+  ]);
+  assert.equal(overlappingDeductions(overlapping).length, 1);
+  assert.equal(totalDeductedDays(overlapping), 20); // не 15 — общие дни не схлопываются
+  const deducted = withDeductions(RESULT, TERM, overlapping, CONFIG);
+  assert.equal(deducted.deducted_days, 20);
+  // withDeductions о пересечении ничего не знает и полей о нём не добавляет.
+  assert.equal(deducted.deduction_overlap_warning, undefined);
 });
 
 // --- Тексты, которыми помечается результат ----------------------------------
