@@ -30,6 +30,33 @@ import { SITUATIONS, DEFAULT_SITUATION } from '../src/situations.js';
 import { situationById } from '../core/view/situations.js';
 import { INPUT_LABELS } from '../src/labels.js';
 
+// UI восстановления пропущенного срока (годичный потолок ч. 7 ст. 112 ГПК РФ:
+// поля *_restoration_circumstance_date и текстовый блок card.restoration_one_year_cap,
+// см. CASSATION_SUPERVISORY_RESTORATION_NODE_IDS и core/engine/restoration.js)
+// временно скрыт из интерфейса по всему калькулятору — один флаг вместо
+// точечных правок в каждом из узлов, к которым он подключён. Расчёт в
+// движке (src/chain.js, core/engine/restoration.js) не меняется: он
+// продолжает работать и покрыт тестами (test/core/, test/integration/) —
+// скрывается только вывод.
+const SHOW_RESTORATION_CAP_UI = false;
+
+// *_restoration_circumstance_date — соглашение об именовании всех восьми
+// полей годичного потолка (см. fields в src/situations.js); суффикс уникален
+// для них и не пересекается с другими полями (review_circumstance_date под
+// него не попадает).
+function isRestorationCircumstanceField(id) {
+  return id.endsWith('_restoration_circumstance_date');
+}
+
+// Поля ситуации без учёта скрытых полей годичного потолка восстановления —
+// единая точка фильтрации и для списка отрисовки, и для проверки «есть ли
+// у ветви уже введённое значение» (см. renderSituationFields ниже).
+function visibleSituationFields(situation) {
+  return SHOW_RESTORATION_CAP_UI
+    ? situation.fields
+    : situation.fields.filter((id) => !isRestorationCircumstanceField(id));
+}
+
 // --- Метаданные полей (п. 4.1 SPEC.md) --------------------------------------
 //
 // INPUT_LABELS — общий словарь с src/views.js, см. src/labels.js. Единая
@@ -478,7 +505,7 @@ function renderTermCard(card, opts = {}) {
 
   if (card.boundary_warning) c.appendChild(renderBoundaryWarning(card.boundary_warning));
 
-  if (card.restoration_one_year_cap) {
+  if (SHOW_RESTORATION_CAP_UI && card.restoration_one_year_cap) {
     c.appendChild(renderRestorationOneYearCap(card.restoration_one_year_cap));
   }
 
@@ -1507,7 +1534,7 @@ function render() {
   // Ветвь выбрана, но данных ещё нет — на экране не должно быть пусто без
   // объяснения. У общей ветви приглашение уже показано выше.
   if (!root.childElementCount && !situation.primary_field) {
-    const first = situation.fields[0];
+    const first = visibleSituationFields(situation)[0];
     root.appendChild(
       el('p', 'empty', `Укажите ${askFor(first)} — появятся сроки.`),
     );
@@ -2036,8 +2063,9 @@ function renderSituationFields(situation, primaryFilled) {
   other.textContent = '';
   other.hidden = true;
   root.textContent = '';
-  const hasOwnValue = situation.fields.some((id) => state.inputs[id] != null);
-  if (!situation.fields.length || (situation.primary_field && !primaryFilled && !hasOwnValue)) {
+  const fields = visibleSituationFields(situation);
+  const hasOwnValue = fields.some((id) => state.inputs[id] != null);
+  if (!fields.length || (situation.primary_field && !primaryFilled && !hasOwnValue)) {
     root.hidden = true;
     return;
   }
@@ -2119,7 +2147,7 @@ function renderSituationFields(situation, primaryFilled) {
   }
   const box = el('div', 'invite');
   if (situation.id === 'separate') {
-    for (const id of situation.fields) {
+    for (const id of fields) {
       if (id === 'sudebny_prikaz_received_date') {
         renderSudebnyPrikazFields(box);
         continue;
@@ -2154,7 +2182,7 @@ function renderSituationFields(situation, primaryFilled) {
   } else if (situation.id === 'review_new_circumstances') {
     renderReviewGroundFields(box);
   } else {
-    for (const id of situation.fields) box.appendChild(inviteFieldOrPointer(id));
+    for (const id of fields) box.appendChild(inviteFieldOrPointer(id));
   }
   root.appendChild(reveal(`sitfields:${situation.id}`, box));
 }
