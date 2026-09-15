@@ -70,7 +70,8 @@ const INPUT_HINTS = {
     'Если заявление удовлетворено: решение отменено, вступления в силу не наступает',
   default_judgment_appeal_filed_date:
     'Если решение обжаловано, оно вступит в силу после рассмотрения жалобы (ч. 1 ст. 244)',
-  default_judgment_appeal_ruling_date: 'Дата вступления решения в силу, если оно не отменено',
+  default_judgment_appeal_ruling_date:
+    'Дата вступления решения в силу (ч. 1 ст. 209), если оно не отменено',
   default_judgment_appeal_ruling_reasoned_date:
     'Если дело обжаловалось — от неё считается кассационный срок (абз. 2 ч. 1 ст. 376.1)',
   mirovoy_resolution_date:
@@ -86,7 +87,8 @@ const INPUT_HINTS = {
     'вынесения (ч. 1 ст. 379.2). При отмене определения жалоба считается поданной в день ' +
     'первоначального обращения',
   mirovoy_appeal_ruling_reasoned_date:
-    'Если дело прошло апелляцию в районном суде — от неё считается кассационный срок',
+    'Если дело прошло апелляцию в районном суде — от неё считается кассационный срок ' +
+    '(абз. 2 ч. 1 ст. 376.1)',
   mirovoy_appeal_ruling_date:
     'Со дня принятия решение вступает в силу (ч. 1 ст. 209); от неё считается предъявление ИЛ',
   court_order_copy_received_date:
@@ -113,9 +115,8 @@ const INPUT_HINTS = {
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
   sudebny_prikaz_received_date:
-    'От этой даты — 10 дней на возражения должника (ст. 128); их истечение без ' +
-    'поданных возражений — момент вступления приказа в законную силу, от него ' +
-    'считаются три месяца на кассацию (ч. 1 ст. 376.1)',
+    '10 дней на возражения должника (ст. 128); без них — вступление в силу, ' +
+    'дальше 3 месяца на кассацию (ч. 1 ст. 376.1)',
   sudebny_prikaz_postal_arrival_date:
     'Срок хранения на почте — 7 календарных дней со следующего рабочего дня ' +
     'после прибытия (п. 32 ПП ВС РФ от 27.12.2016 № 62); днём получения ' +
@@ -151,9 +152,7 @@ const INPUT_HINTS = {
     'разбирательства, в отношении прав и обязанностей которого оно вынесено, ' +
     'а также для прокурора в установленных случаях',
   foreign_state_default_judgment_service_date:
-    'Дело в отсутствие представителя иностранного государства рассматривается ' +
-    'по правилам главы 22 ГПК РФ (заочное производство), но с другими сроками ' +
-    '(ч. 1–4 ст. 417.10)',
+    'Заочное производство по правилам главы 22 ГПК РФ, но со сроками по ст. 417.10',
   foreign_state_default_judgment_cancellation_request_date:
     'Два месяца со дня вручения копии решения (ч. 3 ст. 417.10) — не семь ' +
     'рабочих дней общего порядка (ст. 237)',
@@ -389,7 +388,7 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(el('div', 'norm', card.norm));
     const days = card.overdue.days;
     c.appendChild(
-      el('div', 'miss', `Срок пропущен на ${days} ${pluralDays(days)}. Восстановление — ${card.overdue.norm}.`),
+      el('div', 'miss', `Пропущен срок: ${days} ${pluralDays(days)}. Восстановление — ${card.overdue.norm}.`),
     );
   } else if (card.status === 'expired') {
     // Дедлайн прошёл, а даты подачи нет: факт пропуска не установлен, известно
@@ -401,17 +400,19 @@ function renderTermCard(card, opts = {}) {
       el(
         'div',
         'expired-note',
-        `Срок истёк ${days} ${pluralDays(days)} назад. Дата подачи не введена — ` +
+        `Истёк срок: ${days} ${pluralDays(days)} назад. Дата подачи не введена — ` +
           'пропуск не подтверждён.',
       ),
     );
   } else if (card.status === 'not_applicable') {
-    // Срока не возникает вовсе — вместо даты прочерк и причина, как у события
-    // вступления в силу в том же состоянии.
-    c.appendChild(el('div', 'deadline', '—'));
+    // Срока не возникает вовсе — вместо даты формулировка и причина, как у
+    // события вступления в силу в том же состоянии.
+    c.appendChild(el('div', 'deadline', 'Срок не возникает.'));
     if (card.message) c.appendChild(el('div', 'warn', card.message));
     c.appendChild(el('div', 'norm', card.norm));
   } else {
+    // Статус 'в порядке' — молчаливый по умолчанию; добавление текста —
+    // отдельная UX-задача, не часть этого прохода.
     c.appendChild(el('div', 'deadline', isoToRu(card.deadline)));
     c.appendChild(el('div', 'norm', card.norm));
   }
@@ -812,6 +813,8 @@ function renderInfoTermCard(card) {
   head.appendChild(el('span', 'badge info', 'справочно'));
   c.appendChild(head);
 
+  // Статус 'в порядке' — молчаливый по умолчанию; добавление текста —
+  // отдельная UX-задача, не часть этого прохода.
   const line = el('div', 'info-line');
   line.appendChild(el('span', 'deadline-caption inline', `${DEADLINE_CAPTION_COURT}:`));
   line.appendChild(
@@ -826,7 +829,7 @@ function renderInfoTermCard(card) {
 
   if (card.status === 'expired' && card.expired) {
     const n = card.expired.days;
-    c.appendChild(el('div', 'hint', `Срок истёк ${n} ${pluralDays(n)} назад.`));
+    c.appendChild(el('div', 'hint', `Истёк срок: ${n} ${pluralDays(n)} назад.`));
   }
   if (card.first_working_day) {
     c.appendChild(el('div', 'hint', `Отсчёт рабочих дней с ${isoToRu(card.first_working_day)}`));
@@ -1544,8 +1547,20 @@ function renderCheckboxField(id, current) {
 // (select), но для случая, когда вариантов мало и выбор удобнее видеть сразу
 // (не открывать выпадающий список). У выбора, в отличие от чекбокса и select,
 // нет собственного поля в inputs — вариант приходит из onChange отдельно.
-function renderRadioGroup(name, options, current, onChange) {
+// Необязательный `legend` — общий заголовок-вопрос над группой. Нужен там, где
+// варианты по смыслу не да/нет-утверждения о факте, а взаимоисключающие
+// самоописания пользователя («я …»): вопрос по правилу 1 тогда ставится один
+// раз над группой, а подписи вариантов остаются ответами (см.
+// docs/ui-copy-proposal.md, D.2).
+function renderRadioGroup(name, options, current, onChange, legend) {
   const wrap = el('div', 'field radio-field');
+  if (legend) {
+    const lab = el('label', null, legend);
+    lab.id = `in-${name}-legend`;
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-labelledby', lab.id);
+    wrap.appendChild(lab);
+  }
   for (const opt of options) {
     const lab = el('label', 'radio-option');
     const input = el('input');
@@ -1586,10 +1601,10 @@ function renderSudebnyPrikazFields(box) {
     renderRadioGroup(
       'sudebny_prikaz_mode',
       [
-        { value: SUDEBNY_PRIKAZ_MODE_RECEIVED, label: 'Известна дата получения копии приказа' },
+        { value: SUDEBNY_PRIKAZ_MODE_RECEIVED, label: 'Известна дата получения копии приказа?' },
         {
           value: SUDEBNY_PRIKAZ_MODE_POSTAL,
-          label: 'Известна только дата прибытия отправления на почту',
+          label: 'Известна только дата прибытия отправления на почту?',
         },
       ],
       mode,
@@ -1662,6 +1677,7 @@ function renderArbitrationAwardSetasideFields(box) {
         }
         render();
       },
+      'Кто заполняет обращение?',
     ),
   );
   box.appendChild(
