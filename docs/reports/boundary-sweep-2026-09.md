@@ -22,7 +22,7 @@
   нерабочи независимо от переноса. Формулировка задачи ошибочна, что
   подтверждено пользователем в этой сессии; список аномалий шага 1 принят как
   верный без изменений.
-- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 43 узлов.
+- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 37 узлов.
 - **Шаг 3–4.** Для каждого узла и каждой даты-аномалии — до 4 сценариев
   (старт на аномалии; наивный дедлайн на аномалии; ±1 день допуска).
   Вызов — РЕАЛЬНЫЕ функции ядра (`computeSimpleTerm`/`computeVersionedTerm`/
@@ -31,14 +31,14 @@
   (без многошагового resolve) дополнительно сверено с публичной обёрткой
   `chain.computeIndependentTerms` (differential-проверка «узел тайно не
   использует core»).
-- Итого сценариев: **27872**.
+- Итого сценариев: **24656**.
 
 ## Сводка
 
-- Узлов всего: **43**.
-- Узлов без единой ANOMALY/ERROR: **43**.
+- Узлов всего: **37**.
+- Узлов без единой ANOMALY/ERROR: **37**.
 - Узлов с найденными расхождениями: **0**.
-- Сценариев PASS: **27872**.
+- Сценариев PASS: **24656**.
 - Сценариев ANOMALY: **0**.
 - Сценариев ERROR (исключение при вызове): **0**.
 - Сценариев NOT_GENERATED (наивный подбор старта не сошёлся): **0**.
@@ -59,22 +59,17 @@
 | child_return_appeal | working_day | 10 | нет | — | нет |
 | child_return_private_complaint | working_day | 10 | нет | — | нет |
 | court_order_objection | working_day | 10 | нет | — | нет |
-| court_order_presentation | year | 3 | нет | — | нет |
 | default_judgment_appeal | month | 1 | нет | default_judgment_appeal_filed_date | нет |
 | default_judgment_cancellation_request | working_day | 7 | нет | default_judgment_cancellation_request_date | нет |
 | default_judgment_cassation_ksoyu | month | 3 | да (2) | cassation_filed_date | нет |
-| default_judgment_enforcement_presentation | year | 3 | нет | — | нет |
 | enforcement_document_presentation | year | 3 | нет | — | нет |
-| enforcement_presentation | year | 3 | нет | — | нет |
 | foreign_judgment_enforcement_presentation | year | 3 | нет | — | нет |
 | foreign_judgment_recognition_objection | month | 1 | нет | — | нет |
 | foreign_state_default_judgment_appeal | month | 1 | нет | foreign_state_default_judgment_appeal_filed_date | нет |
 | foreign_state_default_judgment_cancellation_request | month | 2 | нет | foreign_state_default_judgment_cancellation_request_date | нет |
 | foreign_state_default_judgment_cassation_ksoyu | month | 3 | да (2) | cassation_filed_date | нет |
-| foreign_state_default_judgment_enforcement_presentation | year | 3 | нет | — | нет |
 | mirovoy_appeal | month | 1 | нет | mirovoy_appeal_ruling_reasoned_date | нет |
 | mirovoy_cassation | month | 3 | да (2) | cassation_filed_date | да |
-| mirovoy_enforcement_presentation | year | 3 | нет | — | нет |
 | mirovoy_reasoned_making | working_day | 10 | нет | mirovoy_reasoned_date | нет |
 | mirovoy_reasoned_request | working_day | 3 | нет | mirovoy_request_date | нет |
 | private_complaint | working_day | 15 | нет | — | нет |
@@ -85,7 +80,6 @@
 | settlement_approval_cassation_appeal | month | 1 | нет | — | да |
 | simplified_appeal | working_day | 15 | нет | simplified_appeal_filed_date | нет |
 | simplified_cassation_ksoyu | month | 3 | да (2) | cassation_filed_date | нет |
-| simplified_enforcement_presentation | year | 3 | нет | — | нет |
 | simplified_reasoned_making | working_day | 10 | нет | simplified_reasoned_date | нет |
 | simplified_reasoned_request | working_day | 5 | нет | simplified_reasoned_request_date | нет |
 | sudebny_prikaz_cassation | month | 3 | нет | — | да |
@@ -106,7 +100,7 @@
 
 ## Пример PASS-сценариев (по одному на узел)
 
-Полная таблица (все 27872 сценариев) не приводится —
+Полная таблица (все 24656 сценариев) не приводится —
 нечитаема в markdown; воспроизводится повторным запуском теста. Ниже — по
 одному представительному PASS на узел, для наглядности формата.
 
@@ -122,22 +116,17 @@
 | child_return_appeal | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
 | child_return_private_complaint | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
 | court_order_objection | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
-| court_order_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | default_judgment_appeal | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
 | default_judgment_cancellation_request | start_at_anomaly | 2020-01-01 | — | 2020-01-17 | PASS |
 | default_judgment_cassation_ksoyu | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
-| default_judgment_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | enforcement_document_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
-| enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | foreign_judgment_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | foreign_judgment_recognition_objection | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
 | foreign_state_default_judgment_appeal | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
 | foreign_state_default_judgment_cancellation_request | start_at_anomaly | 2020-01-01 | — | 2020-03-02 | PASS |
 | foreign_state_default_judgment_cassation_ksoyu | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
-| foreign_state_default_judgment_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | mirovoy_appeal | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
 | mirovoy_cassation | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
-| mirovoy_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | mirovoy_reasoned_making | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
 | mirovoy_reasoned_request | start_at_anomaly | 2020-01-01 | — | 2020-01-13 | PASS |
 | private_complaint | start_at_anomaly | 2020-01-01 | — | 2020-01-29 | PASS |
@@ -148,7 +137,6 @@
 | settlement_approval_cassation_appeal | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
 | simplified_appeal | start_at_anomaly | 2020-01-01 | — | 2020-01-29 | PASS |
 | simplified_cassation_ksoyu | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
-| simplified_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | simplified_reasoned_making | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
 | simplified_reasoned_request | start_at_anomaly | 2020-01-01 | — | 2020-01-15 | PASS |
 | sudebny_prikaz_cassation | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
@@ -160,10 +148,10 @@
 
 | файл | строка | фрагмент |
 |---|---|---|
-| src/views.js | 136 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
-| web/app.js | 289 | `const d = new Date();` |
-| web/app.js | 290 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
-| web/app.js | 1309 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
+| src/views.js | 129 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
+| web/app.js | 291 | `const d = new Date();` |
+| web/app.js | 292 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
+| web/app.js | 1311 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
 
 Каждое совпадение — кандидат на «забытый частный случай» (STATIC_FLAG), даже
 если динамические сценарии выше его не поймали — см. п. Шаг 5 задачи. Разбор

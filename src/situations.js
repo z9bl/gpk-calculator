@@ -11,12 +11,11 @@
 // платежей ещё и чекбокс бессрочности): каждое по тесту принадлежит ровно
 // одной ситуации и рисуется над карточками либо в блоке уточняющих дат.
 // Списка перерывов срока (`enforcement_interruptions`, ст. 22 ФЗ № 229-ФЗ)
-// здесь нет намеренно: это повторяемый список, и один и тот же список нужен
-// сразу нескольким ситуациям (узлы предъявления ИЛ во всех ветвях, судебный
-// приказ и исполнительное производство). Он привязан не к ситуации, а к
-// карточке — по признаку `interruptible` самого срока, поэтому появляется ровно
-// там, где применим, и не появляется у периодических платежей, к которым
-// ст. 22 не сведена.
+// здесь нет намеренно: это повторяемый список, привязанный не к ситуации, а к
+// карточке — по признаку `interruptible` самого срока. Сейчас такой срок один
+// (узел ситуации «Исполнительное производство»), и список появляется ровно
+// там, где применим: не у периодических платежей, к которым ст. 22 не сведена,
+// и не у прочих ситуаций, где узлов предъявления больше нет.
 
 export const SITUATIONS = [
   {
@@ -41,7 +40,6 @@ export const SITUATIONS = [
       'entry_into_force',
       'cassation_ksoyu',
       'cassation_vs',
-      'enforcement_presentation',
       'supervision',
     ],
   },
@@ -58,7 +56,6 @@ export const SITUATIONS = [
       'mirovoy_appeal',
       'mirovoy_entry_into_force',
       'mirovoy_cassation',
-      'mirovoy_enforcement_presentation',
     ],
   },
   {
@@ -71,7 +68,6 @@ export const SITUATIONS = [
       'simplified_appeal',
       'simplified_entry_into_force',
       'simplified_cassation_ksoyu',
-      'simplified_enforcement_presentation',
     ],
   },
   {
@@ -83,7 +79,6 @@ export const SITUATIONS = [
       'default_judgment_appeal',
       'default_judgment_entry_into_force',
       'default_judgment_cassation_ksoyu',
-      'default_judgment_enforcement_presentation',
     ],
   },
   {
@@ -99,7 +94,6 @@ export const SITUATIONS = [
       'foreign_state_default_judgment_appeal',
       'foreign_state_default_judgment_entry_into_force',
       'foreign_state_default_judgment_cassation_ksoyu',
-      'foreign_state_default_judgment_enforcement_presentation',
     ],
   },
   {
@@ -110,13 +104,16 @@ export const SITUATIONS = [
     // default_judgment, а не primary_field — тот зарезервирован за общей
     // веткой (см. тест 'по умолчанию выбран общий порядок' в situations.test.js
     // и статическую разметку общего поля в web/app.js).
-    // Два независимых поля одной процедуры, в порядке самой процедуры: копия
-    // приказа получена должником (ст. 128) → возражений в срок нет → приказ
-    // выдан взыскателю (ст. 130, ч. 3 ст. 21 ФЗ № 229-ФЗ). Друг от друга поля
-    // не зависят: каждый узел считается по своему input, любое из полей можно
-    // заполнить отдельно.
-    fields: ['court_order_copy_received_date', 'court_order_issued_date'],
-    nodes: ['court_order_objection', 'court_order_presentation'],
+    //
+    // Узел здесь один — возражения должника (ст. 128) от даты получения копии
+    // приказа. Второй узел этой ситуации, предъявление приказа к исполнению
+    // (ч. 3 ст. 21 ФЗ № 229-ФЗ), убран вместе со своим полем
+    // court_order_issued_date: тот же расчёт от той же даты даёт вариант
+    // «судебный приказ» ситуации «Исполнительное производство» ниже, и поле
+    // переехало туда. Дублировать предъявление в конце каждой процедуры
+    // больше не нужно — вход к нему один.
+    fields: ['court_order_copy_received_date'],
+    nodes: ['court_order_objection'],
   },
   {
     id: 'enforcement',
@@ -138,21 +135,22 @@ export const SITUATIONS = [
     // computeEnforcementDocumentPresentation в chain.js). Оба поля перечислены
     // ниже: теперь они принадлежат этой ситуации.
     //
-    // court_order_issued_date в `fields` НЕТ, хотя вариант «судебный приказ»
-    // якорится на него: поле закреплено за ситуацией «Судебный приказ», где
-    // помимо предъявления есть возражения должника (ст. 128) — это другой
-    // узел, а не дубликат, и ту ситуацию мы не поглощаем. Поле здесь
-    // переиспользуется, а не дублируется: одна и та же дата не должна
-    // вводиться дважды и расходиться между двумя входами к одному расчёту.
-    // Перечислить его тут нельзя — оно оказалось бы закреплено за двумя
-    // ситуациями сразу (инвариант «поля ввода не дублируются между
-    // ситуациями», situations.test.js). На экране его рисует
-    // renderEnforcementDocumentFields (web/app.js) по anchor_field выбранного
-    // типа; за пределы одной ситуации это не выходит — в каждый момент
-    // отрисовывается ровно одна ситуация.
+    // court_order_issued_date (дата выдачи приказа взыскателю, ст. 130 ГПК) —
+    // якорь варианта «судебный приказ». Прежде поле принадлежало ситуации
+    // «Судебный приказ» и здесь лишь переиспользовалось: перечислить его в
+    // двух ситуациях сразу нельзя (инвариант «поля ввода не дублируются между
+    // ситуациями», situations.test.js). Теперь узел предъявления в приказном
+    // производстве убран, и поле закреплено за этой ситуацией — единственной,
+    // где оно что-то открывает. В «Судебном приказе» осталось своё поле
+    // (court_order_copy_received_date) и свой узел — возражения должника.
+    //
+    // На экране поля даты рисует renderEnforcementDocumentFields (web/app.js)
+    // по anchor_field выбранного типа, а не перебором этого списка: у трёх
+    // типов документа три разных якоря, и одновременно показывается ровно один.
     fields: [
       'enforcement_document_type',
       'enforcement_decision_entry_into_force_date',
+      'court_order_issued_date',
       'periodic_payment_period_end_date',
       'periodic_payment_indefinite',
     ],

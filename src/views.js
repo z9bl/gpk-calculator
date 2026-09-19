@@ -55,13 +55,6 @@ export { REVIEW_GROUNDS };
 // выбору узнать, какое поле даты показывать (anchor_field).
 export { ENFORCEMENT_DOCUMENT_TYPES, enforcementDocumentTypeById };
 
-// Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Список пуст:
-// судебный приказ и периодические платежи раскрыты отдельными узлами
-// (court_order_presentation, enforcement_document_presentation — свои ситуации в
-// situations.js), перерыв срока — сдвигом якоря по событиям ст. 22 (см.
-// applyInterruptions в chain.js). Механизм оставлен, как и STUBS ниже: он
-// понадобится следующему смежному случаю, для которого расчёта не окажется.
-const ENFORCEMENT_STUBS = [];
 import { computeDeadline } from '../core/engine/engine.js';
 import { toISODate } from '../core/calendar/calendar.js';
 import {
@@ -301,30 +294,6 @@ function attachDeductions(card, term) {
   card.details.deduction_logic = term.deduction_logic;
 }
 
-// Карточка срока предъявления ИЛ. Смежные случаи (card.stubs) сейчас пусты —
-// все раскрыты узлами; поле остаётся, чтобы следующий случай было куда класть.
-function enforcementCard(enf) {
-  const card = {
-    id: enf.id,
-    kind: 'term',
-    title: enf.title,
-    status: 'computed',
-    deadline: enf.deadline,
-    norm: enf.norm.primary,
-    details: {
-      collapsed: true,
-      logic: enf.logic,
-      calculation: enf.norm.calculation,
-      midnight_rule: enf.midnight_rule,
-    },
-    stubs: ENFORCEMENT_STUBS,
-  };
-  attachInterruptions(card, enf);
-  attachDeductions(card, enf);
-  attachCalendarWarning(card);
-  return card;
-}
-
 // workingDayCard — перенесена в core/view/cards.js (см. импорт выше).
 
 // Карточки упрощённого производства (глава 21.1): три срока + своё событие
@@ -408,9 +377,6 @@ function simplifiedCards(simplified) {
   // Кассация в КСОЮ — после вступления решения в силу (ст. 376.1).
   if (simplified.cassation) cards.push(cassationCard(simplified.cassation));
 
-  // Предъявление ИЛ — после вступления решения в силу (ч. 1 ст. 21 ФЗ № 229-ФЗ).
-  if (simplified.enforcement) cards.push(enforcementCard(simplified.enforcement));
-
   return cards;
 }
 
@@ -493,11 +459,6 @@ function defaultJudgmentCards(dj) {
   // Кассация в КСОЮ — после вступления заочного решения в силу (ст. 376.1).
   // Без exhaustion_warning (отложено, см. computeDefaultJudgment).
   if (dj.cassation) cards.push(cassationCard(dj.cassation));
-
-  // Предъявление ИЛ — после вступления заочного решения в силу (ч. 1 ст. 21
-  // ФЗ № 229-ФЗ). При удовлетворённом заявлении об отмене вступления в силу нет,
-  // и dj.enforcement === null — карточки нет.
-  if (dj.enforcement) cards.push(enforcementCard(dj.enforcement));
 
   return { cards, incomplete };
 }
@@ -583,10 +544,6 @@ function foreignStateDefaultJudgmentCards(dj) {
   // инкорпорирована ч. 1 ст. 417.10). Условие исчерпания — общее (3.7).
   if (dj.cassation) cards.push(cassationCard(dj.cassation));
 
-  // Предъявление ИЛ — после вступления заочного решения в силу (ч. 1 ст. 21
-  // ФЗ № 229-ФЗ, дополнительно подтверждено ст. 417.12).
-  if (dj.enforcement) cards.push(enforcementCard(dj.enforcement));
-
   return { cards, incomplete };
 }
 
@@ -648,9 +605,6 @@ function mirovoyCards(m) {
     cards.push(cass);
   }
 
-  // Предъявление ИЛ — после вступления решения в силу (ч. 1 ст. 21 ФЗ № 229-ФЗ).
-  if (m.enforcement) cards.push(enforcementCard(m.enforcement));
-
   return cards;
 }
 
@@ -661,7 +615,8 @@ function mirovoyCards(m) {
 // monthTermCard — перенесена в core/view/cards.js (см. импорт выше). Историю
 // перерывов (attachInterruptions) она больше не прикладывает сама — это
 // предметная надстройка, единственный узел, которому она нужна
-// (court_order_presentation), получает её от вызывающего кода отдельно.
+// (enforcement_document_presentation), получает её от вызывающего кода
+// отдельно.
 
 // Карточка пересмотра по вновь открывшимся/новым обстоятельствам: обычный
 // monthTermCard плюс, у практики ВС (vs_practice_change), обе промежуточные
@@ -751,19 +706,23 @@ function enforcementDocumentCard(term) {
 // Карточка возражений должника на судебный приказ (ст. 128 ГПК) — обычный срок
 // в рабочих днях плюс заметка о том, что происходит по истечении срока.
 //
-// Заметка связывает два узла одной ситуации логически, не задваивая расчёт:
-// срок предъявления приказа к исполнению считается своим узлом
-// (court_order_presentation) от своей даты — выдачи приказа взыскателю.
+// Заметка ведёт к соседнему узлу, не задваивая расчёт: срок предъявления
+// приказа к исполнению считается от своей даты (выдачи приказа взыскателю) и
+// живёт теперь в ситуации «Исполнительное производство» — вариант «судебный
+// приказ» узла enforcement_document_presentation. Прежде у приказного
+// производства был для этого собственный узел (court_order_presentation) —
+// тот же расчёт от того же поля, поэтому он убран, а не продублирован.
 const COURT_ORDER_OBJECTION_NOTE =
   'Если возражения не поступят в срок, взыскателю выдаётся судебный приказ для ' +
-  'предъявления к исполнению (ст. 130 ГПК РФ) — см. срок предъявления к исполнению.';
+  'предъявления к исполнению (ст. 130 ГПК РФ) — срок предъявления считается в ' +
+  'ситуации «Исполнительное производство».';
 
 function courtOrderObjectionCard(term) {
   const card = workingDayCard(term);
   card.note = COURT_ORDER_OBJECTION_NOTE;
-  // Ссылка на смежный узел — структурная, чтобы разбиение узлов по ситуациям
-  // проверялось, а не держалось на совпадении формулировок.
-  card.details.related_node = 'court_order_presentation';
+  // Ссылка на смежный узел — структурная, чтобы переход между ситуациями
+  // проверялся, а не держался на совпадении формулировок.
+  card.details.related_node = 'enforcement_document_presentation';
   return card;
 }
 
@@ -891,12 +850,6 @@ function buildDownstream(inputs, today) {
     }
   }
 
-  // Предъявление исполнительного листа — только когда вступление в силу
-  // разрешено (condition); в ветви pending узла нет.
-  if (chain.enforcement) {
-    cards.push(enforcementCard(chain.enforcement));
-  }
-
   const independent = independentNodes(chain, today);
   cards.push(...independent.cards);
   incomplete.push(...independent.incomplete);
@@ -933,14 +886,6 @@ function independentNodes(source, today = null) {
   }
   if (terms.supervision) cards.push(monthTermCard(terms.supervision));
   if (terms.court_order_objection) cards.push(courtOrderObjectionCard(terms.court_order_objection));
-  if (terms.court_order_presentation) {
-    const courtOrderPresentationCard = monthTermCard(terms.court_order_presentation);
-    // Изменяемый срок (ст. 22 ФЗ № 229-ФЗ) — история перерывов и вычетов
-    // на карточке.
-    attachInterruptions(courtOrderPresentationCard, terms.court_order_presentation);
-    attachDeductions(courtOrderPresentationCard, terms.court_order_presentation);
-    cards.push(courtOrderPresentationCard);
-  }
   // Исполнительное производство (ст. 21 ФЗ № 229-ФЗ): один узел на три типа
   // документа, включая периодические платежи с их веткой бессрочного взыскания
   // (прежний отдельный узел periodic_payments_presentation перенесён сюда
@@ -951,7 +896,7 @@ function independentNodes(source, today = null) {
   }
   // Глава 45 (признание и исполнение решений иностранных судов): два
   // независимых узла, каждый по своему input — обычный monthTermCard (годится
-  // и для трёхлетнего, и для месячного срока, как у court_order_presentation/
+  // и для трёхлетнего, и для месячного срока, как у
   // cassation_return_ruling_appeal выше), без attachInterruptions — перерыв
   // ст. 22 ФЗ № 229-ФЗ к узлу предъявления решения иностранного суда не
   // подключён (см. комментарий в chain.js).

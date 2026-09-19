@@ -426,21 +426,39 @@ test('ВС, пограничное окно: прежний срок истёк 
 });
 
 // --- Предъявление исполнительного листа (ст. 21 ФЗ № 229-ФЗ, unit: year) -----
+//
+// ЧТО ИЗМЕНИЛОСЬ. Прежде здесь стояли два теста на узел предъявления ИЛ в
+// ХВОСТЕ общей цепочки: «срок 3 года от даты вступления в силу» и «узла нет,
+// пока вступление в силу не разрешено». Узла на хвосте больше нет — тот же
+// срок ч. 1 ст. 21 ФЗ № 229-ФЗ считается один раз, в ситуации
+// «Исполнительное производство» (enforcement_document_presentation), куда
+// пользователь приходит с уже выданным исполнительным листом. Поэтому тесты
+// не удалены, а переформулированы: содержательное утверждение («три года со
+// дня вступления решения в силу, 12.04.2025 → 12.04.2028») проверяется через
+// оставшийся узел, а от прежних тестов остаётся охранная проверка, что хвост
+// цепочки узла больше не отдаёт.
 
-test('ИЛ: срок 3 года от даты вступления в силу (not_appealed)', () => {
+test('узла предъявления ИЛ в общей цепочке нет, вступление в силу осталось', () => {
   // reasoned 11.03.2025 → апелляция 11.04.2025 → вступление в силу 12.04.2025.
   const r = computeChain(BASE, { today: '2025-05-01' }); // not_appealed
   assert.equal(r.entry_into_force.date, '2025-04-12');
-  assert.ok(r.enforcement);
-  assert.equal(r.enforcement.anchor, '2025-04-12');
-  assert.equal(r.enforcement.deadline, '2028-04-12'); // 12.04.2025 + 3 года
-  assert.match(r.enforcement.norm.primary, /229-ФЗ/);
-});
+  assert.equal(r.enforcement, undefined);
 
-test('ИЛ отсутствует, пока вступление в силу не разрешено (pending)', () => {
-  const r = computeChain(BASE, { today: '2025-04-01' }); // pending
-  assert.equal(r.entry_into_force.resolved, false);
-  assert.equal(r.enforcement, null);
+  // Та же дата, введённая в ситуации «Исполнительное производство», даёт тот
+  // же дедлайн, что прежде давал узел на хвосте цепочки.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: '2025-04-12',
+  }).enforcement_document_presentation;
+  assert.equal(t.anchor, '2025-04-12');
+  assert.equal(t.deadline, '2028-04-12'); // 12.04.2025 + 3 года
+  assert.match(t.norm.primary, /229-ФЗ/);
+
+  // Ветвь pending (срок апелляции ещё течёт) по-прежнему не даёт даты
+  // вступления в силу — это узел цепочки, и он не тронут.
+  const pending = computeChain(BASE, { today: '2025-04-01' });
+  assert.equal(pending.entry_into_force.resolved, false);
+  assert.equal(pending.enforcement, undefined);
 });
 
 // --- Узлы на механике рабочих дней (абз. 2 ч. 3 ст. 107) --------------------
@@ -610,33 +628,41 @@ test('упрощённое: событие — своё, по ст. 232.4, а н
   assert.notEqual(r.simplified.entry_into_force.date, r.entry_into_force.date);
 });
 
-test('упрощённое: предъявление ИЛ — 3 года со дня вступления в силу (все ветви)', () => {
-  // ч. 5 — жалоба не подана: событие разрешено, ИЛ считается от его даты.
-  const ch5 = computeSimplified(SIMPL);
+test('упрощённое: узла предъявления ИЛ в ветви нет, все три ветви вступления в силу остались', () => {
+  // Переформулировано вместе с остальными узлами предъявления (см. блок «ЧТО
+  // ИЗМЕНИЛОСЬ» у общей цепочки выше): прежде этот тест проверял, что ИЛ
+  // считается от даты вступления в силу в каждой из трёх ветвей ст. 232.4.
+  // Копии узла у ветви больше нет, а даты вступления в силу — есть, и от них
+  // по-прежнему можно посчитать тот же срок в ситуации «Исполнительное
+  // производство». Проверяем ровно это: даты ветвей не изменились, узла нет.
+  const ch5 = computeSimplified(SIMPL); // ч. 5 — жалоба не подана
   assert.equal(ch5.entry_into_force.date, '2026-01-23');
-  assert.ok(ch5.enforcement);
-  assert.equal(ch5.enforcement.id, 'simplified_enforcement_presentation');
-  assert.equal(ch5.enforcement.anchor, '2026-01-23');
-  assert.equal(ch5.enforcement.deadline, '2029-01-23'); // + 3 года
-  assert.match(ch5.enforcement.norm.primary, /229-ФЗ/);
+  assert.equal(ch5.enforcement, undefined);
 
-  // ч. 6 — составлено мотивированное решение: ИЛ от даты события этой ветви.
-  const ch6 = computeSimplified({ ...SIMPL, simplified_reasoned_date: '2026-01-15' });
-  assert.equal(ch6.enforcement.anchor, '2026-02-06');
+  const ch6 = computeSimplified({ ...SIMPL, simplified_reasoned_date: '2026-01-15' }); // ч. 6
+  assert.equal(ch6.entry_into_force.date, '2026-02-06');
 
-  // ч. 7 — обжаловано, определение известно: ИЛ от даты вступления в силу.
   const ch7 = computeSimplified({
     ...SIMPL,
     simplified_appeal_filed_date: '2026-01-20',
     simplified_appeal_ruling_date: '2026-03-05',
-  });
-  assert.equal(ch7.enforcement.anchor, '2026-03-05');
-});
+  }); // ч. 7 — обжаловано, определение известно
+  assert.equal(ch7.entry_into_force.date, '2026-03-05');
 
-test('упрощённое: ИЛ отсутствует, пока событие не разрешено (ч. 7 без определения)', () => {
-  const s = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' });
-  assert.equal(s.entry_into_force.resolved, false);
-  assert.equal(s.enforcement, null);
+  // Дата ветви ч. 5, введённая в ситуации «Исполнительное производство», даёт
+  // тот же дедлайн, что прежде давал узел на хвосте ветви.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: '2026-01-23',
+  }).enforcement_document_presentation;
+  assert.equal(t.deadline, '2029-01-23'); // + 3 года
+  assert.match(t.norm.primary, /229-ФЗ/);
+
+  // Ч. 7 без определения апелляции — событие не разрешено; это узел ветви, он
+  // не тронут.
+  const unresolved = computeSimplified({ ...SIMPL, simplified_appeal_filed_date: '2026-01-20' });
+  assert.equal(unresolved.entry_into_force.resolved, false);
+  assert.equal(unresolved.enforcement, undefined);
 });
 
 test('упрощённое: кассация в КСОЮ — обе точки отсчёта', () => {
@@ -873,35 +899,31 @@ test('ст. 244: заявление об отмене удовлетворено
   assert.equal(alsoAppealed.entry_into_force.date, null);
 });
 
-test('заочное: предъявление ИЛ — 3 года со дня вступления в силу', () => {
+test('заочное: узла предъявления ИЛ в ветви нет, вступление в силу по ч. 1 ст. 244 осталось', () => {
+  // Переформулировано вместе с остальными узлами предъявления (см. блок «ЧТО
+  // ИЗМЕНИЛОСЬ» у общей цепочки выше).
   // Ветвь refused_not_appealed: событие разрешено (13.03 → 12.03.2026 + 1).
   const d = computeDefaultJudgment({ ...DJ, default_judgment_refusal_date: '2026-02-10' });
   assert.equal(d.entry_into_force.date, '2026-03-11');
-  assert.ok(d.enforcement);
-  assert.equal(d.enforcement.id, 'default_judgment_enforcement_presentation');
-  assert.equal(d.enforcement.anchor, '2026-03-11');
-  assert.equal(d.enforcement.deadline, '2029-03-12'); // вс 11.03.2029 → пн 12.03
-  assert.match(d.enforcement.norm.primary, /229-ФЗ/);
+  assert.equal(d.enforcement, undefined);
 
-  // Обжаловано и определение известно: ИЛ от даты вступления в силу.
-  const appealed = computeDefaultJudgment({
-    ...DJ,
-    default_judgment_refusal_date: '2026-02-10',
-    default_judgment_appeal_filed_date: '2026-03-02',
-    default_judgment_appeal_ruling_date: '2026-06-15',
-  });
-  assert.equal(appealed.enforcement.anchor, '2026-06-15');
-});
+  // Та же дата в ситуации «Исполнительное производство» даёт прежний дедлайн.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: '2026-03-11',
+  }).enforcement_document_presentation;
+  assert.equal(t.deadline, '2029-03-12'); // вс 11.03.2029 → пн 12.03
+  assert.match(t.norm.primary, /229-ФЗ/);
 
-test('заочное: ИЛ отсутствует при удовлетворённом заявлении об отмене', () => {
-  // cancellation_granted — вступления в силу нет вовсе, узла ИЛ тоже.
-  const d = computeDefaultJudgment({
+  // cancellation_granted — вступления в силу не наступает вовсе; это узел
+  // ветви, он не тронут, а узла ИЛ здесь нет и подавно.
+  const cancelled = computeDefaultJudgment({
     ...DJ,
     default_judgment_cancellation_request_date: '2026-01-09',
     default_judgment_cancellation_date: '2026-01-20',
   });
-  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
-  assert.equal(d.enforcement, null);
+  assert.equal(cancelled.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(cancelled.enforcement, undefined);
 });
 
 test('заочное: кассация в КСОЮ — обе точки отсчёта', () => {
@@ -1196,25 +1218,34 @@ test('заочное (иностранное государство): касса
   assert.equal(d.cassation, null);
 });
 
-test('заочное (иностранное государство): предъявление ИЛ — 3 года со дня вступления в силу', () => {
+test('заочное (иностранное государство): узла предъявления ИЛ в ветви нет, вступление в силу осталось', () => {
+  // Переформулировано вместе с остальными узлами предъявления (см. блок «ЧТО
+  // ИЗМЕНИЛОСЬ» у общей цепочки выше). Своей копии узла (со своим заголовком
+  // про иностранное государство) у ветви больше нет: срок ч. 1 ст. 21
+  // ФЗ № 229-ФЗ — один и тот же, и считается он в ситуации «Исполнительное
+  // производство», вариантом «решение суда».
   const d = computeDefaultJudgmentForeignState({
     ...FDJ,
     foreign_state_default_judgment_refusal_date: '2026-02-10',
   });
-  assert.ok(d.enforcement);
-  assert.equal(d.enforcement.id, 'foreign_state_default_judgment_enforcement_presentation');
-  assert.equal(d.enforcement.anchor, d.entry_into_force.date);
-  assert.match(d.enforcement.norm.primary, /229-ФЗ/);
-});
+  assert.ok(d.entry_into_force.date);
+  assert.equal(d.enforcement, undefined);
 
-test('заочное (иностранное государство): ИЛ отсутствует при удовлетворённом заявлении об отмене', () => {
-  const d = computeDefaultJudgmentForeignState({
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: d.entry_into_force.date,
+  }).enforcement_document_presentation;
+  assert.equal(t.anchor, d.entry_into_force.date);
+  assert.match(t.norm.primary, /229-ФЗ/);
+
+  // cancellation_granted — вступления в силу не наступает; узел ветви не тронут.
+  const cancelled = computeDefaultJudgmentForeignState({
     ...FDJ,
     foreign_state_default_judgment_cancellation_request_date: '2026-01-09',
     foreign_state_default_judgment_cancellation_date: '2026-01-20',
   });
-  assert.equal(d.entry_into_force.branch, 'cancellation_granted');
-  assert.equal(d.enforcement, null);
+  assert.equal(cancelled.entry_into_force.branch, 'cancellation_granted');
+  assert.equal(cancelled.enforcement, undefined);
 });
 
 // --- Мировой судья без мотивированного решения (ч. 3–5 ст. 199) -------------
@@ -1911,32 +1942,47 @@ test('отмена решения третейского суда: восста�
 });
 
 // --- Предъявление судебного приказа к исполнению (ч. 3 ст. 21 229-ФЗ) ------
+//
+// ЧТО ИЗМЕНИЛОСЬ. Прежде в приказном производстве был свой узел предъявления
+// (court_order_presentation) — три года со дня выдачи приказа взыскателю, и
+// три теста на него: арифметика с переносом через выходные, отсутствие узла
+// без даты и независимость от полей общей цепочки. Узла нет: тот же расчёт от
+// того же поля (court_order_issued_date) даёт вариант «судебный приказ» узла
+// ситуации «Исполнительное производство», и он покрыт тестом
+// «исполнительное производство: судебный приказ — ч. 3 ст. 21, якорь
+// court_order_issued_date» ниже теми же датами (12.04.2023 → 13.04.2026).
+// Поэтому от прежних трёх остаётся один охранный тест: поле больше не
+// открывает узла само по себе, а ситуация «Судебный приказ» сохранила свой
+// второй узел — возражения должника.
 
-test('судебный приказ: 3 года со дня выдачи, перенос через выходные', () => {
-  const t = computeIndependentTerms({ court_order_issued_date: '2023-04-12' })
-    .court_order_presentation;
-  assert.equal(t.anchor, '2023-04-12');
-  assert.equal(t.raw_deadline, '2026-04-12'); // воскресенье
-  assert.equal(t.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
-  assert.equal(t.shifted, true);
-  assert.match(t.norm.primary, /ч\. 3 ст\. 21/);
-});
+test('судебный приказ: одна дата выдачи узла не открывает — нужен выбранный тип документа', () => {
+  // Без enforcement_document_type якорь неизвестен (у трёх типов он разный),
+  // и прежнего узла приказного производства тоже нет — карточек не возникает.
+  const onlyDate = computeIndependentTerms({ court_order_issued_date: '2023-04-12' });
+  assert.equal(onlyDate.court_order_presentation, undefined);
+  assert.equal(onlyDate.enforcement_document_presentation, null);
 
-test('судебный приказ: узла нет без даты выдачи', () => {
-  assert.equal(computeIndependentTerms({}).court_order_presentation, null);
-  assert.equal(computeChain(BASE, { today: '2026-03-01' }).court_order_presentation, null);
-});
+  // С выбранным типом считается — от той же даты и с прежним результатом.
+  const withType = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: '2023-04-12',
+  }).enforcement_document_presentation;
+  assert.equal(withType.anchor, '2023-04-12');
+  assert.equal(withType.raw_deadline, '2026-04-12'); // воскресенье
+  assert.equal(withType.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
+  assert.equal(withType.shifted, true);
+  assert.match(withType.norm.primary, /ч\. 3 ст\. 21/);
 
-test('судебный приказ: узел не зависит от полей общей цепочки', () => {
-  // Приказное производство (глава 11 ГПК) — самостоятельный трек: наличие
-  // court_order_issued_date рядом с датой мотивированного решения не должно
-  // ничего менять ни в одном узле, кроме собственного расчёта.
+  // Поля общей цепочки на расчёт по-прежнему не влияют: это разные треки.
   const chain = computeChain(
-    { ...BASE, court_order_issued_date: '2023-04-12' },
+    {
+      ...BASE,
+      enforcement_document_type: 'court_order',
+      court_order_issued_date: '2023-04-12',
+    },
     { today: '2026-03-01' },
   );
-  assert.ok(chain.court_order_presentation);
-  assert.equal(chain.court_order_presentation.deadline, '2026-04-13');
+  assert.equal(chain.enforcement_document_presentation.deadline, '2026-04-13');
 });
 
 // --- Возражения должника на судебный приказ (ст. 128 ГПК) -------------------
@@ -1984,30 +2030,36 @@ test('возражения должника: узла нет без даты п�
 });
 
 test('возражения должника и предъявление приказа считаются независимо', () => {
-  // Оба поля ситуации «Судебный приказ» друг от друга не зависят: можно
-  // заполнить только одно, только другое, оба или ни одного.
+  // Прежде оба узла жили в ситуации «Судебный приказ»; теперь предъявление —
+  // вариант узла ситуации «Исполнительное производство», но независимость
+  // расчётов от этого не изменилась: у каждого своя дата, и соседняя его не
+  // сдвигает. Проверка та же, только второй узел берётся по новому имени.
   const onlyObjection = computeIndependentTerms({ court_order_copy_received_date: '2026-03-02' });
   assert.ok(onlyObjection.court_order_objection);
-  assert.equal(onlyObjection.court_order_presentation, null);
+  assert.equal(onlyObjection.enforcement_document_presentation, null);
 
-  const onlyPresentation = computeIndependentTerms({ court_order_issued_date: '2023-04-12' });
+  const PRESENTATION = {
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: '2023-04-12',
+  };
+  const onlyPresentation = computeIndependentTerms(PRESENTATION);
   assert.equal(onlyPresentation.court_order_objection, null);
-  assert.ok(onlyPresentation.court_order_presentation);
+  assert.ok(onlyPresentation.enforcement_document_presentation);
 
   const both = computeIndependentTerms({
+    ...PRESENTATION,
     court_order_copy_received_date: '2026-03-02',
-    court_order_issued_date: '2023-04-12',
   });
   // Каждый узел считается от своей даты — соседнее поле его не сдвигает.
   assert.equal(both.court_order_objection.deadline, onlyObjection.court_order_objection.deadline);
   assert.equal(
-    both.court_order_presentation.deadline,
-    onlyPresentation.court_order_presentation.deadline,
+    both.enforcement_document_presentation.deadline,
+    onlyPresentation.enforcement_document_presentation.deadline,
   );
 
   const neither = computeIndependentTerms({});
   assert.equal(neither.court_order_objection, null);
-  assert.equal(neither.court_order_presentation, null);
+  assert.equal(neither.enforcement_document_presentation, null);
 });
 
 test('возражения должника: перерывы ст. 22 ФЗ № 229-ФЗ к сроку не применяются', () => {
@@ -2451,17 +2503,25 @@ test('иностранное решение: оба узла считаются 
 
 // --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
 //
-// Базовые ориентиры: BASE + today 01.05.2025 → вступление в силу 12.04.2025,
-// предъявление ИЛ без перерывов — 12.04.2028.
+// Базовые ориентиры: вступление решения в силу 12.04.2025, предъявление
+// исполнительного документа без перерывов — 12.04.2028.
 const ENF_BASE_ANCHOR = '2025-04-12';
 const ENF_BASE_DEADLINE = '2028-04-12';
 
-// Расчёт ИЛ общей цепочки с заданным списком перерывов.
+// Расчёт срока предъявления с заданным списком перерывов.
+//
+// Прежде считался узел на хвосте общей цепочки (chain.enforcement), где дата
+// вступления в силу вычислялась из BASE и today. Узла на хвосте больше нет, и
+// та же дата вводится напрямую — единственным оставшимся узлом предъявления,
+// в ситуации «Исполнительное производство». Ориентиры (12.04.2025 →
+// 12.04.2028) и все ожидания тестов ниже от этого не изменились: механика
+// ст. 22 та же самая.
 function enforcementWith(interruptions) {
-  return computeChain(
-    { ...BASE, enforcement_interruptions: interruptions },
-    { today: '2025-05-01' },
-  ).enforcement;
+  return computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: ENF_BASE_ANCHOR,
+    enforcement_interruptions: interruptions,
+  }).enforcement_document_presentation;
 }
 
 test('applyInterruptions: без событий якорь не меняется', () => {
@@ -2558,15 +2618,19 @@ test('перерыв: событие в день базового якоря д�
 });
 
 test('перерыв: судебный приказ считается от последнего события (ч. 1 ст. 22)', () => {
-  const plain = computeIndependentTerms({ court_order_issued_date: '2023-04-12' })
-    .court_order_presentation;
+  // Тот же тест, что и был, но через оставшийся узел: у приказного
+  // производства своего узла предъявления больше нет, приказ — вариант
+  // документа в ситуации «Исполнительное производство». Ч. 1 ст. 22 говорит об
+  // исполнительном документе, поэтому перерыв к приказу применяется по-прежнему.
+  const ORDER = { enforcement_document_type: 'court_order', court_order_issued_date: '2023-04-12' };
+  const plain = computeIndependentTerms(ORDER).enforcement_document_presentation;
   assert.equal(plain.deadline, '2026-04-13');
   assert.equal(plain.interruptions, undefined);
 
   const interrupted = computeIndependentTerms({
-    court_order_issued_date: '2023-04-12',
+    ...ORDER,
     enforcement_interruptions: [{ type: 'presentment', date: '2024-03-05' }],
-  }).court_order_presentation;
+  }).enforcement_document_presentation;
   assert.equal(interrupted.anchor, '2024-03-05');
   assert.equal(interrupted.deadline, '2027-03-05');
   assert.equal(interrupted.base_anchor, '2023-04-12');
@@ -2634,21 +2698,34 @@ test('ст. 22 применяется по типу документа, а не 
   assert.equal(periodic.interruptible, undefined);
 });
 
-test('обе ветки предъявления считаются вместе и не мешают друг другу', () => {
-  // Узел приказного производства (ситуация «Судебный приказ» — там помимо
-  // предъявления есть возражения должника) и узел исполнительного производства
-  // живут рядом и читают каждый свой вход.
+test('второй ветки предъявления в модели не осталось — узел один', () => {
+  // Прежде тест назывался «обе ветки предъявления считаются вместе и не мешают
+  // друг другу»: рядом жили узел приказного производства и узел
+  // исполнительного производства, каждый со своим входом. Сравнивать больше
+  // нечего — узел предъявления один на все типы документа, и это то, ради чего
+  // остальные были убраны. Взамен проверяется, что ни один из прежних id не
+  // возвращается через computeIndependentTerms, даже когда заполнены все их
+  // прежние поля разом.
   const terms = computeIndependentTerms({
     court_order_issued_date: '2023-04-12',
     ...PERIODIC,
     periodic_payment_period_end_date: '2023-04-12',
     enforcement_interruptions: [{ type: 'partial_execution', date: '2024-03-05' }],
   });
-  assert.equal(terms.court_order_presentation.deadline, '2027-03-05');
+  assert.equal(terms.court_order_presentation, undefined);
+  assert.equal(terms.periodic_payments_presentation, undefined);
+  assert.equal(terms.enforcement_presentation, undefined);
+  // Считается ровно один узел — по выбранному типу документа (здесь
+  // периодические платежи, к которым ст. 22 не применяется).
   assert.equal(terms.enforcement_document_presentation.deadline, '2026-04-13');
 });
 
-test('перерыв: работает во всех ветвях предъявления ИЛ', () => {
+test('перерыв: механика одна, какой бы цепочкой ни была получена дата вступления в силу', () => {
+  // Прежде этот тест назывался «перерыв: работает во всех ветвях предъявления
+  // ИЛ» и проверял по копии узла в каждой ветви. Копий нет — узел предъявления
+  // один, и ветви дают только дату вступления решения в силу. Проверяем то же
+  // содержательное утверждение на тех же числах: откуда бы дата ни пришла,
+  // перерыв 01.03.2027 даёт один и тот же срок.
   const events = [{ type: 'returned_no_assets', date: '2027-03-01' }];
 
   const simplified = computeSimplified(
@@ -2656,35 +2733,34 @@ test('перерыв: работает во всех ветвях предъяв
       simplified_resolution_date: '2025-03-11',
       simplified_appeal_filed_date: '2025-03-20',
       simplified_appeal_ruling_date: '2025-06-02',
-      enforcement_interruptions: events,
     },
     '2025-07-01',
-  ).enforcement;
-  assert.equal(simplified.anchor, '2027-03-01');
-  assert.equal(simplified.deadline, '2030-03-01');
+  ).entry_into_force;
 
   const mirovoy = computeMirovoy(
-    {
-      mirovoy_resolution_date: '2025-03-11',
-      mirovoy_appeal_ruling_date: '2025-06-02',
-      enforcement_interruptions: events,
-    },
+    { mirovoy_resolution_date: '2025-03-11', mirovoy_appeal_ruling_date: '2025-06-02' },
     '2025-07-01',
-  ).enforcement;
-  assert.equal(mirovoy.anchor, '2027-03-01');
-  assert.equal(mirovoy.deadline, '2030-03-01');
+  ).entry_into_force;
 
   const dj = computeDefaultJudgment(
     {
       default_judgment_service_date: '2025-03-11',
       default_judgment_appeal_filed_date: '2025-04-01',
       default_judgment_appeal_ruling_date: '2025-06-02',
-      enforcement_interruptions: events,
     },
     '2025-07-01',
-  ).enforcement;
-  assert.equal(dj.anchor, '2027-03-01');
-  assert.equal(dj.deadline, '2030-03-01');
+  ).entry_into_force;
+
+  for (const entry of [simplified, mirovoy, dj]) {
+    assert.equal(entry.date, '2025-06-02');
+    const t = computeIndependentTerms({
+      enforcement_document_type: 'court_decision',
+      enforcement_decision_entry_into_force_date: entry.date,
+      enforcement_interruptions: events,
+    }).enforcement_document_presentation;
+    assert.equal(t.anchor, '2027-03-01');
+    assert.equal(t.deadline, '2030-03-01');
+  }
 });
 
 // --- Кассация по делам мировых судей (глава 40.1 ГПК, ФЗ № 79-ФЗ) -----------
@@ -2786,27 +2862,34 @@ test('мировой, appealed: известно только изготовле
   assert.deepEqual(m.entry_into_force.missing_inputs, ['mirovoy_appeal_ruling_date']);
 });
 
-test('мировой, предъявление ИЛ — 3 года со дня вступления в силу', () => {
-  // not_appealed: ИЛ от даты события (23.01.2026).
+test('мировой: узла предъявления ИЛ в ветви нет, вступление в силу по ч. 1 ст. 209 осталось', () => {
+  // Переформулировано вместе с остальными узлами предъявления (см. блок «ЧТО
+  // ИЗМЕНИЛОСЬ» у общей цепочки выше).
+  // not_appealed: дата события — 23.01.2026.
   const notAppealed = computeMirovoy(MIR, '2026-03-01');
-  assert.ok(notAppealed.enforcement);
-  assert.equal(notAppealed.enforcement.id, 'mirovoy_enforcement_presentation');
-  assert.equal(notAppealed.enforcement.anchor, '2026-01-23');
-  assert.equal(notAppealed.enforcement.deadline, '2029-01-23'); // + 3 года
-  assert.match(notAppealed.enforcement.norm.primary, /229-ФЗ/);
+  assert.equal(notAppealed.entry_into_force.date, '2026-01-23');
+  assert.equal(notAppealed.enforcement, undefined);
 
-  // appealed: ИЛ от даты принятия апелляционного определения.
+  // appealed: дата принятия апелляционного определения района.
   const appealed = computeMirovoy(
     { ...MIR, mirovoy_appeal_ruling_date: '2026-05-10' },
     '2026-06-01',
   );
-  assert.equal(appealed.enforcement.anchor, '2026-05-10');
-});
+  assert.equal(appealed.entry_into_force.date, '2026-05-10');
+  assert.equal(appealed.enforcement, undefined);
 
-test('мировой: ИЛ отсутствует, пока вступление в силу не разрешено (pending)', () => {
+  // Та же дата в ситуации «Исполнительное производство» даёт прежний дедлайн.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: '2026-01-23',
+  }).enforcement_document_presentation;
+  assert.equal(t.deadline, '2029-01-23'); // + 3 года
+  assert.match(t.norm.primary, /229-ФЗ/);
+
+  // pending — срок апелляции ещё течёт; узел ветви не тронут.
   const pending = computeMirovoy(MIR, '2026-01-10');
   assert.equal(pending.entry_into_force.resolved, false);
-  assert.equal(pending.enforcement, null);
+  assert.equal(pending.enforcement, undefined);
 });
 
 // --- Исчерпание способов обжалования (абз. 2 ч. 1 ст. 376, ч. 2 ст. 375.1) ---
@@ -3609,10 +3692,12 @@ test('исполнительное производство: узел читае
   assert.equal(t.deadline, ENF_DEADLINE);
 });
 
-test('исполнительное производство: узел не трогает узлы предъявления внутри цепочек', () => {
-  // Узлы предъявления ВНУТРИ цепочек обжалования остаются на своих местах:
-  // поглощены были только периодические платежи (отдельный узел-обёртка), а не
-  // приказное производство, где помимо предъявления есть возражения должника.
+test('исполнительное производство: единственный оставшийся узел предъявления', () => {
+  // Прежде тест назывался «узел не трогает узлы предъявления внутри цепочек»:
+  // тогда узлы предъявления в цепочках обжалования и в приказном производстве
+  // оставались на местах, и важно было, что новый вход их не сдвигает. Теперь
+  // их нет вовсе, и утверждение стало сильнее: под любыми входными данными в
+  // модели существует ровно один узел предъявления — этот.
   const chain = computeChain(
     {
       ...BASE,
@@ -3622,16 +3707,35 @@ test('исполнительное производство: узел не тр�
     },
     { today: '2026-03-01' },
   );
-  assert.equal(chain.court_order_presentation.deadline, ENF_DEADLINE);
-  assert.equal(chain.court_order_objection, null); // своя дата, свой узел — не тронут
   assert.equal(chain[ENFORCEMENT_NODE].deadline, '2023-01-09');
-  // Прежнего отдельного узла периодических платежей больше нет ни под каким
-  // именем — иначе перенос оставил бы два расчёта одной нормы.
+  // Ни одного прежнего узла предъявления — ни на хвосте цепочки, ни в
+  // приказном производстве, ни отдельным узлом периодических платежей.
+  assert.equal(chain.enforcement, undefined);
+  assert.equal(chain.court_order_presentation, undefined);
   assert.equal(chain.periodic_payments_presentation, undefined);
-  // Заголовок узла отличается от заголовков узлов внутри ветвей: в сводке,
-  // печати и .ics он должен читаться сам по себе.
-  assert.notEqual(chain[ENFORCEMENT_NODE].title, chain.court_order_presentation.title);
-  assert.notEqual(chain[ENFORCEMENT_NODE].title, chain.enforcement_presentation?.title);
+  // Ветви со своими датами — тоже без узла предъявления.
+  const branches = computeChain(
+    {
+      ...BASE,
+      simplified_resolution_date: '2025-03-11',
+      default_judgment_service_date: '2025-03-11',
+      foreign_state_default_judgment_service_date: '2025-03-11',
+      mirovoy_resolution_date: '2025-03-11',
+    },
+    { today: '2026-03-01' },
+  );
+  for (const branch of [
+    branches.simplified,
+    branches.default_judgment,
+    branches.default_judgment_foreign_state,
+    branches.mirovoy,
+  ]) {
+    assert.ok(branch, 'ветвь должна считаться');
+    assert.ok(branch.entry_into_force, 'вступление в силу осталось на месте');
+    assert.equal(branch.enforcement, undefined);
+  }
+  // Узел возражений должника (ст. 128) не тронут: своя дата, свой узел.
+  assert.equal(chain.court_order_objection, null);
   assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.duration.value, 3);
   assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.duration.unit, 'year');
   assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.ics, true);

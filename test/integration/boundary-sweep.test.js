@@ -365,7 +365,12 @@ const LAYER2_INPUT_FIELD = {
   supervision: 'vs_ruling_date',
   arbitration_award_setaside: 'arbitration_award_setaside_received_date',
   court_order_objection: 'court_order_copy_received_date',
-  court_order_presentation: 'court_order_issued_date',
+  // enforcement_document_presentation в слой 2 не входит: у него не один
+  // input-факт, а два (тип документа + якорное поле выбранного типа), и
+  // одноключевая подача inputs его не открывает. Прежде здесь был
+  // court_order_presentation с полем court_order_issued_date — узел убран
+  // вместе с остальными узлами предъявления, его расчёт теперь идёт через
+  // узел исполнительного производства.
 };
 
 function runLayer1(term, variant, anchorISO) {
