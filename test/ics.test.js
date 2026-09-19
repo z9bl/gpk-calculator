@@ -392,7 +392,7 @@ const ALL_BRANCHES_INPUTS = {
   // прямая кассация, минуя апелляцию, по общему трёхмесячному сроку
   // (ч. 1 ст. 376.1): судебный приказ, определения по делам об оспаривании
   // решений третейских судов и о выдаче/отказе в выдаче исполнительного листа
-  sudebny_prikaz_received_date: '2025-07-08',
+  court_order_copy_received_date: '2025-07-08',
   treteisky_osparivanie_entry_into_force_date: '2025-07-08',
   treteisky_ispollist_entry_into_force_date: '2025-07-08',
   // заочное решение против иностранного государства (ч. 1–4 ст. 417.10):
@@ -605,11 +605,11 @@ test('утверждение мирового соглашения: тот же 
 });
 
 test('судебный приказ (кассация) уходит в .ics (3 месяца → напоминания за 3 и 14 дней)', () => {
-  // sudebny_prikaz_received_date, не entry_into_force_date напрямую: дата
+  // court_order_copy_received_date, не entry_into_force_date напрямую: дата
   // вступления в силу вычисляется (01.09.2027 + 10 рабочих дней = 15.09.2027,
   // см. test/chain.test.js), .ics-экспорт от этого не должен ломаться.
   const view = buildView(
-    { sudebny_prikaz_received_date: '2027-09-01' },
+    { court_order_copy_received_date: '2027-09-01' },
     { today: '2026-07-26' },
   );
   const terms = icsTermsFromView(view);
@@ -628,7 +628,7 @@ test('судебный приказ (кассация): тот же срок и 
   const chain = computeChain(
     {
       reasoned_decision_date: '2025-03-11',
-      sudebny_prikaz_received_date: '2027-09-01',
+      court_order_copy_received_date: '2027-09-01',
     },
     { today: '2026-07-26' },
   );
@@ -898,7 +898,10 @@ test('возражения должника на судебный приказ �
   assert.equal(obj.deadline, '2026-03-17');
   assert.match(obj.norm, /ст\. 128/);
 
-  const ics = buildICS(terms, { referenceDate: '2026-03-01', now: NOW });
+  // Экспорт только этого срока: та же дата теперь открывает и кассационную
+  // жалобу на приказ (узел переехал в приказное производство и читает тот же
+  // якорь), а тест про напоминания именно возражений.
+  const ics = buildICS([obj], { referenceDate: '2026-03-01', now: NOW });
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${obj.deadline.replace(/-/g, '')}`));
   // Смещения в рабочих днях: за 2 и за 5 рабочих дней до дедлайна.
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);

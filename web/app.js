@@ -128,9 +128,15 @@ const INPUT_HINTS = {
     '(абз. 2 ч. 1 ст. 376.1)',
   mirovoy_appeal_ruling_date:
     'Со дня принятия решение вступает в силу (ч. 1 ст. 209); от неё считается предъявление ИЛ',
+  // Один якорь на два узла приказного производства: возражения (ст. 128) и,
+  // если они не поданы, кассация на вступивший в силу приказ (ч. 1 ст. 376.1).
+  // Прежде вторая половина подсказки жила на поле-дубле
+  // sudebny_prikaz_received_date, которого больше нет.
   court_order_copy_received_date:
     'Возражения должника — 10 рабочих дней со дня получения копии приказа (ст. 128 ГПК). ' +
-    'Отсчёт идёт от получения копии, а не от вынесения приказа и не от его отправки',
+    'Отсчёт идёт от получения копии, а не от вынесения приказа и не от его отправки. ' +
+    'Без поданных возражений приказ вступает в силу, и от этого момента считаются ' +
+    '3 месяца на кассационную жалобу (ч. 1 ст. 376.1)',
   court_order_issued_date:
     'Три года со дня выдачи приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), а не со дня его ' +
     'вынесения мировым судьёй',
@@ -151,9 +157,6 @@ const INPUT_HINTS = {
     'Один месяц со дня получения (не вынесения!) постановления третейского ' +
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
-  sudebny_prikaz_received_date:
-    '10 дней на возражения должника (ст. 128); без них — вступление в силу, ' +
-    'дальше 3 месяца на кассацию (ч. 1 ст. 376.1)',
   sudebny_prikaz_postal_arrival_date:
     'Срок хранения на почте — 7 календарных дней со следующего рабочего дня ' +
     'после прибытия (п. 32 ПП ВС РФ от 27.12.2016 № 62); днём получения ' +
@@ -1786,13 +1789,26 @@ function renderRadioGroup(name, options, current, onChange, legend) {
   return wrap;
 }
 
-// Судебный приказ (кассация, ст. 128 ГПК + п. 32 ПП ВС РФ от 27.12.2016
-// № 62): дата вступления в законную силу вычисляется от даты ПОЛУЧЕНИЯ копии
-// приказа должником, а она известна пользователю одним из двух способов —
-// выбор варианта не идёт в inputs как отдельная дата, это чисто интерфейсное
-// переключение того, какое из двух полей ввода показано (см.
-// resolveSudebnyPrikazReceivedDate в chain.js — там же и приоритет
-// received_date над postal_arrival_date, если почему-то заполнены оба).
+// Приказное производство: два узла одной цепочки должника на ОДНОЙ дате-якоре —
+// дне получения копии приказа (court_order_copy_received_date). От неё считаются
+// и возражения (ст. 128), и — если возражения не поданы и приказ вступил в силу
+// — кассационная жалоба на приказ (п. 1 ч. 2 ст. 377). Прежде кассация жила в
+// пуле «Отдельные сроки» и имела собственное поле той же даты: пользователь
+// вводил её дважды. Поле теперь одно, и оба узла читают его.
+//
+// Дата вступления приказа в силу не вводится, а вычисляется (ст. 128 ГПК +
+// п. 32 ПП ВС РФ от 27.12.2016 № 62), поэтому у кассации нет своего поля даты —
+// есть только второй способ узнать ту же дату получения копии, когда напрямую
+// она неизвестна: дата прибытия почтового отправления. Выбор способа не идёт в
+// inputs отдельной датой, это чисто интерфейсное переключение того, какое из
+// двух полей показано (см. resolveSudebnyPrikazReceivedDate в chain.js — там же
+// приоритет прямой даты над почтовой, если почему-то заполнены обе).
+//
+// Почтовый вариант — вход ТОЛЬКО кассации: возражения фикцию п. 32 не
+// применяют и считаются от введённой даты получения, поэтому при выборе этого
+// варианта карточка возражений не появляется. Это не регрессия переноса, а
+// прямое следствие того, что нормы узлов не менялись: даты получения копии в
+// модели в этом случае просто нет.
 const SUDEBNY_PRIKAZ_MODE_RECEIVED = 'received';
 const SUDEBNY_PRIKAZ_MODE_POSTAL = 'postal';
 
@@ -1803,7 +1819,7 @@ function sudebnyPrikazMode() {
     : SUDEBNY_PRIKAZ_MODE_RECEIVED;
 }
 
-function renderSudebnyPrikazFields(box) {
+function renderCourtOrderFields(box) {
   const mode = sudebnyPrikazMode();
   box.appendChild(
     renderRadioGroup(
@@ -1827,8 +1843,8 @@ function renderSudebnyPrikazFields(box) {
           delete state.inputs.sudebny_prikaz_postal_arrival_date;
           rawDates.delete('sudebny_prikaz_postal_arrival_date');
         } else {
-          delete state.inputs.sudebny_prikaz_received_date;
-          rawDates.delete('sudebny_prikaz_received_date');
+          delete state.inputs.court_order_copy_received_date;
+          rawDates.delete('court_order_copy_received_date');
         }
         render();
       },
@@ -1838,7 +1854,19 @@ function renderSudebnyPrikazFields(box) {
     inviteFieldOrPointer(
       mode === SUDEBNY_PRIKAZ_MODE_POSTAL
         ? 'sudebny_prikaz_postal_arrival_date'
-        : 'sudebny_prikaz_received_date',
+        : 'court_order_copy_received_date',
+    ),
+  );
+  // Заголовок-указатель второго узла цепочки: своего поля у кассации нет, и без
+  // подписи после возражений экран выглядел бы пустым — непонятно, считается ли
+  // кассационный срок вообще и откуда он возьмётся.
+  box.appendChild(nodeHeading('Кассационная жалоба на судебный приказ'));
+  box.appendChild(
+    el(
+      'p',
+      'hint',
+      'Считается от той же даты: приказ вступает в силу по истечении десяти дней ' +
+        'на возражения — отдельная дата не нужна.',
     ),
   );
 }
@@ -1849,7 +1877,7 @@ function renderSudebnyPrikazFields(box) {
 // интерфейсное переключение того, какое из двух полей ввода показано (см.
 // resolveArbitrationAwardSetasideAnchor в chain.js — там же и приоритет
 // received_date над aware_date, если заполнены оба), по тому же образцу, что
-// и renderSudebnyPrikazFields выше.
+// и renderCourtOrderFields выше.
 const ARBITRATION_AWARD_SETASIDE_MODE_PARTY = 'party';
 const ARBITRATION_AWARD_SETASIDE_MODE_NON_PARTY = 'non_party';
 
@@ -2028,12 +2056,93 @@ function renderSituationSwitch(current) {
   root.dataset.rendered = 'yes';
 }
 
+// Однострочные пояснения-ориентировки: по одному предложению на ситуацию, что
+// здесь считается. Показываются в начале блока ввода — там же, где прежде стоял
+// вводный абзац «Исходных данных» (убран в PR #99), но одной строкой и подписью,
+// а не разбором нормы: подробности живут на карточках сроков.
+//
+// Своей разметки у строки нет намеренно: обычный <p> внутри section.other-terms
+// уже стилизован (.other-terms > p — мелко и серым), у общей ветви — статический
+// абзац .hint в карточке основного поля. Нового CSS-класса ради подписи не
+// заводим.
+const SITUATION_LEDE = {
+  general: 'Сроки обжалования решения районного суда: апелляция, кассация, надзор.',
+  court_order:
+    'Сроки должника по судебному приказу: возражения или кассация, если приказ вступил в силу.',
+  mirovoy: 'Обжалование решения мирового судьи: апелляция и последующая кассация.',
+  default_judgment: 'Отмена заочного решения ответчиком либо его обжалование в общем порядке.',
+  simplified:
+    'Обжалование решения, вынесенного без вызова сторон, по упрощённой процедуре.',
+  enforcement:
+    'Срок предъявления исполнительного документа к исполнению и его перерывы.',
+  separate:
+    'Разные короткие сроки, не привязанные к одной категории дела — заполните только те даты, которые у вас есть.',
+  child_cases:
+    'Выберите категорию: возврат ребёнка или усыновление — у каждой свой срок обжалования.',
+  arbitration:
+    'Четыре независимых сценария третейского разбирательства — заполните только тот, что относится к вашему делу.',
+  default_judgment_foreign_state:
+    'Заочное решение против государства-ответчика: его отмена или обжалование.',
+  foreign_judgment:
+    'Два независимых срока: принудительное исполнение решения либо возражения против его признания.',
+  review_new_circumstances:
+    'Пересмотр вступившего в силу решения по новым или вновь открывшимся обстоятельствам.',
+};
+
+// Заголовок-указатель над блоком полей одного узла: в ситуациях, где подряд
+// идут несколько формально независимых карточек полей, без него приходится
+// вчитываться в текст вопроса, чтобы понять, тот ли это сценарий.
+//
+// Обычный <h3> внутри уже существующего блока .invite (h2 там — заголовок
+// «Исходные данные»), отдельного класса не заводим.
+function nodeHeading(text) {
+  return el('h3', null, text);
+}
+
+// Заголовки-указатели над блоками полей независимых узлов — по ключу первого
+// (и для всех перечисленных узлов единственного видимого) поля узла.
+//
+// Пересечений полей между узлами в этих трёх ситуациях нет: у каждого узла
+// ровно один вопрос-якорь, кроме заявления об отмене решения третейского суда —
+// там два взаимоисключающих поля одного узла под общим переключателем субъекта,
+// и заголовок стоит над всей группой.
+const SEPARATE_NODE_HEADINGS = {
+  protocol_signed_date: 'Замечания на протокол судебного заседания',
+  interim_ruling_date: 'Частная жалоба на определение суда первой инстанции',
+  cassation_return_ruling_date: 'Обжалование определения о возврате кассационной жалобы',
+  settlement_approval_ruling_date: 'Кассация на определение об утверждении мирового соглашения',
+};
+
+const ARBITRATION_NODE_HEADINGS = {
+  arbitration_competence_ruling_received_date:
+    'Оспаривание постановления о компетенции третейского суда',
+  arbitration_award_setaside_received_date:
+    'Отмена решения третейского суда по существу спора (ст. 418)',
+  treteisky_osparivanie_entry_into_force_date:
+    'Кассация на определение по делу об оспаривании решения',
+  treteisky_ispollist_entry_into_force_date:
+    'Кассация на определение о выдаче исполнительного листа',
+};
+
+const FOREIGN_JUDGMENT_NODE_HEADINGS = {
+  foreign_judgment_entry_into_force_date: 'Принудительное исполнение решения иностранного суда',
+  foreign_judgment_recognition_aware_date:
+    'Возражения против признания решения, не требующего исполнения',
+};
+
 // Поле даты мотивированного решения — статическое, в разметке страницы: маска
 // к нему привязана один раз при инициализации. Прячем его вне общей ветви,
 // значение при этом сохраняется.
+//
+// Пояснение-ориентировка общей ветви живёт в этой же карточке (у остальных
+// ситуаций — в блоке «Исходные данные», см. renderSituationFields ниже): блок
+// ввода общего порядка — это и есть статическое поле, своих «Исходных данных»
+// у ветви нет.
 function renderPrimaryField(situation) {
   const box = document.querySelector('section.primary');
   box.hidden = !situation.primary_field;
+  const lede = document.getElementById('primary-lede');
+  if (lede) lede.textContent = SITUATION_LEDE[situation.id] ?? '';
 }
 
 // Поля ввода выбранной ситуации.
@@ -2068,14 +2177,21 @@ function renderSituationFields(situation, primaryFilled) {
   root.appendChild(
     el('h2', null, situation.primary_field ? 'Дополнительные даты' : 'Исходные данные'),
   );
+  // Пояснение — только над исходными данными ветви. У общей ветви этот блок —
+  // «Дополнительные даты» внизу страницы, и её строка стоит в карточке
+  // основного поля (renderPrimaryField выше).
+  if (!situation.primary_field && SITUATION_LEDE[situation.id]) {
+    root.appendChild(el('p', null, SITUATION_LEDE[situation.id]));
+  }
   const box = el('div', 'invite');
-  if (situation.id === 'separate') {
+  if (situation.id === 'court_order') {
+    renderCourtOrderFields(box);
+  } else if (situation.id === 'separate') {
+    // Четыре независимых узла подряд: над каждым — свой заголовок-указатель,
+    // иначе отличить сценарии можно только вчитавшись в текст вопроса.
     for (const id of fields) {
-      if (id === 'sudebny_prikaz_received_date') {
-        renderSudebnyPrikazFields(box);
-        continue;
-      }
-      if (id === 'sudebny_prikaz_postal_arrival_date') continue; // показано выше вместе с received_date
+      const heading = SEPARATE_NODE_HEADINGS[id];
+      if (heading) box.appendChild(nodeHeading(heading));
       box.appendChild(inviteFieldOrPointer(id));
     }
   } else if (situation.id === 'arbitration') {
@@ -2083,12 +2199,22 @@ function renderSituationFields(situation, primaryFilled) {
     // пользователю может понадобиться сразу несколько (сначала компетенция,
     // потом отмена решения). Единственное исключение — два взаимоисключающих
     // поля заявления об отмене: там переключатель субъекта, а не две даты.
+    // Над каждым узлом — свой заголовок-указатель.
     for (const id of fields) {
+      const heading = ARBITRATION_NODE_HEADINGS[id];
+      if (heading) box.appendChild(nodeHeading(heading));
       if (id === 'arbitration_award_setaside_received_date') {
         renderArbitrationAwardSetasideFields(box);
         continue;
       }
       if (id === 'arbitration_award_setaside_aware_date') continue; // показано выше вместе с received_date
+      box.appendChild(inviteFieldOrPointer(id));
+    }
+  } else if (situation.id === 'foreign_judgment') {
+    // Два независимых узла главы 45 — каждый со своим заголовком-указателем.
+    for (const id of fields) {
+      const heading = FOREIGN_JUDGMENT_NODE_HEADINGS[id];
+      if (heading) box.appendChild(nodeHeading(heading));
       box.appendChild(inviteFieldOrPointer(id));
     }
   } else if (situation.id === 'child_cases') {
@@ -2176,7 +2302,7 @@ function renderEnforcementDocumentFields(box) {
 // нет.
 //
 // Поля невыбранных категорий очищаются — по тому же правилу, что и у
-// переключателей в renderSudebnyPrikazFields / renderArbitrationAwardSetasideFields:
+// переключателей в renderCourtOrderFields / renderArbitrationAwardSetasideFields:
 // иначе после переключения назад и обратно на экране осталась бы карточка
 // категории, поля которой сейчас не показаны и которую нечем править.
 const CHILD_CASE_CATEGORY_PLACEHOLDER = '';

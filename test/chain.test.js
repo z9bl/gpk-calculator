@@ -1597,7 +1597,7 @@ test('утверждение мирового соглашения: ч. 11 ст.
 // понедельник, переноса нет).
 test('судебный приказ: вариант (a) — дата получения известна напрямую', () => {
   const t = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
   assert.equal(t.received_date, '2025-09-01');
   assert.equal(t.entry_into_force_via_postal_storage, false);
@@ -1614,7 +1614,7 @@ test('судебный приказ: вариант (a) — дата получ�
 test('судебный приказ: вариант (a) — прямая дата получения приоритетнее даты прибытия на почту', () => {
   // Введены оба поля — используется received_date, arrival игнорируется.
   const t = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
     sudebny_prikaz_postal_arrival_date: '2025-08-01',
   }).sudebny_prikaz_cassation;
   assert.equal(t.entry_into_force_via_postal_storage, false);
@@ -1649,12 +1649,12 @@ test('судебный приказ: вариант (b) — узел без да
 
 test('судебный приказ: узел независим от категории дела и ветви цепочки', () => {
   const alone = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
   assert.ok(alone, 'узел считается по своим датам');
 
   const chain = computeChain(
-    { ...BASE, sudebny_prikaz_received_date: '2025-09-01' },
+    { ...BASE, court_order_copy_received_date: '2025-09-01' },
     { today: '2025-09-10' },
   );
   assert.equal(chain.sudebny_prikaz_cassation.deadline, alone.deadline);
@@ -1662,7 +1662,7 @@ test('судебный приказ: узел независим от катег
 
 test('судебный приказ: обжалуется сразу в кассацию, минуя апелляцию', () => {
   const t = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
   }).sudebny_prikaz_cassation;
   assert.match(t.logic, /минуя апелляцию/);
   assert.equal(SUDEBNY_PRIKAZ_CASSATION.norm_versions.length, 1);
@@ -3513,7 +3513,7 @@ test('годичный потолок: sudebny_prikaz_cassation — от ВЫЧ�
   // entry_into_force вычисляется (не вводится): 01.09.2025 + 10 рабочих дней
   // на возражения = 15.09.2025 (см. «судебный приказ: вариант (a)» выше).
   const within = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
     sudebny_prikaz_cassation_restoration_circumstance_date: '2026-03-01',
   }).sudebny_prikaz_cassation;
   assert.equal(within.entry_into_force, '2025-09-15');
@@ -3521,7 +3521,7 @@ test('годичный потолок: sudebny_prikaz_cassation — от ВЫЧ�
   assert.equal(within.restoration_one_year_cap.cap_deadline, '2026-09-15');
 
   const beyond = computeIndependentTerms({
-    sudebny_prikaz_received_date: '2025-09-01',
+    court_order_copy_received_date: '2025-09-01',
     sudebny_prikaz_cassation_restoration_circumstance_date: '2026-09-16',
   }).sudebny_prikaz_cassation;
   assert.equal(beyond.restoration_one_year_cap.within_cap, false);
