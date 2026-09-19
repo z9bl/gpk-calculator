@@ -6,7 +6,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SITUATIONS, DEFAULT_SITUATION } from '../src/situations.js';
+import {
+  SITUATIONS,
+  DEFAULT_SITUATION,
+  CHILD_CASE_CATEGORIES,
+  childCaseCategoryById,
+} from '../src/situations.js';
 import {
   situationById,
   allSituationNodes,
@@ -120,17 +125,46 @@ test('судебный приказ: оба узла ситуации учтен
   );
 });
 
-test('возвращение ребёнка: оба узла ситуации учтены в разбиении', () => {
-  const situation = SITUATIONS.find((s) => s.id === 'child_return');
-  assert.deepEqual(situation.nodes, ['child_return_appeal', 'child_return_private_complaint']);
+test('дела о детях: три узла двух категорий в одной ситуации', () => {
+  // Прежде это были две ситуации — child_return («Возврат ребёнка / права
+  // доступа») и adoption («Усыновление (удочерение) ребёнка»). Они объединены
+  // в одну, child_cases, с dropdown'ом категории; расчёт узлов не менялся,
+  // поэтому проверки «каждое поле открывает свой узел и только его» ниже — те
+  // же, что были в двух прежних тестах, просто в одном месте.
+  const situation = SITUATIONS.find((s) => s.id === 'child_cases');
+  assert.deepEqual(situation.nodes, [
+    'child_return_appeal',
+    'child_return_private_complaint',
+    'adoption_appeal',
+  ]);
   assert.deepEqual(situation.fields, [
+    'child_case_category',
     'child_return_reasoned_decision_date',
     'child_return_interim_ruling_date',
+    'adoption_reasoned_decision_date',
   ]);
   // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
   assert.equal(situation.primary_field, undefined);
 
-  // Каждое поле открывает свой узел и только его — узлы независимы.
+  // Категории покрывают все поля даты ситуации и не пересекаются между собой:
+  // от этого зависит и то, что показывает dropdown, и то, что он очищает при
+  // переключении (renderChildCaseFields в web/app.js).
+  assert.deepEqual(
+    CHILD_CASE_CATEGORIES.map((c) => c.id),
+    ['child_return', 'adoption'],
+  );
+  const categoryFields = CHILD_CASE_CATEGORIES.flatMap((c) => c.fields);
+  assert.equal(new Set(categoryFields).size, categoryFields.length);
+  assert.deepEqual(
+    [...categoryFields].sort(),
+    situation.fields.filter((f) => f !== 'child_case_category').sort(),
+  );
+  assert.equal(childCaseCategoryById('adoption').fields.length, 1);
+  assert.equal(childCaseCategoryById('нет такой'), null);
+  assert.equal(childCaseCategoryById(''), null);
+
+  // Каждое поле открывает свой узел и только его — узлы независимы, и выбор
+  // категории на расчёт не влияет вовсе (это поле интерфейса, а не модели).
   const appealOnly = buildView(
     { child_return_reasoned_decision_date: '2025-07-02' },
     { today: '2025-07-01' },
@@ -147,9 +181,18 @@ test('возвращение ребёнка: оба узла ситуации у
     privateOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
     ['child_return_private_complaint'],
   );
+  const adoptionOnly = buildView(
+    { adoption_reasoned_decision_date: '2025-07-02' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    adoptionOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['adoption_appeal'],
+  );
 
-  // Узлы главы 22.2 не должны просачиваться в другие ветви: сроки специальные.
-  for (const s of SITUATIONS.filter((x) => x.id !== 'child_return')) {
+  // Узлы специальных категорий не должны просачиваться в другие ветви: сроки
+  // здесь короче общего порядка, и общий узел дал бы неверный результат.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'child_cases')) {
     for (const id of situation.nodes) {
       assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} не отсюда`);
     }
@@ -159,27 +202,27 @@ test('возвращение ребёнка: оба узла ситуации у
   }
 });
 
-test('усыновление: узел ситуации учтён в разбиении', () => {
-  const situation = SITUATIONS.find((s) => s.id === 'adoption');
-  assert.deepEqual(situation.nodes, ['adoption_appeal']);
-  assert.deepEqual(situation.fields, ['adoption_reasoned_decision_date']);
-  // Своя ситуация, а не модификация общей ветви: primary_field не занимаем.
-  assert.equal(situation.primary_field, undefined);
-
-  const v = buildView(
-    { adoption_reasoned_decision_date: '2025-07-02' },
-    { today: '2025-07-01' },
-  );
-  assert.deepEqual(
-    v.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
-    ['adoption_appeal'],
-  );
-
-  // Узел главы 29 не должен просачиваться в другие ветви.
-  for (const s of SITUATIONS.filter((x) => x.id !== 'adoption')) {
-    assert.ok(!s.nodes.includes('adoption_appeal'), `${s.id}: узел не отсюда`);
-    assert.ok(!s.fields.includes('adoption_reasoned_decision_date'), `${s.id}: поле не отсюда`);
+test('прежних ситуаций child_return и adoption больше нет', () => {
+  // Охранный тест на перегруппировку: обе поглощены ситуацией child_cases, и
+  // вернуться поодиночке не должны — иначе узел окажется закреплён за двумя
+  // ситуациями сразу либо исчезнет с экрана.
+  for (const id of ['child_return', 'adoption']) {
+    assert.equal(
+      SITUATIONS.find((s) => s.id === id),
+      undefined,
+      `ситуация ${id} поглощена child_cases`,
+    );
   }
+  for (const label of ['Возврат ребёнка / права доступа', 'Усыновление (удочерение) ребёнка']) {
+    assert.ok(
+      !SITUATIONS.some((s) => s.label === label),
+      `«${label}» — больше не отдельный пункт переключателя`,
+    );
+  }
+  assert.equal(
+    situationById('child_cases', SITUATIONS).label,
+    'Дела о детях (возврат ребёнка, усыновление)',
+  );
 });
 
 test('возврат кассационной жалобы: узел в независимом пуле, а не в ветви категории', () => {
@@ -203,36 +246,6 @@ test('возврат кассационной жалобы: узел в неза
   assert.deepEqual(
     v.cards.map((c) => c.id),
     ['cassation_return_ruling_appeal'],
-  );
-});
-
-test('третейский суд (ч. 2 ст. 422.1): узел в независимом пуле, а не в ветви категории', () => {
-  const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.ok(
-    separate.nodes.includes('arbitration_competence_appeal'),
-    'узел должен лежать в пуле отдельных сроков — рядом с возвратом кассационной жалобы',
-  );
-  assert.ok(separate.fields.includes('arbitration_competence_ruling_received_date'));
-  // Ни в одной ветви конкретной категории дела узла быть не должно.
-  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
-    assert.ok(
-      !s.nodes.includes('arbitration_competence_appeal'),
-      `${s.id}: узел не привязан к категории дела`,
-    );
-    assert.ok(
-      !s.fields.includes('arbitration_competence_ruling_received_date'),
-      `${s.id}: поле не отсюда`,
-    );
-  }
-
-  // Одной своей даты достаточно: узел появляется без данных любой ветви.
-  const v = buildView(
-    { arbitration_competence_ruling_received_date: '2025-07-08' },
-    { today: '2025-07-01' },
-  );
-  assert.deepEqual(
-    v.cards.map((c) => c.id),
-    ['arbitration_competence_appeal'],
   );
 });
 
@@ -301,41 +314,99 @@ test('судебный приказ (кассация): узел в незави
   );
 });
 
-test('оспаривание решения третейского суда (кассация): узел в независимом пуле', () => {
-  const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.ok(separate.nodes.includes('treteisky_osparivanie_cassation'));
-  assert.ok(separate.fields.includes('treteisky_osparivanie_entry_into_force_date'));
-  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
-    assert.ok(!s.nodes.includes('treteisky_osparivanie_cassation'));
-    assert.ok(!s.fields.includes('treteisky_osparivanie_entry_into_force_date'));
+test('третейский суд: все четыре узла в своей ситуации, а не в пуле отдельных сроков', () => {
+  // Прежде все четыре лежали в пуле «Отдельные сроки»; это перегруппировка —
+  // нормы, якоря и поля узлов не менялись, менялось только то, на экране какой
+  // ситуации они показаны. Порядок — процессуальный: компетенция (ч. 2
+  // ст. 422.1) → отмена решения (ст. 418) → кассация по оспариванию (ч. 5
+  // ст. 422) → кассация по выдаче исполнительного листа (ч. 5 ст. 427).
+  const situation = SITUATIONS.find((s) => s.id === 'arbitration');
+  assert.equal(situation.label, 'Третейский суд');
+  assert.deepEqual(situation.nodes, [
+    'arbitration_competence_appeal',
+    'arbitration_award_setaside',
+    'treteisky_osparivanie_cassation',
+    'treteisky_ispollist_cassation',
+  ]);
+  assert.deepEqual(situation.fields, [
+    'arbitration_competence_ruling_received_date',
+    'arbitration_award_setaside_received_date',
+    'arbitration_award_setaside_aware_date',
+    'treteisky_osparivanie_entry_into_force_date',
+    'treteisky_osparivanie_cassation_restoration_circumstance_date',
+    'treteisky_ispollist_entry_into_force_date',
+    'treteisky_ispollist_cassation_restoration_circumstance_date',
+  ]);
+  // Свой трек, а не модификация общей ветви: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  // Ни узлов, ни полей не должно остаться ни в «Отдельных сроках», ни где-то
+  // ещё: узел, закреплённый за двумя ситуациями сразу, ломает разбиение.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'arbitration')) {
+    for (const id of situation.nodes) {
+      assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} не отсюда`);
+    }
+    for (const f of situation.fields) {
+      assert.ok(!s.fields.includes(f), `${s.id}: поле ${f} не отсюда`);
+    }
   }
 
-  const v = buildView(
-    { treteisky_osparivanie_entry_into_force_date: '2025-07-08' },
+  // Каждому узлу достаточно своей даты — узлы независимы и появляются поодиночке,
+  // без данных любой ветви. Это и причина, по которой у ситуации нет dropdown'а:
+  // по одному делу их может понадобиться несколько сразу.
+  const cases = [
+    [{ arbitration_competence_ruling_received_date: '2025-07-08' }, 'arbitration_competence_appeal'],
+    [{ arbitration_award_setaside_received_date: '2025-07-08' }, 'arbitration_award_setaside'],
+    [
+      { treteisky_osparivanie_entry_into_force_date: '2025-07-08' },
+      'treteisky_osparivanie_cassation',
+    ],
+    [{ treteisky_ispollist_entry_into_force_date: '2025-07-08' }, 'treteisky_ispollist_cassation'],
+  ];
+  for (const [inputs, nodeId] of cases) {
+    const v = buildView(inputs, { today: '2025-07-01' });
+    assert.deepEqual(
+      v.cards.map((c) => c.id),
+      [nodeId],
+      `${nodeId}: одной своей даты должно быть достаточно`,
+    );
+  }
+
+  // Вариант (b) узла отмены решения — лицо, не являющееся стороной (ч. 3
+  // ст. 418): второе взаимоисключающее поле, оно тоже здесь.
+  const nonParty = buildView(
+    { arbitration_award_setaside_aware_date: '2025-07-08' },
     { today: '2025-07-01' },
   );
   assert.deepEqual(
-    v.cards.map((c) => c.id),
-    ['treteisky_osparivanie_cassation'],
+    nonParty.cards.map((c) => c.id),
+    ['arbitration_award_setaside'],
   );
 });
 
-test('выдача исполнительного листа на решение третейского суда (кассация): узел в независимом пуле', () => {
+test('отдельные сроки: пул сократился, но не опустел', () => {
+  // Что осталось в пуле после выделения «Третейского суда»: протокол, частная
+  // жалоба, возврат кассационной жалобы, мировое соглашение, кассация на
+  // судебный приказ и два узла главы 45 (иностранные суды). Последние остались
+  // здесь намеренно: ст. 416 распространяет срок ч. 2 ст. 413 и на решения
+  // иностранных третейских судов, но это глава 45 и срок общий для решений
+  // любого иностранного суда.
   const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.ok(separate.nodes.includes('treteisky_ispollist_cassation'));
-  assert.ok(separate.fields.includes('treteisky_ispollist_entry_into_force_date'));
-  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
-    assert.ok(!s.nodes.includes('treteisky_ispollist_cassation'));
-    assert.ok(!s.fields.includes('treteisky_ispollist_entry_into_force_date'));
-  }
-
-  const v = buildView(
-    { treteisky_ispollist_entry_into_force_date: '2025-07-08' },
-    { today: '2025-07-01' },
-  );
-  assert.deepEqual(
-    v.cards.map((c) => c.id),
-    ['treteisky_ispollist_cassation'],
+  assert.deepEqual(separate.nodes, [
+    'protocol_remarks',
+    'protocol_remarks_review',
+    'private_complaint',
+    'cassation_return_ruling_appeal',
+    'settlement_approval_cassation_appeal',
+    'sudebny_prikaz_cassation',
+    'foreign_judgment_enforcement_presentation',
+    'foreign_judgment_recognition_objection',
+  ]);
+  assert.ok(separate.fields.length > 0, 'ситуация без полей ввода нерисуема');
+  // Подпись пула перечисляет именно оставшиеся пункты.
+  assert.equal(
+    separate.label,
+    'Отдельные сроки (протокол, частная жалоба, возврат кассационной жалобы)',
   );
 });
 
@@ -392,15 +463,43 @@ test('все одиннадцать ситуаций на месте и подп
       'default_judgment_foreign_state',
       'court_order',
       'enforcement',
-      'child_return',
-      'adoption',
+      'child_cases',
       'separate',
+      'arbitration',
       'review_new_circumstances',
     ],
   );
   for (const s of SITUATIONS) {
     assert.ok(s.label && s.label.length > 3, `${s.id}: нужна подпись`);
     assert.ok(s.nodes.length > 0, `${s.id}: ситуация без узлов`);
+  }
+});
+
+test('состав переключателя после перегруппировки: дела о детях и третейский суд', () => {
+  // Структурный тест на обе перегруппировки разом — то, что видит пользователь
+  // в списке ситуаций наверху формы.
+  const labels = SITUATIONS.map((s) => s.label);
+
+  // 1. Двух прежних пунктов в списке нет — они слились в один.
+  assert.ok(!labels.includes('Возврат ребёнка / права доступа'));
+  assert.ok(!labels.includes('Усыновление (удочерение) ребёнка'));
+  assert.ok(labels.includes('Дела о детях (возврат ребёнка, усыновление)'));
+
+  // 2. Третейский суд выделен в свой пункт.
+  assert.ok(labels.includes('Третейский суд'));
+
+  // 3. «Отдельные сроки» сократились, но не опустели: четыре узла третейского
+  //    разбирательства уехали, восемь остались.
+  const separate = SITUATIONS.find((s) => s.id === 'separate');
+  assert.equal(separate.nodes.length, 8);
+  const arbitration = SITUATIONS.find((s) => s.id === 'arbitration');
+  assert.equal(arbitration.nodes.length, 4);
+  for (const id of arbitration.nodes) assert.ok(!separate.nodes.includes(id));
+
+  // Ни одна ситуация не осталась без узлов или без подписи.
+  for (const s of SITUATIONS) {
+    assert.ok(s.nodes.length > 0, `${s.id}: ситуация без узлов`);
+    assert.ok(s.label && s.label.length > 3, `${s.id}: нужна подпись`);
   }
 });
 
