@@ -225,21 +225,6 @@ export const SITUATIONS = [
     nodes: ['child_return_appeal', 'child_return_private_complaint', 'adoption_appeal'],
   },
   {
-    id: 'default_judgment_foreign_state',
-    label: 'Заочное решение против иностранного государства',
-    // Глава 45.1 ГПК (ст. 417.10): та же механика главы 22, что и у обычного
-    // заочного решения (default_judgment), но с другими числами (2/1/2 месяца
-    // вместо 7 рабочих дней/1 месяца) и без деления по субъекту — поэтому
-    // отдельная ситуация, а не вариант default_judgment.
-    fields: ['foreign_state_default_judgment_service_date'],
-    nodes: [
-      'foreign_state_default_judgment_cancellation_request',
-      'foreign_state_default_judgment_appeal',
-      'foreign_state_default_judgment_entry_into_force',
-      'foreign_state_default_judgment_cassation_ksoyu',
-    ],
-  },
-  {
     id: 'arbitration',
     label: 'Третейский суд',
     // Все сроки модели, привязанные к третейскому разбирательству, — одной
@@ -288,6 +273,21 @@ export const SITUATIONS = [
       'arbitration_award_setaside',
       'treteisky_osparivanie_cassation',
       'treteisky_ispollist_cassation',
+    ],
+  },
+  {
+    id: 'default_judgment_foreign_state',
+    label: 'Заочное решение против иностранного государства',
+    // Глава 45.1 ГПК (ст. 417.10): та же механика главы 22, что и у обычного
+    // заочного решения (default_judgment), но с другими числами (2/1/2 месяца
+    // вместо 7 рабочих дней/1 месяца) и без деления по субъекту — поэтому
+    // отдельная ситуация, а не вариант default_judgment.
+    fields: ['foreign_state_default_judgment_service_date'],
+    nodes: [
+      'foreign_state_default_judgment_cancellation_request',
+      'foreign_state_default_judgment_appeal',
+      'foreign_state_default_judgment_entry_into_force',
+      'foreign_state_default_judgment_cassation_ksoyu',
     ],
   },
   {
