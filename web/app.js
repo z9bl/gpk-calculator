@@ -2159,10 +2159,14 @@ function renderSituationFields(situation, primaryFilled) {
           'исполнению (ст. 21 ФЗ № 229-ФЗ): три года, но точка отсчёта зависит от вида ' +
           'документа — день вступления решения в законную силу (ч. 1), день выдачи ' +
           'судебного приказа взыскателю (ч. 3) либо день окончания периода, на который ' +
-          'присуждены платежи (ч. 4). Выберите документ, укажите дату — и, если ' +
-          'документ уже предъявлялся, добавьте события ст. 22 на карточке ниже: перерыв ' +
-          '(ч. 1-3) запускает срок заново, окончание производства по вине взыскателя ' +
-          '(ч. 3.1) уменьшает его на время, пока производство шло.',
+          'присуждены платежи (ч. 4). По периодическим платежам, пока сам период не ' +
+          'окончен, предъявить документ можно в любой момент — дедлайна на это время ' +
+          'нет; если взыскание бессрочное, его нет вовсе. Выберите документ, укажите ' +
+          'дату — и, если документ уже предъявлялся, добавьте события ст. 22 на карточке ' +
+          'ниже: перерыв (ч. 1–3) запускает срок заново, окончание производства по вине ' +
+          'взыскателя (ч. 3.1) уменьшает его на время, пока производство шло. К сроку по ' +
+          'ч. 4 ст. 21 статья 22 не сводится, поэтому у периодических платежей событий ' +
+          'нет.',
       ),
     );
   }
@@ -2181,25 +2185,6 @@ function renderSituationFields(situation, primaryFilled) {
       if (id === 'arbitration_award_setaside_aware_date') continue; // показано выше вместе с received_date
       box.appendChild(inviteFieldOrPointer(id));
     }
-  } else if (situation.id === 'periodic_payments') {
-    // Дата окончания периода и чекбокс бессрочности — взаимоисключающие: при
-    // бессрочном взыскании дедлайна не существует в принципе, дата ему не
-    // нужна (см. computePeriodicPayments в chain.js), поэтому поле даты
-    // скрывается, а не просто перестаёт учитываться.
-    const indefinite = Boolean(state.inputs.periodic_payment_indefinite);
-    box.appendChild(renderCheckboxField('periodic_payment_indefinite', indefinite));
-    if (indefinite) {
-      box.appendChild(
-        el(
-          'p',
-          'hint',
-          'Дата окончания срока не нужна — предъявить можно в любой момент, пока ' +
-            'сохраняется право на периодические платежи.',
-        ),
-      );
-    } else {
-      box.appendChild(inviteFieldOrPointer('periodic_payment_period_end_date'));
-    }
   } else if (situation.id === 'review_new_circumstances') {
     renderReviewGroundFields(box);
   } else if (situation.id === 'enforcement') {
@@ -2211,18 +2196,22 @@ function renderSituationFields(situation, primaryFilled) {
 }
 
 // Поля ситуации «Исполнительное производство» (ст. 21 ФЗ № 229-ФЗ): dropdown с
-// типом исполнительного документа + одно поле даты-якоря, своё у каждого типа.
+// типом исполнительного документа + поле даты-якоря, своё у каждого типа, а у
+// периодических платежей — ещё и чекбокс бессрочности взамен даты.
+//
 // Тот же приём, что и у renderReviewGroundFields ниже (выбор переписывает норму
 // на карточке), но поле даты здесь не общее: у трёх типов документа три разных
-// якоря, и два из них — существующие поля своих ситуаций
-// (court_order_issued_date, periodic_payment_period_end_date), которые тут
-// именно переиспользуются, а не заводятся заново (см. ENFORCEMENT_DOCUMENT_TYPES
-// в chain.js и комментарий у ситуации 'enforcement' в situations.js). Поэтому
-// поле берётся по anchor_field выбранного типа, а не по списку situation.fields.
+// якоря. Один из них — court_order_issued_date — существующее поле ситуации
+// «Судебный приказ», которое тут именно переиспользуется, а не заводится заново
+// (см. ENFORCEMENT_DOCUMENT_TYPES в chain.js и комментарий у ситуации
+// 'enforcement' в situations.js). Поэтому поле берётся по anchor_field
+// выбранного типа, а не по списку situation.fields.
 //
 // Блок «Добавить событие» (перерыв/вычет ст. 22) здесь не рисуется: он живёт на
 // самой карточке срока по признаку card.interruptible — тот же общий
-// renderInterruptions, что и у остальных узлов предъявления, ничего своего.
+// renderInterruptions, что и у остальных узлов предъявления, ничего своего. У
+// периодических платежей его нет: ст. 22 к сроку по ч. 4 ст. 21 не сведена, и
+// узел приходит без этого признака.
 const ENFORCEMENT_DOCUMENT_TYPE_PLACEHOLDER = '';
 
 function renderEnforcementDocumentFields(box) {
@@ -2239,6 +2228,31 @@ function renderEnforcementDocumentFields(box) {
   );
   const docType = enforcementDocumentTypeById(current);
   if (docType == null) return;
+
+  // Чекбокс бессрочности — только у того типа, у которого он есть в модели
+  // (периодические платежи, indefinite_field в ENFORCEMENT_DOCUMENT_TYPES).
+  // Он и дата-якорь взаимоисключающие: при бессрочном взыскании дедлайна не
+  // существует в принципе, дата ему не нужна (см.
+  // computeEnforcementDocumentPresentation в chain.js), поэтому поле даты
+  // скрывается, а не просто перестаёт учитываться.
+  if (docType.indefinite_field) {
+    const indefinite = Boolean(state.inputs[docType.indefinite_field]);
+    box.appendChild(renderCheckboxField(docType.indefinite_field, indefinite));
+    if (indefinite) {
+      box.appendChild(
+        reveal(
+          'enforcement-indefinite',
+          el(
+            'p',
+            'hint',
+            'Дата окончания срока не нужна — предъявить можно в любой момент, пока ' +
+              'сохраняется право на периодические платежи.',
+          ),
+        ),
+      );
+      return;
+    }
+  }
   box.appendChild(reveal('enforcement-anchor', inviteFieldOrPointer(docType.anchor_field)));
 }
 

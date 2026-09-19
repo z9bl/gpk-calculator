@@ -12,6 +12,10 @@
 //
 // Если расчёт когда-нибудь задублируется и разойдётся, ломается именно этот
 // тест, а не юнит-тесты каждой из сторон по отдельности.
+//
+// Сравнение возможно для двух типов документа из трёх. У периодических платежей
+// второй стороны больше нет: их отдельный узел поглощён этим (см. блок
+// «Периодические платежи» ниже — там сказано, что проверяется взамен и почему).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -166,55 +170,113 @@ test('вступившее в силу решение: перерыв и выч�
   assert.equal(viaSituation.deadline, viaChain.deadline);
 });
 
-// --- Периодические платежи -------------------------------------------------
+// --- Периодические платежи: перенесённая логика прежнего отдельного узла ----
+//
+// ЧТО ИЗМЕНИЛОСЬ В ЭТОМ БЛОКЕ. Раньше здесь стояло сравнение «через новую
+// ситуацию» против «через отдельную ситуацию периодических платежей» — тот же
+// приём, что для судебного приказа выше. Сравнивать больше не с чем: отдельный
+// узел periodic_payments_presentation и его ситуация поглощены вариантом
+// документа 'periodic_payments' этого узла, и второго расчёта той же нормы в
+// модели не осталось. Это и было целью переноса, поэтому прежняя форма теста
+// потеряла смысл не из-за упрощения проверок, а потому что исчезла вторая
+// сторона сравнения.
+//
+// Взамен проверяется то, что раньше проверялось на отдельном узле, — что вся
+// его логика действительно работает ВНУТРИ нового: якорь и норма ч. 4,
+// оговорка «пока срок не окончен — в любой момент», чекбокс бессрочности с
+// веткой not_applicable и приоритетом над датой, и неприменимость ст. 22.
+// Доказательство переиспользования движка держится на двух блоках выше
+// (судебный приказ и вступившее в силу решение) — там обе стороны сравнения
+// по-прежнему существуют.
 
-test('периодические платежи: якорь и норма те же, что у существующего узла', () => {
-  const viaChain = cardOf({ periodic_payment_period_end_date: ORDER_ISSUED }, 'periodic_payments_presentation');
-  const viaSituation = cardOf(
-    { enforcement_document_type: 'periodic_payments', periodic_payment_period_end_date: ORDER_ISSUED },
-    NEW_NODE,
-  );
-  assert.equal(viaSituation.deadline, viaChain.deadline);
-  assert.equal(viaSituation.norm, viaChain.norm);
-  // Оговорка ч. 4 доезжает до карточки: без неё пользователь читал бы дедлайн
-  // как единственную возможность предъявить документ.
-  assert.match(viaSituation.details.logic, /в любой момент/);
+const PERIODIC = { enforcement_document_type: 'periodic_payments' };
+
+test('периодические платежи: якорь, норма ч. 4 и оговорка — на карточке нового узла', () => {
+  const card = cardOf({ ...PERIODIC, periodic_payment_period_end_date: ORDER_ISSUED }, NEW_NODE);
+  assert.equal(card.status, 'computed');
+  assert.equal(card.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
+  assert.match(card.norm, /ч\. 4 ст\. 21/);
+  // Оговорка ч. 4: без неё пользователь читал бы дедлайн как единственную
+  // возможность предъявить документ.
+  assert.match(card.details.logic, /в любой момент/);
 });
 
-// Единственное намеренное расхождение с существующей ветвью, вынесенное в
-// отчёт как открытый вопрос: у нового узла события ст. 22 работают для всех
-// трёх типов документа (ч. 1 ст. 22 говорит об исполнительном документе, не
-// выделяя его вид), а существующий periodic_payments_presentation ими не
-// затрагивается и здесь не менялся. Тест фиксирует оба факта, чтобы
-// расхождение не осталось незамеченным при следующей правке.
-test('периодические платежи: события ст. 22 учитываются новым узлом и не затрагивают существующий', () => {
-  const events = { enforcement_interruptions: [INTERRUPTION] };
-  const existing = cardOf({ periodic_payment_period_end_date: ORDER_ISSUED, ...events }, 'periodic_payments_presentation');
-  const plainExisting = cardOf({ periodic_payment_period_end_date: ORDER_ISSUED }, 'periodic_payments_presentation');
-  assert.deepEqual(existing, plainExisting);
+test('периодические платежи: бессрочное взыскание — not_applicable внутри нового узла', () => {
+  const card = cardOf({ ...PERIODIC, periodic_payment_indefinite: true }, NEW_NODE);
+  assert.ok(card, 'карточка остаётся — это содержательный факт, не нехватка данных');
+  assert.equal(card.status, 'not_applicable');
+  assert.equal(card.deadline, null);
+  assert.match(card.message, /бессрочное/);
+  assert.match(card.details.logic, /бессрочно/);
+});
 
-  const viaSituation = cardOf(
+test('периодические платежи: бессрочность перекрывает введённую дату', () => {
+  const card = cardOf(
     {
-      enforcement_document_type: 'periodic_payments',
+      ...PERIODIC,
       periodic_payment_period_end_date: ORDER_ISSUED,
-      ...events,
+      periodic_payment_indefinite: true,
     },
     NEW_NODE,
   );
-  assert.equal(viaSituation.restarted_from, INTERRUPTION.date);
-  assert.equal(viaSituation.deadline, '2029-06-01');
+  assert.equal(card.status, 'not_applicable');
+  assert.equal(card.deadline, null);
 });
 
-// --- Блок «Добавить событие» доступен на всех трёх типах --------------------
+test('периодические платежи: чекбокс бессрочности не действует на другие типы документа', () => {
+  // indefinite_field объявлен только у одного типа — тот же чекбокс при другом
+  // типе документа расчёт не отменяет.
+  const card = cardOf(
+    {
+      enforcement_document_type: 'court_order',
+      court_order_issued_date: ORDER_ISSUED,
+      periodic_payment_indefinite: true,
+    },
+    NEW_NODE,
+  );
+  assert.equal(card.status, 'computed');
+  assert.equal(card.deadline, '2026-04-13');
+  assert.match(card.norm, /ч\. 3 ст\. 21/);
+});
 
-test('карточка нового узла помечена interruptible при любом типе документа', () => {
-  // От этого флага зависит показ блока «Добавить событие» на карточке
-  // (renderInterruptions в web/app.js) — общий для всех узлов предъявления.
+// --- Блок «Добавить событие»: по типу документа, а не по узлу ---------------
+
+test('ст. 22 применяется к двум типам документа и не применяется к периодическим платежам', () => {
+  // От флага interruptible зависит показ блока «Добавить событие» на карточке
+  // (renderInterruptions в web/app.js). Раньше различие держалось на том, что
+  // узлов было два; теперь узел один, и различие несёт тип документа —
+  // поведение прежнего отдельного узла (ст. 22 к ч. 4 ст. 21 не сведена)
+  // сохранено при переносе.
+  const events = { enforcement_interruptions: [INTERRUPTION] };
   for (const type of ENFORCEMENT_DOCUMENT_TYPES) {
     const card = cardOf(
-      { enforcement_document_type: type.id, [type.anchor_field]: ORDER_ISSUED },
+      { enforcement_document_type: type.id, [type.anchor_field]: ORDER_ISSUED, ...events },
       NEW_NODE,
     );
-    assert.equal(card.interruptible, true, `${type.id}: карточка не помечена interruptible`);
+    if (type.id === 'periodic_payments') {
+      assert.equal(card.interruptible, undefined, 'ч. 4 ст. 21: блок событий не положен');
+      assert.equal(card.interruptions, undefined);
+      assert.equal(card.deadline, '2026-04-13', 'перерыв не должен был сдвинуть срок');
+    } else {
+      assert.equal(card.interruptible, true, `${type.id}: карточка не помечена interruptible`);
+      assert.equal(card.restarted_from, INTERRUPTION.date);
+    }
   }
+});
+
+test('прежнего отдельного узла периодических платежей не осталось ни в одной ситуации', () => {
+  // Обратная сторона переноса: узел не должен вернуться через buildView под
+  // старым id — иначе в модели снова два расчёта одной нормы.
+  const all = buildView(
+    {
+      ...BASE,
+      ...PERIODIC,
+      periodic_payment_period_end_date: ORDER_ISSUED,
+      periodic_payment_indefinite: false,
+    },
+    TODAY,
+  );
+  const ids = [...all.cards, ...all.incomplete].map((c) => c.id);
+  assert.ok(!ids.includes('periodic_payments_presentation'));
+  assert.ok(ids.includes(NEW_NODE));
 });

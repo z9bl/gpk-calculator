@@ -57,7 +57,7 @@ export { ENFORCEMENT_DOCUMENT_TYPES, enforcementDocumentTypeById };
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Список пуст:
 // судебный приказ и периодические платежи раскрыты отдельными узлами
-// (court_order_presentation, periodic_payments_presentation — свои ситуации в
+// (court_order_presentation, enforcement_document_presentation — свои ситуации в
 // situations.js), перерыв срока — сдвигом якоря по событиям ст. 22 (см.
 // applyInterruptions в chain.js). Механизм оставлен, как и STUBS ниже: он
 // понадобится следующему смежному случаю, для которого расчёта не окажется.
@@ -716,12 +716,20 @@ function arbitrationAwardSetasideCard(term) {
   return card;
 }
 
-// Карточка предъявления документов о взыскании периодических платежей
-// (ч. 4 ст. 21 ФЗ № 229-ФЗ). Обычный расчётный узел через monthTermCard, кроме
-// ветки бессрочного взыскания (periodic_payment_indefinite) — там дедлайна не
-// существует в принципе, и узел приходит уже в состоянии not_applicable (по
-// образцу default_judgment_appeal при отменённом заочном решении).
-function periodicPaymentsCard(term) {
+// Карточка узла предъявления исполнительного документа (ст. 21 ФЗ № 229-ФЗ) —
+// один рендерер на все три типа документа, как и сам узел.
+//
+// Обычный расчётный узел через monthTermCard (он годится и для трёхлетнего
+// срока) плюс две ветки, каждая из которых нужна только части типов:
+//   * not_applicable — бессрочное взыскание периодических платежей
+//     (periodic_payment_indefinite): дедлайна не существует в принципе, узел
+//     приходит уже в этом состоянии (по образцу default_judgment_appeal при
+//     отменённом заочном решении). Вместо даты на карточке формулировка и
+//     причина;
+//   * истории перерывов и вычетов ст. 22 — только у типов, к которым ст. 22
+//     применяется; attachInterruptions/attachDeductions сами ничего не
+//     добавляют, если расчёт их не принёс, поэтому ветвления здесь не нужно.
+function enforcementDocumentCard(term) {
   if (term.status === 'not_applicable') {
     return {
       id: term.id,
@@ -734,7 +742,10 @@ function periodicPaymentsCard(term) {
       details: { collapsed: true, logic: term.reason },
     };
   }
-  return monthTermCard(term);
+  const card = monthTermCard(term);
+  attachInterruptions(card, term);
+  attachDeductions(card, term);
+  return card;
 }
 
 // Карточка возражений должника на судебный приказ (ст. 128 ГПК) — обычный срок
@@ -930,19 +941,13 @@ function independentNodes(source, today = null) {
     attachDeductions(courtOrderPresentationCard, terms.court_order_presentation);
     cards.push(courtOrderPresentationCard);
   }
-  if (terms.periodic_payments_presentation) {
-    cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
-  }
-  // Исполнительное производство — короткий вход (ст. 21 ФЗ № 229-ФЗ): та же
-  // карточка и те же две истории, что и у court_order_presentation выше.
-  // Норма и логика на карточке уже выбраны по типу документа внутри
-  // computeEnforcementDocumentPresentation, поэтому своего рендерера узлу не
-  // нужно — monthTermCard годится и для трёхлетнего срока.
+  // Исполнительное производство (ст. 21 ФЗ № 229-ФЗ): один узел на три типа
+  // документа, включая периодические платежи с их веткой бессрочного взыскания
+  // (прежний отдельный узел periodic_payments_presentation перенесён сюда
+  // целиком). Норма, логика и применимость ст. 22 на карточке уже выбраны по
+  // типу документа внутри computeEnforcementDocumentPresentation.
   if (terms.enforcement_document_presentation) {
-    const enforcementDocumentCard = monthTermCard(terms.enforcement_document_presentation);
-    attachInterruptions(enforcementDocumentCard, terms.enforcement_document_presentation);
-    attachDeductions(enforcementDocumentCard, terms.enforcement_document_presentation);
-    cards.push(enforcementDocumentCard);
+    cards.push(enforcementDocumentCard(terms.enforcement_document_presentation));
   }
   // Глава 45 (признание и исполнение решений иностранных судов): два
   // независимых узла, каждый по своему input — обычный monthTermCard (годится

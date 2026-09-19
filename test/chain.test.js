@@ -2207,47 +2207,95 @@ test('усыновление: узел доступен и через computeCha
 });
 
 // --- Периодические платежи: предъявление к исполнению (ч. 4 ст. 21 229-ФЗ) --
+//
+// Собственного узла у периодических платежей больше нет: прежний
+// periodic_payments_presentation со своей ситуацией поглощён вариантом
+// 'periodic_payments' узла enforcement_document_presentation (он был тонкой
+// обёрткой над той же арифметикой). Тесты ниже — те же проверки, что и у
+// прежнего узла, переписанные на новый вход: якорь, оговорка ч. 4, чекбокс
+// бессрочности, ветка not_applicable и приоритет бессрочности над датой.
+
+const PERIODIC = { enforcement_document_type: 'periodic_payments' };
 
 test('периодические платежи: 3 года со дня окончания периода, перенос через выходные', () => {
-  const t = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
-    .periodic_payments_presentation;
+  const t = computeIndependentTerms({
+    ...PERIODIC,
+    periodic_payment_period_end_date: '2023-04-12',
+  }).enforcement_document_presentation;
   assert.equal(t.anchor, '2023-04-12');
   assert.equal(t.raw_deadline, '2026-04-12'); // воскресенье
   assert.equal(t.deadline, '2026-04-13'); // перенос на понедельник (ч. 2 ст. 108)
   assert.equal(t.shifted, true);
   assert.match(t.norm.primary, /ч\. 4 ст\. 21/);
+  // Оговорка ч. 4 на карточке: пока сам период не окончен, дедлайна нет.
+  assert.match(t.logic, /в любой момент/);
 });
 
 test('периодические платежи: бессрочное взыскание — not_applicable без дедлайна', () => {
-  const t = computeIndependentTerms({ periodic_payment_indefinite: true })
-    .periodic_payments_presentation;
+  const t = computeIndependentTerms({ ...PERIODIC, periodic_payment_indefinite: true })
+    .enforcement_document_presentation;
   assert.ok(t);
   assert.equal(t.status, 'not_applicable');
   assert.equal(t.deadline, undefined);
   assert.match(t.reason, /бессрочно/);
   assert.match(t.norm, /ч\. 4 ст\. 21/);
+  assert.match(t.message, /бессрочное/);
 });
 
 test('периодические платежи: бессрочность важнее введённой даты окончания периода', () => {
   const t = computeIndependentTerms({
+    ...PERIODIC,
     periodic_payment_period_end_date: '2023-04-12',
     periodic_payment_indefinite: true,
-  }).periodic_payments_presentation;
+  }).enforcement_document_presentation;
   assert.equal(t.status, 'not_applicable');
 });
 
 test('периодические платежи: узла нет без даты окончания периода и без отметки о бессрочности', () => {
-  assert.equal(computeIndependentTerms({}).periodic_payments_presentation, null);
-  assert.equal(computeChain(BASE, { today: '2026-03-01' }).periodic_payments_presentation, null);
+  assert.equal(computeIndependentTerms(PERIODIC).enforcement_document_presentation, null);
+  assert.equal(
+    computeChain({ ...BASE, ...PERIODIC }, { today: '2026-03-01' })
+      .enforcement_document_presentation,
+    null,
+  );
+});
+
+test('периодические платежи: чекбокс и дата работают только при выбранном типе документа', () => {
+  // Оба поля принадлежат ситуации «Исполнительное производство»; без выбора
+  // типа документа якорь неизвестен, и узла нет — ни в расчётном состоянии, ни
+  // в not_applicable.
+  assert.equal(
+    computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
+      .enforcement_document_presentation,
+    null,
+  );
+  assert.equal(
+    computeIndependentTerms({ periodic_payment_indefinite: true })
+      .enforcement_document_presentation,
+    null,
+  );
+});
+
+test('периодические платежи: бессрочность не действует на другие типы документа', () => {
+  // indefinite_field есть только у периодических платежей: тот же чекбокс при
+  // другом типе документа расчёт не отменяет.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: '2023-04-12',
+    periodic_payment_indefinite: true,
+  }).enforcement_document_presentation;
+  assert.equal(t.status, undefined);
+  assert.equal(t.deadline, '2026-04-13');
+  assert.match(t.norm.primary, /ч\. 3 ст\. 21/);
 });
 
 test('периодические платежи: узел не зависит от полей общей цепочки', () => {
   const chain = computeChain(
-    { ...BASE, periodic_payment_period_end_date: '2023-04-12' },
+    { ...BASE, ...PERIODIC, periodic_payment_period_end_date: '2023-04-12' },
     { today: '2026-03-01' },
   );
-  assert.ok(chain.periodic_payments_presentation);
-  assert.equal(chain.periodic_payments_presentation.deadline, '2026-04-13');
+  assert.ok(chain.enforcement_document_presentation);
+  assert.equal(chain.enforcement_document_presentation.deadline, '2026-04-13');
 });
 
 // --- Признание и исполнение решений иностранных судов (глава 45 ГПК) --------
@@ -2526,37 +2574,78 @@ test('перерыв: судебный приказ считается от по
 
 test('перерыв: периодические платежи не прерываются (ч. 4 ст. 21 вне объёма ст. 22)', () => {
   // Список перерывов общий на все узлы предъявления, но у периодических
-  // платежей срок не фиксированная величина — модификатор к нему не применяется.
+  // платежей срок не фиксированная величина — модификатор к нему не
+  // применяется. После переноса узла это свойство варианта документа
+  // (interruptible: false у типа 'periodic_payments'), а не отдельного узла:
+  // один и тот же узел с другим типом документа перерыв учитывает.
   const events = [{ type: 'presentment', date: '2025-06-01' }];
-  const plain = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
-    .periodic_payments_presentation;
+  const plain = computeIndependentTerms({
+    ...PERIODIC,
+    periodic_payment_period_end_date: '2023-04-12',
+  }).enforcement_document_presentation;
   const withEvents = computeIndependentTerms({
+    ...PERIODIC,
     periodic_payment_period_end_date: '2023-04-12',
     enforcement_interruptions: events,
-  }).periodic_payments_presentation;
+  }).enforcement_document_presentation;
   assert.deepEqual(withEvents, plain);
   assert.equal(withEvents.deadline, '2026-04-13');
   assert.equal(withEvents.interruptible, undefined);
   assert.equal(withEvents.interruptions, undefined);
 
+  // Вычет ч. 3.1 к нему тоже не применяется — вторая ветвь ст. 22.
+  const withDeduction = computeIndependentTerms({
+    ...PERIODIC,
+    periodic_payment_period_end_date: '2023-04-12',
+    enforcement_interruptions: [{ type: 'creditor_request', from: '2024-01-01', to: '2024-03-01' }],
+  }).enforcement_document_presentation;
+  assert.deepEqual(withDeduction, plain);
+  assert.equal(withDeduction.deductions, undefined);
+
   // Бессрочная ветка тоже не меняется — там дедлайна нет в принципе.
   const indefinite = computeIndependentTerms({
+    ...PERIODIC,
     periodic_payment_indefinite: true,
     enforcement_interruptions: events,
-  }).periodic_payments_presentation;
+  }).enforcement_document_presentation;
   assert.equal(indefinite.status, 'not_applicable');
   assert.equal(indefinite.interruptions, undefined);
 });
 
+test('ст. 22 применяется по типу документа, а не по узлу', () => {
+  // Один и тот же узел при одном и том же списке событий: судебный приказ
+  // (ч. 3 ст. 21) прерывается, периодические платежи (ч. 4 ст. 21) — нет.
+  // Раньше это различие держалось на том, что узлов было два; теперь — на
+  // флаге interruptible у типа документа.
+  const events = [{ type: 'partial_execution', date: '2024-03-05' }];
+  const order = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: '2023-04-12',
+    enforcement_interruptions: events,
+  }).enforcement_document_presentation;
+  const periodic = computeIndependentTerms({
+    ...PERIODIC,
+    periodic_payment_period_end_date: '2023-04-12',
+    enforcement_interruptions: events,
+  }).enforcement_document_presentation;
+  assert.equal(order.deadline, '2027-03-05');
+  assert.equal(order.interruptible, true);
+  assert.equal(periodic.deadline, '2026-04-13');
+  assert.equal(periodic.interruptible, undefined);
+});
+
 test('обе ветки предъявления считаются вместе и не мешают друг другу', () => {
+  // Узел приказного производства (ситуация «Судебный приказ» — там помимо
+  // предъявления есть возражения должника) и узел исполнительного производства
+  // живут рядом и читают каждый свой вход.
   const terms = computeIndependentTerms({
     court_order_issued_date: '2023-04-12',
+    ...PERIODIC,
     periodic_payment_period_end_date: '2023-04-12',
     enforcement_interruptions: [{ type: 'partial_execution', date: '2024-03-05' }],
   });
-  // Приказ прерван, периодические платежи — нет, при одном и том же вводе.
   assert.equal(terms.court_order_presentation.deadline, '2027-03-05');
-  assert.equal(terms.periodic_payments_presentation.deadline, '2026-04-13');
+  assert.equal(terms.enforcement_document_presentation.deadline, '2026-04-13');
 });
 
 test('перерыв: работает во всех ветвях предъявления ИЛ', () => {
@@ -3520,23 +3609,25 @@ test('исполнительное производство: узел читае
   assert.equal(t.deadline, ENF_DEADLINE);
 });
 
-test('исполнительное производство: узел не трогает существующие узлы предъявления', () => {
-  // Короткий вход — ещё один вход к тому же расчёту, а не подмена ветвей:
-  // рядом с полями общей цепочки и судебного приказа ни один прежний узел не
-  // меняется.
+test('исполнительное производство: узел не трогает узлы предъявления внутри цепочек', () => {
+  // Узлы предъявления ВНУТРИ цепочек обжалования остаются на своих местах:
+  // поглощены были только периодические платежи (отдельный узел-обёртка), а не
+  // приказное производство, где помимо предъявления есть возражения должника.
   const chain = computeChain(
     {
       ...BASE,
       court_order_issued_date: ENF_ANCHOR,
-      periodic_payment_period_end_date: ENF_ANCHOR,
       enforcement_document_type: 'court_decision',
       enforcement_decision_entry_into_force_date: '2020-01-09',
     },
     { today: '2026-03-01' },
   );
   assert.equal(chain.court_order_presentation.deadline, ENF_DEADLINE);
-  assert.equal(chain.periodic_payments_presentation.deadline, ENF_DEADLINE);
+  assert.equal(chain.court_order_objection, null); // своя дата, свой узел — не тронут
   assert.equal(chain[ENFORCEMENT_NODE].deadline, '2023-01-09');
+  // Прежнего отдельного узла периодических платежей больше нет ни под каким
+  // именем — иначе перенос оставил бы два расчёта одной нормы.
+  assert.equal(chain.periodic_payments_presentation, undefined);
   // Заголовок узла отличается от заголовков узлов внутри ветвей: в сводке,
   // печати и .ics он должен читаться сам по себе.
   assert.notEqual(chain[ENFORCEMENT_NODE].title, chain.court_order_presentation.title);

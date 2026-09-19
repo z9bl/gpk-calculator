@@ -22,7 +22,7 @@
   нерабочи независимо от переноса. Формулировка задачи ошибочна, что
   подтверждено пользователем в этой сессии; список аномалий шага 1 принят как
   верный без изменений.
-- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 44 узлов.
+- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 43 узлов.
 - **Шаг 3–4.** Для каждого узла и каждой даты-аномалии — до 4 сценариев
   (старт на аномалии; наивный дедлайн на аномалии; ±1 день допуска).
   Вызов — РЕАЛЬНЫЕ функции ядра (`computeSimpleTerm`/`computeVersionedTerm`/
@@ -31,14 +31,14 @@
   (без многошагового resolve) дополнительно сверено с публичной обёрткой
   `chain.computeIndependentTerms` (differential-проверка «узел тайно не
   использует core»).
-- Итого сценариев: **28408**.
+- Итого сценариев: **27872**.
 
 ## Сводка
 
-- Узлов всего: **44**.
-- Узлов без единой ANOMALY/ERROR: **44**.
+- Узлов всего: **43**.
+- Узлов без единой ANOMALY/ERROR: **43**.
 - Узлов с найденными расхождениями: **0**.
-- Сценариев PASS: **28408**.
+- Сценариев PASS: **27872**.
 - Сценариев ANOMALY: **0**.
 - Сценариев ERROR (исключение при вызове): **0**.
 - Сценариев NOT_GENERATED (наивный подбор старта не сошёлся): **0**.
@@ -77,7 +77,6 @@
 | mirovoy_enforcement_presentation | year | 3 | нет | — | нет |
 | mirovoy_reasoned_making | working_day | 10 | нет | mirovoy_reasoned_date | нет |
 | mirovoy_reasoned_request | working_day | 3 | нет | mirovoy_request_date | нет |
-| periodic_payments_presentation | year | 3 | нет | — | нет |
 | private_complaint | working_day | 15 | нет | — | нет |
 | protocol_remarks | working_day | 5 | нет | protocol_remarks_filed_date | нет |
 | protocol_remarks_review | working_day | 5 | нет | — | нет |
@@ -107,7 +106,7 @@
 
 ## Пример PASS-сценариев (по одному на узел)
 
-Полная таблица (все 28408 сценариев) не приводится —
+Полная таблица (все 27872 сценариев) не приводится —
 нечитаема в markdown; воспроизводится повторным запуском теста. Ниже — по
 одному представительному PASS на узел, для наглядности формата.
 
@@ -141,7 +140,6 @@
 | mirovoy_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | mirovoy_reasoned_making | start_at_anomaly | 2020-01-01 | — | 2020-01-22 | PASS |
 | mirovoy_reasoned_request | start_at_anomaly | 2020-01-01 | — | 2020-01-13 | PASS |
-| periodic_payments_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | private_complaint | start_at_anomaly | 2020-01-01 | — | 2020-01-29 | PASS |
 | protocol_remarks | start_at_anomaly | 2020-01-01 | — | 2020-01-15 | PASS |
 | protocol_remarks_review | start_at_anomaly | 2020-01-01 | — | 2020-01-15 | PASS |
