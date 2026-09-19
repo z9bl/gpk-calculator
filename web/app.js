@@ -1418,13 +1418,7 @@ function render() {
   root.textContent = '';
 
   // Без даты мотивированного решения цепочка общего порядка не считается.
-  // Приглашение показываем только там, где эта дата и спрашивается.
   const chainAvailable = Boolean(state.inputs.reasoned_decision_date);
-  if (!chainAvailable && situation.primary_field) {
-    root.appendChild(
-      el('p', 'empty', 'Введите дату мотивированного решения — появятся сроки цепочки обжалования.'),
-    );
-  }
 
   const cardById = (id) => view.cards.find((n) => n.id === id);
   const incById = (id) => view.incomplete.find((n) => n.id === id);
