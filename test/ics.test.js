@@ -345,8 +345,15 @@ const ALL_BRANCHES_INPUTS = {
   // (ст. 128) и предъявление приказа к исполнению — два независимых узла
   court_order_copy_received_date: '2025-07-02',
   court_order_issued_date: '2023-04-12',
-  // периодические платежи (независимый трек, ч. 4 ст. 21 ФЗ № 229-ФЗ)
+  // исполнительное производство (ст. 21 ФЗ № 229-ФЗ): один узел на три типа
+  // документа, якорь выбирается типом. periodic_payment_period_end_date —
+  // якорь варианта 'periodic_payments' того же узла (прежний отдельный узел
+  // периодических платежей поглощён им); здесь выбран 'court_decision',
+  // поэтому в расчёт идёт enforcement_decision_entry_into_force_date, а сама
+  // дата периода остаётся в наборе как незадействованный вход
   periodic_payment_period_end_date: '2023-04-12',
+  enforcement_document_type: 'court_decision',
+  enforcement_decision_entry_into_force_date: '2023-04-13',
   // признание и исполнение решений иностранных судов (глава 45 ГПК): два
   // независимых узла — предъявление к принудительному исполнению (ч. 3
   // ст. 409) и возражения относительно признания (ч. 2 ст. 413)
@@ -940,14 +947,19 @@ test('глава 22.2: те же сроки и через icsTermsFromChain', ()
   assert.deepEqual(priv.duration, { value: 10, unit: 'working_day' });
 });
 
+// Периодические платежи экспортируются тем же узлом, что и остальные типы
+// исполнительного документа (прежний periodic_payments_presentation поглощён
+// вариантом 'periodic_payments'), поэтому и заголовок в .ics теперь общий.
+const PERIODIC_ICS = { enforcement_document_type: 'periodic_payments' };
+
 test('предъявление документов о периодических платежах уходит в .ics при заданной дате', () => {
   const view = buildView(
-    { periodic_payment_period_end_date: '2023-04-12' },
+    { ...PERIODIC_ICS, periodic_payment_period_end_date: '2023-04-12' },
     { today: '2026-03-01' },
   );
   const terms = icsTermsFromView(view);
-  const pp = terms.find((t) => t.title.includes('периодических платежей'));
-  assert.ok(pp, 'срок предъявления документов о взыскании периодических платежей в списке экспорта');
+  const pp = terms.find((t) => t.title.includes('исполнительного документа'));
+  assert.ok(pp, 'срок предъявления документа о взыскании периодических платежей в списке экспорта');
   assert.deepEqual(pp.duration, { value: 3, unit: 'year' });
   assert.equal(pp.deadline, '2026-04-13');
   assert.match(pp.norm, /ч\. 4 ст\. 21/);
@@ -957,9 +969,40 @@ test('предъявление документов о периодически�
 });
 
 test('периодические платежи: бессрочное взыскание не экспортируется в .ics — нет даты', () => {
-  const view = buildView({ periodic_payment_indefinite: true }, { today: '2026-03-01' });
+  const view = buildView(
+    { ...PERIODIC_ICS, periodic_payment_indefinite: true },
+    { today: '2026-03-01' },
+  );
   const terms = icsTermsFromView(view);
-  assert.ok(!terms.some((t) => /периодических платежей/.test(t.title)));
+  assert.ok(!terms.some((t) => /исполнительного документа/.test(t.title)));
+});
+
+test('периодические платежи: тот же срок и через icsTermsFromChain', () => {
+  // Ручной список icsTermsFromChain раньше знал прежний отдельный узел; после
+  // переноса он должен знать новый — иначе экспорт по этому пути молча потерял
+  // бы срок по ч. 4 ст. 21.
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11', // computeChain требует дату решения
+      ...PERIODIC_ICS,
+      periodic_payment_period_end_date: '2023-04-12',
+    },
+    { today: '2026-03-01' },
+  );
+  const t = icsTermsFromChain(chain).find((x) => x.title.includes('исполнительного документа'));
+  assert.ok(t, 'узел предъявления не должен выпадать из экспорта по цепочке');
+  assert.equal(t.deadline, '2026-04-13');
+  assert.equal(t.ics, true);
+  assert.deepEqual(t.duration, { value: 3, unit: 'year' });
+
+  // Бессрочная ветка деадлайна не даёт — в ручной список не попадает.
+  const indefinite = computeChain(
+    { reasoned_decision_date: '2025-03-11', ...PERIODIC_ICS, periodic_payment_indefinite: true },
+    { today: '2026-03-01' },
+  );
+  assert.ok(
+    !icsTermsFromChain(indefinite).some((x) => /исполнительного документа/.test(x.title)),
+  );
 });
 
 // --- Истёкшие сроки и отсечение прошлых напоминаний --------------------------

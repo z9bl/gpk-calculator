@@ -29,7 +29,7 @@ import {
   ENFORCEMENT_PRESENTATION,
   COURT_ORDER_OBJECTION,
   COURT_ORDER_PRESENTATION,
-  PERIODIC_PAYMENTS_PRESENTATION,
+  ENFORCEMENT_DOCUMENT_PRESENTATION,
   FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION,
   FOREIGN_JUDGMENT_RECOGNITION_OBJECTION,
   PROTOCOL_REMARKS,
@@ -361,21 +361,24 @@ export function icsTermsFromChain(chain) {
       duration: COURT_ORDER_PRESENTATION.duration,
     });
   }
-  // Предъявление документов о взыскании периодических платежей (ч. 4 ст. 21
-  // ФЗ № 229-ФЗ) — независимый узел, считается по своему input
-  // (periodic_payment_period_end_date). В ветке not_applicable (бессрочное
-  // взыскание) deadline нет — в экспорт узел не попадает.
+  // Предъявление исполнительного документа к исполнению (ст. 21 ФЗ № 229-ФЗ) —
+  // самостоятельный узел для документа, который уже на руках; один на три типа
+  // документа (ч. 1, ч. 3 и ч. 4 ст. 21), считается по своему input
+  // (enforcement_document_type + якорное поле выбранного типа). Пришёл на место
+  // прежнего отдельного узла периодических платежей, который был перенесён в
+  // него вариантом 'periodic_payments'. В ветке not_applicable (бессрочное
+  // взыскание) deadline нет — в экспорт узел не попадает, как и раньше.
   if (
     chain &&
-    chain.periodic_payments_presentation &&
-    chain.periodic_payments_presentation.deadline
+    chain.enforcement_document_presentation &&
+    chain.enforcement_document_presentation.deadline
   ) {
     terms.push({
-      title: chain.periodic_payments_presentation.title,
-      deadline: chain.periodic_payments_presentation.deadline,
-      norm: chain.periodic_payments_presentation.norm.primary,
-      ics: PERIODIC_PAYMENTS_PRESENTATION.ics,
-      duration: PERIODIC_PAYMENTS_PRESENTATION.duration,
+      title: chain.enforcement_document_presentation.title,
+      deadline: chain.enforcement_document_presentation.deadline,
+      norm: chain.enforcement_document_presentation.norm.primary,
+      ics: ENFORCEMENT_DOCUMENT_PRESENTATION.ics,
+      duration: ENFORCEMENT_DOCUMENT_PRESENTATION.duration,
     });
   }
   // Признание и исполнение решений иностранных судов (глава 45 ГПК) — два

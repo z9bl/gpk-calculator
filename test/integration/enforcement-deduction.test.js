@@ -234,14 +234,31 @@ test('вычет работает во всех шести узлах предъ
 });
 
 test('периодические платежи вычетом не затрагиваются (ст. 22 к ним не сведена)', () => {
-  const plain = computeIndependentTerms({ periodic_payment_period_end_date: '2023-04-12' })
-    .periodic_payments_presentation;
+  // Отдельного узла периодических платежей больше нет — это вариант документа
+  // 'periodic_payments' узла enforcement_document_presentation, у которого
+  // interruptible: false. Неприменимость ст. 22 сохранена при переносе, поэтому
+  // проверка та же, только вход другой.
+  const PERIODIC = { enforcement_document_type: 'periodic_payments' };
+  const plain = computeIndependentTerms({
+    ...PERIODIC,
+    periodic_payment_period_end_date: '2023-04-12',
+  }).enforcement_document_presentation;
   const withEvents = computeIndependentTerms({
+    ...PERIODIC,
     periodic_payment_period_end_date: '2023-04-12',
     enforcement_interruptions: [PERIOD],
-  }).periodic_payments_presentation;
+  }).enforcement_document_presentation;
   assert.deepEqual(withEvents, plain);
   assert.equal(withEvents.deductions, undefined);
+
+  // Контроль: тот же узел с другим типом документа вычет получает — значит
+  // причина не в том, что узел вообще разучился считать ч. 3.1.
+  const order = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: '2023-04-12',
+    enforcement_interruptions: [PERIOD],
+  }).enforcement_document_presentation;
+  assert.equal(order.deductions.length, 1);
 });
 
 // --- Проверка ввода: пересечение периодов -----------------------------------

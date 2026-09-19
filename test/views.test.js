@@ -1171,37 +1171,59 @@ test('глава 22.2: истёкший срок помечается по те�
   assert.equal(byId(v.cards, 'child_return_private_complaint').status, 'expired');
 });
 
+// Периодические платежи — вариант узла enforcement_document_presentation
+// (ч. 4 ст. 21 ФЗ № 229-ФЗ), а не свой узел: прежний periodic_payments_presentation
+// со своей ситуацией поглощён целиком. Проверки те же, что были у него.
+const PERIODIC = { enforcement_document_type: 'periodic_payments' };
+
 test('периодические платежи: карточка появляется по дате окончания периода', () => {
-  const without = buildView({}, { today: '2026-03-01' });
-  assert.ok(!ids(without.cards).includes('periodic_payments_presentation'));
+  const without = buildView(PERIODIC, { today: '2026-03-01' });
+  assert.ok(!ids(without.cards).includes('enforcement_document_presentation'));
 
   const v = buildView(
-    { periodic_payment_period_end_date: '2023-04-12' },
+    { ...PERIODIC, periodic_payment_period_end_date: '2023-04-12' },
     { today: '2026-03-01' },
   );
-  const pp = byId(v.cards, 'periodic_payments_presentation');
+  const pp = byId(v.cards, 'enforcement_document_presentation');
   assert.ok(pp);
   assert.equal(pp.status, 'computed');
   assert.equal(pp.deadline, '2026-04-13'); // 12.04.2026 — воскресенье, перенос
   assert.match(pp.norm, /ч\. 4 ст\. 21/);
   assert.deepEqual(pp.duration, { value: 3, unit: 'year' });
+  // Оговорка ч. 4 доезжает до карточки.
+  assert.match(pp.details.logic, /в любой момент/);
 });
 
 test('периодические платежи: бессрочное взыскание — карточка not_applicable без даты', () => {
-  const v = buildView({ periodic_payment_indefinite: true }, { today: '2026-03-01' });
-  const pp = byId(v.cards, 'periodic_payments_presentation');
+  const v = buildView(
+    { ...PERIODIC, periodic_payment_indefinite: true },
+    { today: '2026-03-01' },
+  );
+  const pp = byId(v.cards, 'enforcement_document_presentation');
   assert.ok(pp, 'карточка остаётся — это содержательный факт, не нехватка данных');
   assert.equal(pp.status, 'not_applicable');
   assert.equal(pp.deadline, null);
   assert.match(pp.message, /бессрочное/);
   assert.match(pp.details.logic, /бессрочно/);
-  assert.ok(!ids(v.incomplete).includes('periodic_payments_presentation'));
+  assert.ok(!ids(v.incomplete).includes('enforcement_document_presentation'));
   // И в .ics не попадает — экспортировать нечего.
-  assert.ok(
-    !icsTermsFromView(v).some((t) =>
-      /периодических платежей/.test(t.title),
-    ),
+  assert.ok(!icsTermsFromView(v).some((t) => /исполнительного документа/.test(t.title)));
+});
+
+test('периодические платежи: бессрочность перекрывает введённую дату и на карточке', () => {
+  // Взаимоисключающие входы: карточка не должна показывать дедлайн, посчитанный
+  // от даты, которую пользователь ввёл до того, как отметил бессрочность.
+  const v = buildView(
+    {
+      ...PERIODIC,
+      periodic_payment_period_end_date: '2023-04-12',
+      periodic_payment_indefinite: true,
+    },
+    { today: '2026-03-01' },
   );
+  const pp = byId(v.cards, 'enforcement_document_presentation');
+  assert.equal(pp.status, 'not_applicable');
+  assert.equal(pp.deadline, null);
 });
 
 // --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) -----------------
@@ -1292,9 +1314,13 @@ test('перерыв: карточка судебного приказа счи�
 test('перерыв: карточка периодических платежей его не получает', () => {
   // Обе фичи включены одним набором входных данных: ИЛ прерван, периодические
   // платежи (ч. 4 ст. 21) считаются от своей даты и списка перерывов не несут.
+  // После переноса узла это различие держится на типе документа, а не на том,
+  // что узлов два, — и блок «Добавить событие» на карточке не появляется
+  // именно потому, что нет признака interruptible.
   const v = buildView(
     {
       ...BASE,
+      ...PERIODIC,
       periodic_payment_period_end_date: '2023-04-12',
       enforcement_interruptions: [{ type: 'presentment', date: '2026-06-01' }],
     },
@@ -1304,8 +1330,8 @@ test('перерыв: карточка периодических платеже
   assert.equal(il.deadline, '2029-06-01');
   assert.ok(il.interruptions);
 
-  const pp = byId(v.cards, 'periodic_payments_presentation');
-  assert.ok(pp, 'узел периодических платежей на месте');
+  const pp = byId(v.cards, 'enforcement_document_presentation');
+  assert.ok(pp, 'узел предъявления по ч. 4 ст. 21 на месте');
   assert.equal(pp.deadline, '2026-04-13');
   assert.equal(pp.interruptible, undefined);
   assert.equal(pp.interruptions, undefined);

@@ -363,7 +363,6 @@ const LAYER2_INPUT_FIELD = {
   treteisky_osparivanie_cassation: 'treteisky_osparivanie_entry_into_force_date',
   treteisky_ispollist_cassation: 'treteisky_ispollist_entry_into_force_date',
   supervision: 'vs_ruling_date',
-  periodic_payments_presentation: 'periodic_payment_period_end_date',
   arbitration_award_setaside: 'arbitration_award_setaside_received_date',
   court_order_objection: 'court_order_copy_received_date',
   court_order_presentation: 'court_order_issued_date',

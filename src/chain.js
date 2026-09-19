@@ -837,79 +837,195 @@ export const COURT_ORDER_PRESENTATION = {
   ],
 };
 
-// Предъявление к исполнению документов о взыскании периодических платежей
-// (ч. 4 ст. 21 ФЗ № 229-ФЗ).
+// --- Исполнительное производство: предъявление документа (ст. 21 ФЗ № 229-ФЗ) -
 //
-// Независимый трек по тому же образцу, что и COURT_ORDER_PRESENTATION: не
-// встроен в computeChain, считается по своему input.
+// Самостоятельный узел-ситуация для пользователя, у которого исполнительный
+// документ УЖЕ на руках: цепочка обжалования ему не нужна, нужен только срок
+// предъявления к исполнению.
 //
-// Норма: «в течение всего срока, на который присуждены платежи, а также в
-// течение трёх лет после окончания этого срока». Пока период идёт,
-// содержательного дедлайна нет — предъявить можно в любой момент, поэтому
-// промежуточный узел на это время не заводим. Дедлайн для калькулятора —
-// окончание периода плюс три года; точка отсчёта — дата ОКОНЧАНИЯ периода, на
-// который присуждены платежи (не дата их назначения и не текущая дата).
-// Редакций не заводим — часть 4 ст. 21 в этой части не менялась.
-export const PERIODIC_PAYMENTS_PRESENTATION = {
-  id: 'periodic_payments_presentation',
-  title: 'Предъявление к исполнению документов о взыскании периодических платежей',
-  duration: { value: 3, unit: 'year' },
-  anchor: { event: 'periodic_payment_period_end_date', offset_start: 1 },
-  weekend_shift: true,
-  ics: true,
-  logic:
-    'Три года со дня окончания срока, на который присуждены периодические ' +
-    'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ можно ' +
-    'предъявить в любой момент — содержательного дедлайна на это время нет.',
-  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
-  restoration_norm: 'ст. 112 ГПК РФ',
-  norm_versions: [
-    {
-      id: 'current',
-      from: null,
-      to: null,
-      anchor: { event: 'periodic_payment_period_end_date', offset_start: 1 },
-      norm: {
-        primary: 'ч. 4 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
-        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
-      },
+// Норма и точка отсчёта зависят от ТИПА документа на руках — по тому же
+// образцу, что и основание пересмотра (REVIEW_GROUNDS ниже): длительность,
+// offset_start и weekend_shift у всех трёх вариантов одни и те же, различаются
+// якорь, текст нормы и логики, а у периодических платежей — ещё и применимость
+// ст. 22 с веткой бессрочного взыскания (см. ниже). Поэтому вариантов три, а
+// узел один: карточка на экране одна, и выбор типа её переписывает, а не
+// добавляет вторую.
+//
+// Этот узел — единственное место расчёта предъявления по ч. 3 и ч. 4 ст. 21.
+// Отдельного узла периодических платежей (прежний periodic_payments_presentation
+// со своей ситуацией) больше нет: он был тонкой обёрткой над той же
+// арифметикой, и вся его логика — якорь, оговорка ч. 4, чекбокс бессрочности,
+// ветка not_applicable и неприменимость ст. 22 — перенесена сюда вариантом
+// 'periodic_payments'. Узлы предъявления ВНУТРИ цепочек обжалования
+// (ENFORCEMENT_PRESENTATION с копиями и COURT_ORDER_PRESENTATION) остаются на
+// своих местах: там предъявление — часть более длинной процедуры, а не
+// самостоятельный вход.
+//
+// anchor_field у варианта 'court_order' — УЖЕ существующее поле ситуации
+// «Судебный приказ» (court_order_issued_date, ст. 130 ГПК). Оно
+// переиспользуется, а не дублируется: одна и та же дата не должна вводиться
+// дважды и расходиться между двумя входами к одному расчёту. В `fields`
+// ситуации 'enforcement' его поэтому нет — оно закреплено за своей ситуацией
+// (см. комментарий в situations.js).
+export const ENFORCEMENT_DOCUMENT_TYPES = [
+  {
+    id: 'court_decision',
+    label: 'Решение суда (общий порядок или мировой судья), вступившее в законную силу',
+    anchor_field: 'enforcement_decision_entry_into_force_date',
+    logic:
+      'Три года со дня вступления судебного акта в законную силу ' +
+      '(ч. 1 ст. 21 ФЗ № 229-ФЗ). Порядок рассмотрения дела на сам срок не ' +
+      'влияет — норма одна и для решения в общем порядке, и для решения ' +
+      'мирового судьи.',
+    norm: {
+      primary: 'ч. 1 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
     },
-  ],
+    interruptible: true,
+  },
+  {
+    id: 'court_order',
+    label: 'Судебный приказ',
+    anchor_field: 'court_order_issued_date',
+    logic:
+      'Три года со дня выдачи судебного приказа взыскателю (ч. 3 ст. 21 ' +
+      'ФЗ № 229-ФЗ), а не со дня его вынесения мировым судьёй и не со дня ' +
+      'истечения срока на возражения должника.',
+    norm: {
+      primary: 'ч. 3 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+    interruptible: true,
+  },
+  {
+    id: 'periodic_payments',
+    label: 'Исполнительный лист по периодическим платежам',
+    anchor_field: 'periodic_payment_period_end_date',
+    // Оговорка ч. 4: «в течение всего срока, на который присуждены платежи, а
+    // также в течение трёх лет после окончания этого срока». Пока сам период
+    // идёт, содержательного дедлайна нет — предъявить можно в любой момент,
+    // поэтому промежуточный узел на это время не заводится, но карточка об
+    // этом обязана сказать, иначе дедлайн читается как единственная
+    // возможность предъявить документ.
+    logic:
+      'Три года со дня окончания срока, на который присуждены периодические ' +
+      'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ можно ' +
+      'предъявить в любой момент — содержательного дедлайна на это время нет.',
+    norm: {
+      primary: 'ч. 4 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+    // Единственный вариант, к которому ст. 22 НЕ применяется: срок по ч. 4
+    // ст. 21 — не фиксированная величина, привязанная к одному событию, а
+    // «весь период плюс три года», и ни перерыв (ч. 1–3), ни вычет (ч. 3.1) к
+    // нему отдельной задачей не сведены (см. раздел 11.6 SPEC.md). Так было и
+    // у прежнего отдельного узла; при переносе поведение сохранено, а не
+    // выровнено по двум другим вариантам. Флаг здесь, а не в
+    // enforcementDocumentTermFor, потому что это предметное свойство нормы, а
+    // не особенность механизма.
+    interruptible: false,
+    // Взаимоисключающая альтернатива дате окончания периода: бессрочное
+    // взыскание (например, пожизненное содержание) не даёт точки отсчёта
+    // трёхлетнего хвоста. Это не нехватка данных, а содержательный факт,
+    // поэтому узел возвращается в состоянии not_applicable, а не «недостаточно
+    // данных» (по образцу appeal_not_applicable в computeDefaultJudgment).
+    indefinite_field: 'periodic_payment_indefinite',
+    indefinite_message: 'Не исчисляется — взыскание бессрочное',
+    indefinite_reason:
+      'Взыскание установлено бессрочно (срок, на который присуждены платежи, не ' +
+      'определён во времени) — предъявить документ к исполнению можно в любой ' +
+      'момент, пока сохраняется право на периодические платежи.',
+  },
+];
+
+const ENFORCEMENT_DOCUMENT_TYPE_BY_ID = new Map(
+  ENFORCEMENT_DOCUMENT_TYPES.map((t) => [t.id, t]),
+);
+
+/** Тип исполнительного документа по id; неизвестный id — null. */
+export function enforcementDocumentTypeById(id) {
+  return ENFORCEMENT_DOCUMENT_TYPE_BY_ID.get(id) ?? null;
+}
+
+// Метаданные узла для .ics-реестра (см. TERM_REGISTRY в term-registry.js): он
+// собирается автоматически из экспортов chain.js по id/duration/ics, а полная
+// норма и якорь у этого узла зависят от выбранного типа документа и строятся
+// на лету в enforcementDocumentTermFor — этой константы для расчёта не хватает,
+// только для реестра. Тот же приём, что у REVIEW_NEW_CIRCUMSTANCES_FILING.
+//
+// Заголовок намеренно отличается от заголовков трёх узлов внутри ветвей
+// («исполнительного документа», а не «исполнительного листа»/«судебного
+// приказа»): узел один на все три типа документа, и в сводке, печати и .ics он
+// должен читаться сам по себе, не совпадая с узлом другой ситуации.
+export const ENFORCEMENT_DOCUMENT_PRESENTATION = {
+  id: 'enforcement_document_presentation',
+  title: 'Предъявление исполнительного документа к исполнению',
+  duration: { value: 3, unit: 'year' },
+  ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
 };
 
-// Причина отсутствия дедлайна при бессрочном взыскании (например, пожизненное
-// содержание) — это не нехватка данных, а содержательный факт: срок, на
-// который присуждены платежи, не определён во времени, поэтому не определена
-// и точка отсчёта трёхлетнего хвоста.
-const PERIODIC_PAYMENTS_INDEFINITE_REASON =
-  'Взыскание установлено бессрочно (срок, на который присуждены платежи, не ' +
-  'определён во времени) — предъявить документ к исполнению можно в любой ' +
-  'момент, пока сохраняется право на периодические платежи.';
+// Общая часть срока одна на все три типа документа (три года, ч. 1 ст. 108 ГПК);
+// от типа зависят только точка отсчёта, текст нормы и логики, а также
+// применимость ст. 22 (ENFORCEMENT_DOCUMENT_TYPES выше). interruptible
+// копируется с типа, а не задаётся здесь: у двух вариантов ст. 22 применяется
+// (ч. 1 ст. 22 говорит об исполнительном документе), у периодических платежей —
+// нет; computeSimpleTerm и computeInterruptibleTerm оба смотрят на этот флаг.
+function enforcementDocumentTermFor(docType) {
+  const anchor = { event: docType.anchor_field, offset_start: 1 };
+  return {
+    id: ENFORCEMENT_DOCUMENT_PRESENTATION.id,
+    title: ENFORCEMENT_DOCUMENT_PRESENTATION.title,
+    duration: ENFORCEMENT_DOCUMENT_PRESENTATION.duration,
+    anchor,
+    weekend_shift: true,
+    ics: true,
+    interruptible: docType.interruptible,
+    logic: docType.logic,
+    midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+    restoration_norm: ENFORCEMENT_DOCUMENT_PRESENTATION.restoration_norm,
+    norm_versions: [{ id: 'current', from: null, to: null, anchor, norm: docType.norm }],
+  };
+}
 
-// Узел предъявления периодических платежей — с веткой indefinite (по образцу
-// appeal_not_applicable в computeDefaultJudgment): бессрочное взыскание не
-// даёт точки отсчёта, поэтому вместо computeSimpleTerm возвращаем узел в
-// состоянии not_applicable, а не «недостаточно данных».
-function computePeriodicPayments(inputs) {
-  // condition (бывшее поле, часть 1 из 2) — '!periodic_payment_indefinite':
-  // при бессрочном взыскании узел не считается — состояние not_applicable
-  // вместо computeSimpleTerm.
-  if (inputs?.periodic_payment_indefinite === true) {
+// Узел предъявления. Своей арифметики не содержит: те же
+// computeInterruptibleTerm / computeSimpleTerm, что и у остальных узлов
+// предъявления, — перерыв (ч. 1–3 ст. 22) сдвигает якорь, вычет (ч. 3.1)
+// уменьшает срок, события берутся из того же общего списка
+// enforcement_interruptions.
+//
+// condition — 'enforcement_document_type' + якорное поле выбранного типа (либо
+// его indefinite-альтернатива): без выбора типа якорь неизвестен (у трёх типов
+// он разный), поэтому узла нет вовсе, как у шести простых оснований
+// пересмотра. null-чек самой даты гарантируют core/engine/term.js и
+// core/engine/interruption.js.
+function computeEnforcementDocumentPresentation(inputs) {
+  const docType = enforcementDocumentTypeById(inputs?.enforcement_document_type);
+  if (docType == null) return null;
+
+  // Бессрочное взыскание (только у периодических платежей): дедлайна не
+  // существует в принципе, и это содержательный факт, а не нехватка данных —
+  // поэтому not_applicable, а не null и не «недостаточно данных». Проверка
+  // идёт ПЕРЕД якорем: введённая дата окончания периода при отмеченной
+  // бессрочности не учитывается (взаимоисключающие входы, приоритет за
+  // бессрочностью — так же было у прежнего отдельного узла).
+  if (docType.indefinite_field && inputs?.[docType.indefinite_field] === true) {
     return {
-      id: PERIODIC_PAYMENTS_PRESENTATION.id,
-      title: PERIODIC_PAYMENTS_PRESENTATION.title,
+      id: ENFORCEMENT_DOCUMENT_PRESENTATION.id,
+      title: ENFORCEMENT_DOCUMENT_PRESENTATION.title,
       status: 'not_applicable',
-      norm: PERIODIC_PAYMENTS_PRESENTATION.norm_versions[0].norm.primary,
-      message: 'Не исчисляется — взыскание бессрочное',
-      reason: PERIODIC_PAYMENTS_INDEFINITE_REASON,
+      norm: docType.norm.primary,
+      message: docType.indefinite_message,
+      reason: docType.indefinite_reason,
     };
   }
-  // condition (бывшее поле, часть 2 из 2) — 'periodic_payment_period_end_date':
-  // узел появляется только после ввода даты окончания периода взыскания.
-  return computeSimpleTerm(
-    PERIODIC_PAYMENTS_PRESENTATION,
-    inputs?.periodic_payment_period_end_date,
-  );
+
+  const term = enforcementDocumentTermFor(docType);
+  const anchorDate = inputs?.[docType.anchor_field];
+  // Тип, к которому ст. 22 не применяется, считается без модификаторов — иначе
+  // общий список событий молча менял бы срок по ч. 4 ст. 21.
+  if (!docType.interruptible) return computeSimpleTerm(term, anchorDate);
+  return computeInterruptibleTerm(term, anchorDate, inputs?.enforcement_interruptions);
 }
 
 // Признание и исполнение решений иностранных судов (глава 45 ГПК).
@@ -1181,7 +1297,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, allEvents) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, enforcement_document_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -1341,7 +1457,13 @@ export function computeIndependentTerms(inputs) {
       inputs?.court_order_issued_date,
       inputs?.enforcement_interruptions,
     ),
-    periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
+    // Исполнительное производство (ст. 21 ФЗ № 229-ФЗ) — предъявление
+    // документа, который уже на руках. Узел один, норма и якорь выбираются
+    // типом документа; сюда же перенесён прежний отдельный узел периодических
+    // платежей целиком (см. ENFORCEMENT_DOCUMENT_TYPES).
+    // condition — 'enforcement_document_type': без выбора типа узла нет вовсе
+    // (у трёх типов разные якорные поля).
+    enforcement_document_presentation: computeEnforcementDocumentPresentation(inputs ?? {}),
     // Признание и исполнение решений иностранных судов (глава 45 ГПК): два
     // независимых узла одной главы — предъявление к принудительному
     // исполнению (ч. 3 ст. 409) и возражения относительно признания решения,
