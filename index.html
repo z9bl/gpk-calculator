@@ -32,12 +32,16 @@
       header h1 { font-size: 22px; margin: 0 0 4px; }
       header p { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
 
-      .primary {
+      .primary { margin-bottom: 22px; }
+      /* Рамка блока полей общей ветви — отдельно от section.primary, чтобы
+         заголовок «Исходные данные» стоял снаружи неё, как и у остальных
+         11 ситуаций (см. renderSituationFields в web/app.js: там заголовок и
+         рамка `.invite` — тоже соседи, а не вложенность). */
+      .primary-box {
         background: var(--card);
         border: 1px solid var(--line);
         border-radius: 12px;
         padding: 18px;
-        margin-bottom: 22px;
       }
       label { display: block; font-weight: 600; margin-bottom: 6px; }
       .req { color: var(--accent); }
@@ -379,16 +383,20 @@
       <section class="primary">
         <!-- Заголовок блока ввода общей ветви. У остальных ситуаций такой же
              заголовок рисует renderSituationFields (web/app.js) над блоком
-             полей; здесь блок ввода — статическое поле ниже, поэтому и
-             заголовок статический. Прячется вместе со всей секцией. -->
+             полей, вне рамки `.invite`; здесь блок ввода — статическое поле
+             ниже, поэтому и заголовок статический, но по той же причине он
+             тоже должен стоять вне рамки — здесь ей служит .primary-box, а не
+             сама section.primary. Прячется вместе со всей секцией. -->
         <h2>Исходные данные</h2>
-        <label for="reasoned">
-          Дата изготовления мотивированного решения <span class="req">*</span>
-        </label>
-        <input id="reasoned" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ"
-               autocomplete="off" aria-describedby="reasoned-hint" />
-        <p class="hint" id="reasoned-hint">Указана в самом решении (ч. 2 ст. 199 ГПК РФ)</p>
-        <p class="field-error" id="reasoned-error"></p>
+        <div class="primary-box">
+          <label for="reasoned">
+            Дата изготовления мотивированного решения <span class="req">*</span>
+          </label>
+          <input id="reasoned" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ"
+                 autocomplete="off" aria-describedby="reasoned-hint" />
+          <p class="hint" id="reasoned-hint">Указана в самом решении (ч. 2 ст. 199 ГПК РФ)</p>
+          <p class="field-error" id="reasoned-error"></p>
+        </div>
       </section>
 
       <section class="other-terms" id="situation-inputs"></section>

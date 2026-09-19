@@ -45,6 +45,16 @@ import { INPUT_LABELS } from '../src/labels.js';
 // скрывается только вывод.
 const SHOW_RESTORATION_CAP_UI = false;
 
+// Поле «Когда подана кассационная жалоба в ВС РФ?» (vs_cassation_filed_date,
+// см. п. 4.1 SPEC.md) влияет только на выбор редакции ч. 1 ст. 390.3 — при
+// дате подачи после 01.09.2024 (обычный случай) расчёт не меняется. Юристу
+// оно почти никогда не даёт практической пользы, но выглядит как «рабочее»
+// поле и создаёт ложные ожидания. Тот же приём, что и у SHOW_RESTORATION_CAP_UI
+// выше: скрывается только вывод (поле и поясняющий текст к нему), редакция
+// по-прежнему выбирается по текущей дате — ветвление в src/chain.js и тесты
+// не меняются.
+const SHOW_VS_CASSATION_FILED_UI = false;
+
 // *_restoration_circumstance_date — соглашение об именовании всех восьми
 // полей годичного потолка (см. fields в src/situations.js); суффикс уникален
 // для них и не пересекается с другими полями (review_circumstance_date под
@@ -1403,8 +1413,19 @@ function reveal(key, node) {
 // опираются тесты и сам разбор редакций, — UI лишь не выводит служебную часть.
 const INTERNAL_NORM_NOTE = /;\s*[^();]*—\s*терминологическая правка(?=\)|$)/g;
 
+// После удаления служебной пометки выше у действующих (с 01.09.2024) редакций
+// ст. 390.3 (CASSATION_VS) и ст. 376.1 (CASSATION_KSOYU и её клоны — кассация
+// по упрощённому производству, по заочному решению, у мирового судьи, все
+// используют тот же текст нормы) остаётся ссылка на редакцию — «(ред. ФЗ
+// № 135-ФЗ от 12.06.2024)». Ярослав подтвердил: практического смысла для
+// юриста она не несёт ни там, ни там — снимаем целиком, оставляя голую
+// ссылку на статью. Версию «в редакции до ФЗ № 135-ФЗ» тех же статей не
+// трогаем — там пометка отвечает на прямой вопрос «какая это редакция», а
+// не дублирует его.
+const STATUTE_EDITION_NOTE = /(390\.3|376\.1) ГПК РФ \(ред\. ФЗ № 135-ФЗ от 12\.06\.2024\)/g;
+
 function stripInternalNormNote(text) {
-  return text.replace(INTERNAL_NORM_NOTE, '');
+  return text.replace(INTERNAL_NORM_NOTE, '').replace(STATUTE_EDITION_NOTE, '$1 ГПК РФ');
 }
 
 // Тот же view, но со снятыми служебными пометками во всех текстах. Копия, а не
@@ -1502,7 +1523,9 @@ function render() {
         }
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
-        if (redField) termEl.appendChild(renderRedactionField(redField));
+        if (redField && shouldShowRedactionField(redField)) {
+          termEl.appendChild(renderRedactionField(redField));
+        }
         // На карточке замечаний — необязательная дата их подачи: от неё
         // считается срок рассмотрения судьёй (ч. 2 ст. 232).
         if (id === 'protocol_remarks') {
@@ -1564,7 +1587,9 @@ function render() {
     if (inc) {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
-      if (redField) incEl.appendChild(renderRedactionField(redField));
+      if (redField && shouldShowRedactionField(redField)) {
+        incEl.appendChild(renderRedactionField(redField));
+      }
       appendFollowUpFields(incEl, id, inc);
       root.appendChild(reveal(`inc:${id}`, incEl));
     }
@@ -1997,6 +2022,13 @@ const REDACTION_FIELD = {
   cassation_vs: 'vs_cassation_filed_date',
   mirovoy_cassation: 'cassation_filed_date',
 };
+
+// vs_cassation_filed_date скрыт флагом SHOW_VS_CASSATION_FILED_UI выше — сам
+// узел кассации в ВС по-прежнему выбирает редакцию по текущей дате. Остальные
+// поля REDACTION_FIELD флагом не затронуты.
+function shouldShowRedactionField(fieldId) {
+  return fieldId !== 'vs_cassation_filed_date' || SHOW_VS_CASSATION_FILED_UI;
+}
 
 // Один и тот же input может относиться к нескольким узлам: cassation_filed_date
 // — и к кассации общего порядка, и к кассации по делам мировых судей; дата
