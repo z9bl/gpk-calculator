@@ -74,6 +74,9 @@ export const INPUT_LABELS = {
   enforcement_document_type: 'Какой исполнительный документ на руках?',
   enforcement_decision_entry_into_force_date: 'Когда решение суда вступило в законную силу?',
   periodic_payment_indefinite: 'Срок, на который присуждены платежи, не определён (бессрочное взыскание)?',
+  // Категория дела ситуации «Дела о детях» — dropdown, а не дата: подпись
+  // строится как у review_ground («Какое…?»), а не как у полей даты («Когда…?»).
+  child_case_category: 'Какая категория дела о детях?',
   child_return_reasoned_decision_date: 'Когда решение суда принято в окончательной форме (глава 22.2 ГПК)?',
   child_return_interim_ruling_date: 'Когда вынесено определение суда первой инстанции (глава 22.2 ГПК)?',
   adoption_reasoned_decision_date: 'Когда решение суда принято в окончательной форме (усыновление)?',
