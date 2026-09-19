@@ -53,10 +53,6 @@
       input[type="text"]:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
       input.invalid { border-color: var(--miss-line); background: var(--miss-bg); }
       .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
-      /* Пояснение-ориентировка общей ветви стоит первым в карточке — отступ
-         нужен снизу, а не сверху (в остальном это тот же .hint). */
-      #primary-lede { margin: 0 0 12px; }
-      #primary-lede:empty { display: none; }
       .field-error { color: var(--miss-ink); font-size: 13px; margin: 6px 0 0; min-height: 1px; }
 
       .empty { color: var(--muted); font-size: 15px; padding: 8px 2px; }
@@ -97,7 +93,6 @@
       .to-calendar:hover { text-decoration: underline; }
       .to-calendar-block { margin-top: 10px; }
       .to-calendar-block .to-calendar { margin-top: 0; }
-      .to-calendar-note { margin-top: 4px; }
 
       .print-only { display: none; }
 
@@ -305,7 +300,9 @@
       .related-stubs .stub { border-top: none; padding: 8px 0 4px; }
 
       .other-terms { margin-top: 26px; }
-      .other-terms h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 4px; }
+      .other-terms h2,
+      .primary h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 4px; }
+      .primary h2 { margin-top: 0; }
       .other-terms > p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
       .other-terms .invite { border-style: solid; border-color: var(--line); }
 
@@ -380,9 +377,11 @@
       <section class="situation-switch" id="situation"></section>
 
       <section class="primary">
-        <!-- Однострочное пояснение общей ветви: текст ставит renderPrimaryField
-             (web/app.js), единый источник для всех 12 ситуаций — SITUATION_LEDE. -->
-        <p class="hint" id="primary-lede"></p>
+        <!-- Заголовок блока ввода общей ветви. У остальных ситуаций такой же
+             заголовок рисует renderSituationFields (web/app.js) над блоком
+             полей; здесь блок ввода — статическое поле ниже, поэтому и
+             заголовок статический. Прячется вместе со всей секцией. -->
+        <h2>Исходные данные</h2>
         <label for="reasoned">
           Дата изготовления мотивированного решения <span class="req">*</span>
         </label>
