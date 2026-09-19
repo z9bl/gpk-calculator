@@ -151,7 +151,7 @@
 | src/views.js | 129 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
 | web/app.js | 300 | `const d = new Date();` |
 | web/app.js | 301 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
-| web/app.js | 1351 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
+| web/app.js | 1333 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
 
 Каждое совпадение — кандидат на «забытый частный случай» (STATIC_FLAG), даже
 если динамические сценарии выше его не поймали — см. п. Шаг 5 задачи. Разбор

@@ -527,6 +527,7 @@ function renderTermCard(card, opts = {}) {
   }
 
   if (card.details) c.appendChild(renderDetails(card.details));
+  if (exportableIds.has(card.id)) c.appendChild(googleCalendarLink(card));
   return c;
 }
 
@@ -857,24 +858,18 @@ function renderDeductionHistory(card) {
   return box;
 }
 
-// Ссылка на предзаполненную форму события в Google Календаре — по одной на срок,
-// собраны в один список #calendar-links рядом с тулбаром (renderCalendarLinks
-// ниже), а не под каждой карточкой: при нескольких сроках на странице (типичный
-// случай для решения суда в общем порядке — вступление в силу, кассация КСОЮ,
-// кассация ВС РФ) повторяющиеся под каждой карточкой ссылки было легко
-// перепутать. Подпись ссылки — название срока: без него список из одинаковых
-// «Добавить в Google Календарь» было бы не отличить друг от друга. Открывается
-// в новой вкладке: расчёт на странице должен остаться на месте.
+// Ссылка на предзаполненную форму события в Google Календаре — по одной на срок.
+// Открывается в новой вкладке: расчёт на странице должен остаться на месте.
 //
 // Напоминания через ссылку задать нельзя: у формы события Google Календаря нет
 // параметра для них (поддерживаются только text, dates, details, location,
 // гости). Пометка об этом под ссылкой («Google подставит своё напоминание по
-// умолчанию, наши добавьте вручную») не выводится — на карточке она объясняла
-// устройство экспорта, а не срок. Правило напоминаний само никуда не делось:
-// его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
-function calendarLinkItem(card) {
-  const li = el('li');
-  const a = el('a', 'to-calendar', card.title);
+// умолчанию, наши добавьте вручную») больше не выводится — на карточке она
+// объясняла устройство экспорта, а не срок. Правило напоминаний само никуда не
+// делось: его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
+function googleCalendarLink(card) {
+  const wrap = el('div', 'to-calendar-block');
+  const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
   a.href = googleCalendarUrl({
     title: calendarEventTitle(card.title),
     deadline: card.deadline,
@@ -882,21 +877,8 @@ function calendarLinkItem(card) {
   });
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
-  li.appendChild(a);
-  return li;
-}
-
-// Наполняет общий список ссылок «в Google Календарь» — вызывается один раз
-// за отрисовку, после того как собраны все посчитанные сроки текущей ветви
-// (см. calendarLinkCards в render()). Список прячется, если считать пока
-// нечего — так же, как кнопки копирования/печати (updateExportButtons).
-function renderCalendarLinks(cards) {
-  const box = document.getElementById('calendar-links');
-  const list = document.getElementById('calendar-links-list');
-  if (!box || !list) return;
-  list.textContent = '';
-  for (const card of cards) list.appendChild(calendarLinkItem(card));
-  box.hidden = cards.length === 0;
+  wrap.appendChild(a);
+  return wrap;
 }
 
 // Предупреждение в одну строку; полный текст раскрывается по клику.
@@ -1508,11 +1490,6 @@ function render() {
   const cardById = (id) => view.cards.find((n) => n.id === id);
   const incById = (id) => view.incomplete.find((n) => n.id === id);
 
-  // Сроки для общего списка ссылок «в Google Календарь» (#calendar-links) —
-  // собираются в том же порядке, в котором карточки идут на странице, и
-  // отрисовываются одним блоком после цикла (см. renderCalendarLinks ниже).
-  const calendarLinkCards = [];
-
   // Ветвь not_appealed: событие разрешено, но жалоба не вводилась —
   // расчёт держится на предположении об отсутствии обжалования.
   const entry = cardById('entry_into_force');
@@ -1599,7 +1576,6 @@ function render() {
         if (card.stubs && card.stubs.length) termEl.appendChild(renderRelatedStubs(card.stubs));
         appendFollowUpFields(termEl, id, card);
         root.appendChild(termEl);
-        if (exportableIds.has(card.id)) calendarLinkCards.push(card);
       }
       continue;
     }
@@ -1618,8 +1594,6 @@ function render() {
       root.appendChild(reveal(`inc:${id}`, incEl));
     }
   }
-
-  renderCalendarLinks(calendarLinkCards);
 
   // Какие блоки показаны сейчас — то и «уже развёрнуто» для следующей отрисовки.
   revealedKeys.clear();

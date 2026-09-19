@@ -89,19 +89,14 @@
       .link-button:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none; }
       .toolbar-hint { color: var(--muted); font-size: 13px; }
 
-      /* Сгруппированный блок ссылок «в Google Календарь» — рядом с тулбаром,
-         одна ссылка на каждый рассчитанный срок (см. #calendar-links выше и
-         renderCalendarLinks в web/app.js). */
-      .calendar-links { margin: 0 0 18px; }
-      .calendar-links-title { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
-      .calendar-links-list {
-        list-style: none; margin: 0; padding: 0;
-        display: flex; flex-direction: column; gap: 4px;
-      }
+      /* Ссылка «в Google Календарь» у каждого рассчитанного срока. */
       .to-calendar {
+        display: inline-block; margin-top: 10px;
         font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600;
       }
       .to-calendar:hover { text-decoration: underline; }
+      .to-calendar-block { margin-top: 10px; }
+      .to-calendar-block .to-calendar { margin-top: 0; }
 
       .print-only { display: none; }
 
@@ -341,7 +336,6 @@
         .toolbar,
         .toolbar-note,
         .toolbar-secondary,
-        #calendar-links,
         #situation-inputs,
         #other-terms,
         #results,
@@ -419,16 +413,6 @@
       <p class="toolbar-note">
         Перенос в календарь ставит сроки с напоминаниями заранее — чтобы не пропустить дату.
       </p>
-
-      <!-- Ссылки «Добавить в Google Календарь» — одним блоком на все посчитанные
-           сроки, а не по одной под каждой карточкой (там же, где кнопки
-           «Скопировать сроки» / «Распечатать»). Наполняется в web/app.js
-           (renderCalendarLinks): по ссылке на каждый срок с ics: true в
-           реестре, спрятан, пока считать нечего. -->
-      <div class="calendar-links" id="calendar-links" hidden>
-        <p class="calendar-links-title">Добавить в Google Календарь:</p>
-        <ul class="calendar-links-list" id="calendar-links-list"></ul>
-      </div>
 
       <div class="print-only" id="print-header"></div>
       <div class="print-only" id="print-list"></div>
