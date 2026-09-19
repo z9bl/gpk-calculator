@@ -888,8 +888,9 @@ test('судебный приказ (кассация): карточка пок�
   assert.equal(detail.via_postal_storage, true);
   assert.equal(detail.postal_arrival_date, '2025-08-29');
   assert.equal(detail.postal_storage_start, '2025-09-01');
-  assert.equal(detail.received_date, '2025-09-08');
-  assert.equal(detail.date, '2025-09-22');
+  // Семь дней хранения включительно от первого: 01.09 — первый, 07.09 — седьмой.
+  assert.equal(detail.received_date, '2025-09-07');
+  assert.equal(detail.date, '2025-09-19');
 });
 
 test('практика ВС: карточка показывает обе промежуточные даты и контролирующую', () => {
@@ -1034,7 +1035,7 @@ test('возражения должника: карточка появляетс
   assert.ok(obj, 'карточка возражений появляется по почтовой дате');
   assert.equal(obj.status, 'computed');
   assert.equal(obj.unit, 'working_day');
-  assert.equal(obj.deadline, '2025-09-22');
+  assert.equal(obj.deadline, '2025-09-19');
 
   const detail = obj.details.received;
   assert.ok(detail, 'промежуточные данные вывода даты получения должны быть в details');
@@ -1042,7 +1043,8 @@ test('возражения должника: карточка появляетс
   assert.equal(detail.via_postal_storage, true);
   assert.equal(detail.postal_arrival_date, '2025-08-29');
   assert.equal(detail.postal_storage_start, '2025-09-01');
-  assert.equal(detail.date, '2025-09-08');
+  // Седьмой день хранения, считая первым 01.09 (а не 01.09 + 7).
+  assert.equal(detail.date, '2025-09-07');
 
   // Та же дата получения — на соседней карточке кассации: она посчитана один
   // раз, а не двумя параллельными формулами.
