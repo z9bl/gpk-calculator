@@ -1141,11 +1141,33 @@ function renderInviteField(id, labelOverride) {
   return { wrap, input };
 }
 
+// cassation_ksoyu (общая цепочка) числит среди missing_inputs (src/views.js,
+// buildDownstream) дату подачи апелляции или дату изготовления мотивированного
+// апелляционного определения — но оба поля уже приглашаются на карточке
+// «Вступление решения в законную силу» чуть выше (FOLLOW_UP_FIELDS.entry_into_force),
+// причём безусловно (без `when` на appeal_filed_date, и с тем же условием
+// appeal_filed_date != null на appeal_ruling_reasoned_date, что и у самой
+// ветки missing_inputs). Поэтому здесь это никогда не первый показ поля —
+// только повторный указатель «поле выше на этой странице» (inviteFieldOrPointer).
+// missing_inputs в src/views.js не трогаем (views.test.js держит их непустыми
+// намеренно — иначе поле нигде не отрисуется, когда карточка вступления в
+// силу сама ещё не построена), только не рендерим здесь заведомо избыточный
+// указатель. Аудит серии #109/#110.
+const CASSATION_KSOYU_ALREADY_SHOWN_ABOVE = new Set(['appeal_filed_date', 'appeal_ruling_reasoned_date']);
+
 // Панель неполного узла: приглашение уточнить, а не пустая форма.
 function renderIncompleteNode(node) {
   const box = el('div', 'invite');
   box.appendChild(el('h2', null, node.title));
-  box.appendChild(el('p', 'reason', node.reason));
+  // У cassation_ksoyu та же избыточность бьёт и по reason: «Кассационный срок
+  // (редакция с 01.09.2024) считается от даты изготовления мотивированного
+  // апелляционного определения» — целиком про то же поле, что и указатель
+  // ниже, и ничего не добавляет к уже видимой карточке вступления в силу.
+  // Признак ветки — сам missing_inputs, а не текст reason.
+  const suppressReason =
+    node.id === 'cassation_ksoyu' &&
+    node.missing_inputs.some((m) => m.id === 'appeal_ruling_reasoned_date');
+  if (!suppressReason) box.appendChild(el('p', 'reason', node.reason));
   // Поля, которые тот же узел перечисляет и в FOLLOW_UP_FIELDS, рисует блок
   // уточнений ниже (appendFollowUpFields) — здесь их пропускаем. Иначе вопрос
   // появлялся бы дважды и в порядке, зависящем от заполненности: недостающие
@@ -1154,7 +1176,10 @@ function renderIncompleteNode(node) {
   // Пропускаем только то, что блок уточнений действительно покажет: поле с
   // невыполненным `when` там не появится, и потерять его нельзя.
   const inFollowUp = followUpFieldIds(node.id);
-  const missing = node.missing_inputs.filter((m) => !inFollowUp.has(m.id));
+  const skipAboveField = node.id === 'cassation_ksoyu' ? CASSATION_KSOYU_ALREADY_SHOWN_ABOVE : null;
+  const missing = node.missing_inputs.filter(
+    (m) => !inFollowUp.has(m.id) && !(skipAboveField && skipAboveField.has(m.id)),
+  );
   for (const m of missing) box.appendChild(inviteFieldOrPointer(m.id));
   if (!missing.length && !inFollowUp.size) {
     box.appendChild(el('p', 'hint', 'Данных для расчёта пока недостаточно.'));
@@ -1514,8 +1539,8 @@ function render() {
         }
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
-        if (redField && shouldShowRedactionField(redField.field)) {
-          termEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
+        if (redField && shouldShowRedactionField(redField)) {
+          termEl.appendChild(renderRedactionField(redField.field));
         }
         // На карточке замечаний — необязательная дата их подачи: от неё
         // считается срок рассмотрения судьёй (ч. 2 ст. 232).
@@ -1578,8 +1603,8 @@ function render() {
     if (inc) {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
-      if (redField && shouldShowRedactionField(redField.field)) {
-        incEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
+      if (redField && shouldShowRedactionField(redField)) {
+        incEl.appendChild(renderRedactionField(redField.field));
       }
       appendFollowUpFields(incEl, id, inc);
       root.appendChild(reveal(`inc:${id}`, incEl));
@@ -2012,11 +2037,16 @@ const REDACTION_FIELD = {
   mirovoy_cassation: { field: 'cassation_filed_date', affectsCourt: true },
 };
 
-// vs_cassation_filed_date скрыт флагом SHOW_VS_CASSATION_FILED_UI выше — сам
-// узел кассации в ВС по-прежнему выбирает редакцию по текущей дате. Остальные
-// поля REDACTION_FIELD флагом не затронуты.
-function shouldShowRedactionField(fieldId) {
-  return fieldId !== 'vs_cassation_filed_date' || SHOW_VS_CASSATION_FILED_UI;
+// affectsCourt: false — дата подачи не даёт практической пользы (только
+// редакция, которая и так берётся по текущей дате, если дату не ввести) —
+// поле и текст под ним не рендерятся вовсе, тем же приёмом, что и у уже
+// скрытого vs_cassation_filed_date (SHOW_VS_CASSATION_FILED_UI ниже, для
+// cassation_vs это теперь избыточная, но не противоречащая подстраховка).
+// affectsCourt: true (сейчас — только mirovoy_cassation) — поле показывается,
+// там дата подачи реально меняет суд.
+function shouldShowRedactionField(redField) {
+  if (!redField.affectsCourt) return false;
+  return redField.field !== 'vs_cassation_filed_date' || SHOW_VS_CASSATION_FILED_UI;
 }
 
 // Один и тот же input может относиться к нескольким узлам: cassation_filed_date
@@ -2046,19 +2076,18 @@ function inviteFieldOrPointer(id, labelOverride) {
   return renderInviteField(id, labelOverride).wrap;
 }
 
-// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК),
-// а у mirovoy_cassation (affectsCourt) — ещё и суд/инстанцию, см. REDACTION_FIELD
-// выше. Без даты подачи редакция берётся по текущей дате.
-function renderRedactionField(inputId, affectsCourt) {
+// Необязательное поле даты подачи — рендерится только когда affectsCourt:
+// true (см. shouldShowRedactionField/REDACTION_FIELD выше), поэтому текст
+// здесь всегда полный, с упоминанием суда. Без даты подачи редакция
+// берётся по текущей дате.
+function renderRedactionField(inputId) {
   const box = el('div', 'note');
   box.appendChild(
     el(
       'div',
       null,
-      affectsCourt
-        ? 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
-          'в который она подаётся.'
-        : 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы.',
+      'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
+        'в который она подаётся.',
     ),
   );
   if (fieldAlreadyRendered(inputId)) {
