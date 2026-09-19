@@ -2082,6 +2082,129 @@ test('возражения должника: логика упоминает п�
   assert.match(t.midnight_rule, /ч\. 3 ст\. 108/);
 });
 
+// --- Фикция п. 32 ПП ВС РФ № 62: почтовый вход узла ВОЗРАЖЕНИЙ (ст. 128) ---
+//
+// ЧТО ИЗМЕНИЛОСЬ. Фикция «днём получения копии приказа считается день
+// истечения срока хранения корреспонденции» была подключена только к
+// кассационному узлу, хотя сам п. 32 определяет начало течения
+// ДЕСЯТИДНЕВНОГО срока на возражения (ст. 128). У пользователя, знающего
+// только дату прибытия отправления в место вручения, карточка возражений не
+// появлялась вовсе. Теперь фикция применяется там, где её место — на узле
+// возражений, — а кассация берёт дату вступления приказа в силу из его
+// результата.
+
+test('возражения должника: по одной лишь дате прибытия на почту узел появляется (п. 32 ПП ВС РФ № 62)', () => {
+  // Тот же сценарий, что и у кассации ниже: 29.08.2025 (пятница) — прибытие;
+  // следующий РАБОЧИЙ день 01.09.2025 (понедельник, а не 30.08 суббота);
+  // +7 календарных дней = 08.09.2025 — день получения копии по фикции.
+  // От него десять рабочих дней (ст. 128) истекают 22.09.2025 (понедельник).
+  const t = computeIndependentTerms({
+    sudebny_prikaz_postal_arrival_date: '2025-08-29',
+  }).court_order_objection;
+  assert.ok(t, 'карточка возражений появляется по одной лишь почтовой дате');
+  assert.equal(t.postal_arrival_date, '2025-08-29');
+  assert.equal(t.postal_storage_start, '2025-09-01');
+  assert.equal(t.received_via_postal_storage, true);
+  // Точка отсчёта срока — вычисленная дата получения, а не дата прибытия.
+  assert.equal(t.received_date, '2025-09-08');
+  assert.equal(t.anchor, '2025-09-08');
+  assert.equal(t.first_working_day, '2025-09-09');
+  assert.equal(t.deadline, '2025-09-22');
+  // Сама норма срока не менялась — те же десять рабочих дней ст. 128.
+  assert.deepEqual(t.duration, { value: 10, unit: 'working_day' });
+  assert.match(t.norm.primary, /ст\. 128/);
+  // Фикция названа уточнением: длительности и единицы срока она не касается.
+  assert.match(t.norm.clarification, /п\. 32 ПП ВС РФ от 27\.12\.2016 № 62/);
+});
+
+test('возражения должника: прямая дата получения приоритетнее даты прибытия на почту', () => {
+  const t = computeIndependentTerms({
+    court_order_copy_received_date: '2026-03-02',
+    sudebny_prikaz_postal_arrival_date: '2025-08-29',
+  }).court_order_objection;
+  assert.equal(t.received_via_postal_storage, false);
+  assert.equal(t.received_date, '2026-03-02');
+  assert.equal(t.postal_arrival_date, null);
+  assert.equal(t.postal_storage_start, null);
+  assert.equal(t.deadline, '2026-03-17'); // как и без почтового поля вовсе
+});
+
+test('судебный приказ: дата вступления в силу — РЕЗУЛЬТАТ узла возражений, а не вторая формула', () => {
+  // Единая точка правды: кассация не выводит десятидневный срок ст. 128 у
+  // себя заново, а читает дедлайн узла возражений. Проверяется на обоих
+  // входах — прямом и почтовом.
+  for (const inputs of [
+    { court_order_copy_received_date: '2025-09-01' },
+    { sudebny_prikaz_postal_arrival_date: '2025-08-29' },
+    { sudebny_prikaz_postal_arrival_date: '2025-11-07' },
+    { sudebny_prikaz_postal_arrival_date: '2025-04-23' },
+  ]) {
+    const terms = computeIndependentTerms(inputs);
+    assert.equal(
+      terms.sudebny_prikaz_cassation.entry_into_force,
+      terms.court_order_objection.deadline,
+      `${JSON.stringify(inputs)}: вступление в силу = дедлайн возражений`,
+    );
+    // Промежуточные данные почтового шага тоже одни и те же, а не посчитаны
+    // дважды параллельно.
+    assert.equal(
+      terms.sudebny_prikaz_cassation.received_date,
+      terms.court_order_objection.received_date,
+    );
+    assert.equal(
+      terms.sudebny_prikaz_cassation.entry_into_force_via_postal_storage,
+      terms.court_order_objection.received_via_postal_storage,
+    );
+    assert.equal(
+      terms.sudebny_prikaz_cassation.postal_storage_start,
+      terms.court_order_objection.postal_storage_start,
+    );
+  }
+});
+
+test('судебный приказ: дедлайн кассации через связку возражения→кассация не изменился', () => {
+  // Регрессия на главное: правка меняет только то, что почтовую дату теперь
+  // видит и узел возражений. Сами итоговые кассационные даты — ровно те же,
+  // что давала прежняя параллельная формула внутри кассационного узла (числа
+  // взяты из тестов, существовавших до правки).
+  const EXPECTED = [
+    // [входы, дата получения копии, вступление в силу, дедлайн кассации]
+    [{ court_order_copy_received_date: '2025-09-01' }, '2025-09-01', '2025-09-15', '2025-12-15'],
+    [{ sudebny_prikaz_postal_arrival_date: '2025-08-29' }, '2025-09-08', '2025-09-22', '2025-12-22'],
+    [{ sudebny_prikaz_postal_arrival_date: '2025-11-07' }, '2025-11-17', '2025-12-01', '2026-03-02'],
+    [{ sudebny_prikaz_postal_arrival_date: '2025-04-23' }, '2025-05-01', '2025-05-20', '2025-08-20'],
+  ];
+  for (const [inputs, received, entry, deadline] of EXPECTED) {
+    const t = computeIndependentTerms(inputs).sudebny_prikaz_cassation;
+    const label = JSON.stringify(inputs);
+    assert.equal(t.received_date, received, `${label}: дата получения копии`);
+    assert.equal(t.entry_into_force, entry, `${label}: вступление в силу`);
+    assert.equal(t.deadline, deadline, `${label}: дедлайн кассации`);
+  }
+});
+
+test('судебный приказ: регрессия прямой даты — оба узла считаются как прежде', () => {
+  const terms = computeIndependentTerms({ court_order_copy_received_date: '2025-09-01' });
+  // Возражения: те же десять рабочих дней от той же введённой даты.
+  const objection = terms.court_order_objection;
+  assert.equal(objection.anchor, '2025-09-01');
+  assert.equal(objection.received_via_postal_storage, false);
+  assert.equal(objection.deadline, '2025-09-15');
+  // Кассация: те же три месяца от того же вступления в силу.
+  const cassation = terms.sudebny_prikaz_cassation;
+  assert.equal(cassation.entry_into_force_via_postal_storage, false);
+  assert.equal(cassation.postal_arrival_date, null);
+  assert.equal(cassation.entry_into_force, '2025-09-15');
+  assert.equal(cassation.anchor, '2025-09-15');
+  assert.equal(cassation.deadline, '2025-12-15');
+});
+
+test('приказное производство: без обеих дат нет ни одного из двух узлов', () => {
+  const none = computeIndependentTerms({});
+  assert.equal(none.court_order_objection, null);
+  assert.equal(none.sudebny_prikaz_cassation, null);
+});
+
 // --- Возвращение ребёнка / права доступа (глава 22.2 ГПК) -------------------
 
 test('глава 22.2: апелляция — 10 рабочих дней со дня решения в окончательной форме', () => {
