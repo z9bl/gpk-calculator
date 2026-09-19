@@ -53,6 +53,10 @@
       input[type="text"]:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
       input.invalid { border-color: var(--miss-line); background: var(--miss-bg); }
       .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+      /* Пояснение-ориентировка общей ветви стоит первым в карточке — отступ
+         нужен снизу, а не сверху (в остальном это тот же .hint). */
+      #primary-lede { margin: 0 0 12px; }
+      #primary-lede:empty { display: none; }
       .field-error { color: var(--miss-ink); font-size: 13px; margin: 6px 0 0; min-height: 1px; }
 
       .empty { color: var(--muted); font-size: 15px; padding: 8px 2px; }
@@ -240,6 +244,14 @@
         margin-bottom: 14px;
       }
       .invite h2 { font-size: 16px; margin: 0 0 4px; }
+      /* Заголовок-указатель над блоком полей одного независимого узла
+         («Третейский суд», «Отдельные сроки», признание иностранных решений,
+         приказное производство) — подписью, а не вторым уровнем текста. */
+      .invite h3 {
+        font-size: 13px; text-transform: uppercase; letter-spacing: .03em;
+        color: var(--muted); margin: 20px 0 0;
+      }
+      .invite h3:first-child { margin-top: 0; }
       .invite p.reason { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
       .invite .field { margin-top: 10px; }
       .invite label { font-weight: 600; font-size: 14px; }
@@ -368,6 +380,9 @@
       <section class="situation-switch" id="situation"></section>
 
       <section class="primary">
+        <!-- Однострочное пояснение общей ветви: текст ставит renderPrimaryField
+             (web/app.js), единый источник для всех 12 ситуаций — SITUATION_LEDE. -->
+        <p class="hint" id="primary-lede"></p>
         <label for="reasoned">
           Дата изготовления мотивированного решения <span class="req">*</span>
         </label>

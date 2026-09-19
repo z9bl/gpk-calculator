@@ -50,7 +50,6 @@ const ALL_BRANCHES_INPUTS = {
   adoption_reasoned_decision_date: '2025-07-02',
   arbitration_competence_ruling_received_date: '2025-07-08',
   settlement_approval_ruling_date: '2025-07-08',
-  sudebny_prikaz_received_date: '2025-07-08',
   treteisky_osparivanie_entry_into_force_date: '2025-07-08',
   treteisky_ispollist_entry_into_force_date: '2025-07-08',
   foreign_judgment_entry_into_force_date: '2023-04-12',
@@ -98,26 +97,52 @@ test('в ситуациях нет узлов, которых модель не 
   assert.deepEqual(missing, [], 'узлы разбиения, которых нет в модели');
 });
 
-test('судебный приказ: в ситуации остался один узел — возражения должника', () => {
-  // ЧТО ИЗМЕНИЛОСЬ. Тест назывался «оба узла ситуации учтены в разбиении»:
-  // приказное производство держало два узла — возражения должника (ст. 128) и
-  // предъявление приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ). Второй убран
-  // вместе с узлами предъявления на хвостах остальных цепочек: тот же расчёт
-  // от той же даты даёт вариант «судебный приказ» ситуации «Исполнительное
-  // производство», и поле court_order_issued_date переехало туда (иначе оно
-  // оказалось бы закреплено за двумя ситуациями сразу).
+test('приказное производство: возражения и кассация — одна цепочка на одном якоре', () => {
+  // ЧТО ИЗМЕНИЛОСЬ. Тест назывался «в ситуации остался один узел — возражения
+  // должника»: предъявление приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ)
+  // убрано вместе с узлами предъявления на хвостах остальных цепочек — тот же
+  // расчёт от той же даты даёт вариант «судебный приказ» ситуации
+  // «Исполнительное производство», и поле court_order_issued_date переехало
+  // туда. Теперь узлов снова два, но другой второй: кассационная жалоба на
+  // приказ (п. 1 ч. 2 ст. 377) переехала сюда из пула «Отдельные сроки». Оба
+  // узла считаются от ОДНОГО поля-якоря — дня получения копии приказа; прежде
+  // кассация держала собственную копию этого поля
+  // (sudebny_prikaz_received_date), и дата вводилась дважды в двух ситуациях.
   const situation = SITUATIONS.find((s) => s.id === 'court_order');
-  assert.deepEqual(situation.nodes, ['court_order_objection']);
-  assert.deepEqual(situation.fields, ['court_order_copy_received_date']);
+  assert.deepEqual(situation.nodes, ['court_order_objection', 'sudebny_prikaz_cassation']);
+  assert.deepEqual(situation.fields, [
+    'court_order_copy_received_date',
+    'sudebny_prikaz_postal_arrival_date',
+    'sudebny_prikaz_cassation_restoration_circumstance_date',
+  ]);
 
-  // Своё поле открывает свой узел.
-  const objectionOnly = buildView(
+  // Дубля поля даты получения копии в модели не осталось ни в одной ситуации.
+  for (const s of SITUATIONS) {
+    assert.ok(
+      !s.fields.includes('sudebny_prikaz_received_date'),
+      `${s.id}: поля-дубля даты получения копии приказа больше нет`,
+    );
+  }
+
+  // Одна дата-якорь открывает оба узла цепочки: возражения и кассацию.
+  const bothNodes = buildView(
     { court_order_copy_received_date: '2025-07-02' },
     { today: '2025-07-01' },
   );
   assert.deepEqual(
-    objectionOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
-    ['court_order_objection'],
+    bothNodes.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
+    ['court_order_objection', 'sudebny_prikaz_cassation'],
+  );
+
+  // Второй, почтовый вход — только у кассации: возражения фикцию п. 32 ПП ВС РФ
+  // № 62 не применяют, их норма при переносе не менялась.
+  const viaPostal = buildView(
+    { sudebny_prikaz_postal_arrival_date: '2025-07-04' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    viaPostal.cards.map((c) => c.id),
+    ['sudebny_prikaz_cassation'],
   );
 
   // Дата выдачи приказа теперь принадлежит ситуации «Исполнительное
@@ -324,38 +349,39 @@ test('утверждение мирового соглашения: узел в 
   );
 });
 
-test('судебный приказ (кассация): узел в независимом пуле, а не в ветви категории', () => {
-  const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.ok(
-    separate.nodes.includes('sudebny_prikaz_cassation'),
-    'узел должен лежать в пуле отдельных сроков — рядом с утверждением мирового соглашения',
-  );
-  // Два взаимоисключающих поля даты (вариант a/b) — оба в этом же пуле.
-  assert.ok(separate.fields.includes('sudebny_prikaz_received_date'));
-  assert.ok(separate.fields.includes('sudebny_prikaz_postal_arrival_date'));
-  for (const s of SITUATIONS.filter((x) => x.id !== 'separate')) {
+test('судебный приказ (кассация): узел в приказном производстве, а не в пуле отдельных сроков', () => {
+  // Перенос из пула «Отдельные сроки» к возражениям должника: узлы образуют
+  // одну цепочку (возражения не поданы → приказ вступил в силу → открылся
+  // кассационный срок) и считаются от одной даты-якоря. Расчёт при переносе не
+  // менялся — менялось только то, на экране какой ситуации узел показан.
+  const courtOrder = SITUATIONS.find((s) => s.id === 'court_order');
+  assert.ok(courtOrder.nodes.includes('sudebny_prikaz_cassation'));
+  assert.ok(courtOrder.fields.includes('court_order_copy_received_date'));
+  assert.ok(courtOrder.fields.includes('sudebny_prikaz_postal_arrival_date'));
+  for (const s of SITUATIONS.filter((x) => x.id !== 'court_order')) {
     assert.ok(
       !s.nodes.includes('sudebny_prikaz_cassation'),
-      `${s.id}: узел не привязан к категории дела`,
+      `${s.id}: узел переехал в приказное производство`,
     );
-    assert.ok(!s.fields.includes('sudebny_prikaz_received_date'), `${s.id}: поле не отсюда`);
+    assert.ok(!s.fields.includes('court_order_copy_received_date'), `${s.id}: поле не отсюда`);
     assert.ok(
       !s.fields.includes('sudebny_prikaz_postal_arrival_date'),
       `${s.id}: поле не отсюда`,
     );
   }
 
-  // Вариант (a) — прямая дата получения — одной этой даты достаточно.
+  // Вариант (a) — прямая дата получения — общая с возражениями: одной этой даты
+  // достаточно, чтобы появились оба узла цепочки.
   const viaReceived = buildView(
-    { sudebny_prikaz_received_date: '2025-07-08' },
+    { court_order_copy_received_date: '2025-07-08' },
     { today: '2025-07-01' },
   );
   assert.deepEqual(
     viaReceived.cards.map((c) => c.id),
-    ['sudebny_prikaz_cassation'],
+    ['court_order_objection', 'sudebny_prikaz_cassation'],
   );
 
-  // Вариант (b) — только дата прибытия на почту — узел появляется и от неё.
+  // Вариант (b) — только дата прибытия на почту — вход одной лишь кассации.
   const viaPostal = buildView(
     { sudebny_prikaz_postal_arrival_date: '2025-07-04' },
     { today: '2025-07-01' },
@@ -488,10 +514,10 @@ test('признание и исполнение решений иностран
 });
 
 test('отдельные сроки: пул сократился, но не опустел', () => {
-  // Что осталось в пуле после выделения «Третейского суда» и «Признания и
-  // исполнения решений иностранных судов»: протокол и его рассмотрение,
-  // частная жалоба, возврат кассационной жалобы, мировое соглашение и
-  // кассация на судебный приказ.
+  // Что осталось в пуле после выделения «Третейского суда», «Признания и
+  // исполнения решений иностранных судов» и переноса кассации на судебный
+  // приказ в приказное производство: протокол и его рассмотрение, частная
+  // жалоба, возврат кассационной жалобы и мировое соглашение.
   const separate = SITUATIONS.find((s) => s.id === 'separate');
   assert.deepEqual(separate.nodes, [
     'protocol_remarks',
@@ -499,7 +525,6 @@ test('отдельные сроки: пул сократился, но не оп
     'private_complaint',
     'cassation_return_ruling_appeal',
     'settlement_approval_cassation_appeal',
-    'sudebny_prikaz_cassation',
   ]);
   assert.ok(separate.fields.length > 0, 'ситуация без полей ввода нерисуема');
   // Подпись пула перечисляет именно оставшиеся пункты.
@@ -595,9 +620,14 @@ test('состав переключателя после перегруппир�
   assert.ok(labels.includes('Признание и исполнение решений иностранных судов'));
 
   // 3. «Отдельные сроки» сократились, но не опустели: из двенадцати узлов
-  //    четыре уехали в «Третейский суд» и два — в главу 45, шесть остались.
+  //    четыре уехали в «Третейский суд», два — в главу 45, ещё один (кассация
+  //    на судебный приказ) — в «Приказное производство», к возражениям
+  //    должника; пять остались.
   const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.equal(separate.nodes.length, 6);
+  assert.equal(separate.nodes.length, 5);
+  const courtOrder = SITUATIONS.find((s) => s.id === 'court_order');
+  assert.ok(courtOrder.nodes.includes('sudebny_prikaz_cassation'));
+  assert.ok(!separate.nodes.includes('sudebny_prikaz_cassation'));
   const arbitration = SITUATIONS.find((s) => s.id === 'arbitration');
   assert.equal(arbitration.nodes.length, 4);
   const foreign = SITUATIONS.find((s) => s.id === 'foreign_judgment');

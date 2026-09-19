@@ -859,7 +859,7 @@ test('пересмотр: практика Пленума/Президиума �
 
 test('судебный приказ (кассация): карточка показывает, что дата вступления в силу вычислена', () => {
   const v = buildView(
-    { sudebny_prikaz_received_date: '2025-09-01' },
+    { court_order_copy_received_date: '2025-09-01' },
     { today: '2025-07-01' },
   );
   const card = byId(v.cards, 'sudebny_prikaz_cassation');

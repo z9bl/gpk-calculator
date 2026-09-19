@@ -82,7 +82,9 @@ export const INPUT_LABELS = {
   adoption_reasoned_decision_date: 'Когда решение суда принято в окончательной форме (усыновление)?',
   arbitration_competence_ruling_received_date: 'Когда получено постановление третейского суда о компетенции?',
   settlement_approval_ruling_date: 'Когда вынесено определение об утверждении мирового соглашения?',
-  sudebny_prikaz_received_date: 'Когда должник получил копию судебного приказа?',
+  // Прямой вход кассации на судебный приказ — то же поле, что и у возражений
+  // должника (court_order_copy_received_date выше): один юридический факт, одна
+  // подпись, один ввод. Своего sudebny_prikaz_received_date у узла больше нет.
   sudebny_prikaz_postal_arrival_date:
     'Когда судебный приказ прибыл в место вручения (по данным почтового отправления)?',
   treteisky_osparivanie_entry_into_force_date:
