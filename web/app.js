@@ -45,6 +45,16 @@ import { INPUT_LABELS } from '../src/labels.js';
 // скрывается только вывод.
 const SHOW_RESTORATION_CAP_UI = false;
 
+// Поле «Когда подана кассационная жалоба в ВС РФ?» (vs_cassation_filed_date,
+// см. п. 4.1 SPEC.md) влияет только на выбор редакции ч. 1 ст. 390.3 — при
+// дате подачи после 01.09.2024 (обычный случай) расчёт не меняется. Юристу
+// оно почти никогда не даёт практической пользы, но выглядит как «рабочее»
+// поле и создаёт ложные ожидания. Тот же приём, что и у SHOW_RESTORATION_CAP_UI
+// выше: скрывается только вывод (поле и поясняющий текст к нему), редакция
+// по-прежнему выбирается по текущей дате — ветвление в src/chain.js и тесты
+// не меняются.
+const SHOW_VS_CASSATION_FILED_UI = false;
+
 // *_restoration_circumstance_date — соглашение об именовании всех восьми
 // полей годичного потолка (см. fields в src/situations.js); суффикс уникален
 // для них и не пересекается с другими полями (review_circumstance_date под
@@ -517,7 +527,6 @@ function renderTermCard(card, opts = {}) {
   }
 
   if (card.details) c.appendChild(renderDetails(card.details));
-  if (exportableIds.has(card.id)) c.appendChild(googleCalendarLink(card));
   return c;
 }
 
@@ -848,18 +857,24 @@ function renderDeductionHistory(card) {
   return box;
 }
 
-// Ссылка на предзаполненную форму события в Google Календаре — по одной на срок.
-// Открывается в новой вкладке: расчёт на странице должен остаться на месте.
+// Ссылка на предзаполненную форму события в Google Календаре — по одной на срок,
+// собраны в один список #calendar-links рядом с тулбаром (renderCalendarLinks
+// ниже), а не под каждой карточкой: при нескольких сроках на странице (типичный
+// случай для решения суда в общем порядке — вступление в силу, кассация КСОЮ,
+// кассация ВС РФ) повторяющиеся под каждой карточкой ссылки было легко
+// перепутать. Подпись ссылки — название срока: без него список из одинаковых
+// «Добавить в Google Календарь» было бы не отличить друг от друга. Открывается
+// в новой вкладке: расчёт на странице должен остаться на месте.
 //
 // Напоминания через ссылку задать нельзя: у формы события Google Календаря нет
 // параметра для них (поддерживаются только text, dates, details, location,
 // гости). Пометка об этом под ссылкой («Google подставит своё напоминание по
-// умолчанию, наши добавьте вручную») больше не выводится — на карточке она
-// объясняла устройство экспорта, а не срок. Правило напоминаний само никуда не
-// делось: его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
-function googleCalendarLink(card) {
-  const wrap = el('div', 'to-calendar-block');
-  const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
+// умолчанию, наши добавьте вручную») не выводится — на карточке она объясняла
+// устройство экспорта, а не срок. Правило напоминаний само никуда не делось:
+// его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
+function calendarLinkItem(card) {
+  const li = el('li');
+  const a = el('a', 'to-calendar', card.title);
   a.href = googleCalendarUrl({
     title: calendarEventTitle(card.title),
     deadline: card.deadline,
@@ -867,8 +882,21 @@ function googleCalendarLink(card) {
   });
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
-  wrap.appendChild(a);
-  return wrap;
+  li.appendChild(a);
+  return li;
+}
+
+// Наполняет общий список ссылок «в Google Календарь» — вызывается один раз
+// за отрисовку, после того как собраны все посчитанные сроки текущей ветви
+// (см. calendarLinkCards в render()). Список прячется, если считать пока
+// нечего — так же, как кнопки копирования/печати (updateExportButtons).
+function renderCalendarLinks(cards) {
+  const box = document.getElementById('calendar-links');
+  const list = document.getElementById('calendar-links-list');
+  if (!box || !list) return;
+  list.textContent = '';
+  for (const card of cards) list.appendChild(calendarLinkItem(card));
+  box.hidden = cards.length === 0;
 }
 
 // Предупреждение в одну строку; полный текст раскрывается по клику.
@@ -1403,8 +1431,18 @@ function reveal(key, node) {
 // опираются тесты и сам разбор редакций, — UI лишь не выводит служебную часть.
 const INTERNAL_NORM_NOTE = /;\s*[^();]*—\s*терминологическая правка(?=\)|$)/g;
 
+// После удаления служебной пометки выше у действующей (с 01.09.2024) редакции
+// ст. 390.3 в CASSATION_VS остаётся сама ссылка на редакцию — «ч. 1 ст. 390.3
+// ГПК РФ (ред. ФЗ № 135-ФЗ от 12.06.2024)». Ярослав подтвердил: практического
+// смысла для юриста она не несёт — снимаем целиком, оставляя голую ссылку на
+// статью. Формулировка уникальна для этого узла: версию «в редакции до
+// ФЗ № 135-ФЗ» той же статьи и обе редакции ст. 376.1 (см. src/chain.js) не
+// трогаем — там пометка прямо отвечает на вопрос «какая это редакция», а не
+// дублирует его.
+const CASSATION_VS_EDITION_NOTE = /390\.3 ГПК РФ \(ред\. ФЗ № 135-ФЗ от 12\.06\.2024\)/g;
+
 function stripInternalNormNote(text) {
-  return text.replace(INTERNAL_NORM_NOTE, '');
+  return text.replace(INTERNAL_NORM_NOTE, '').replace(CASSATION_VS_EDITION_NOTE, '390.3 ГПК РФ');
 }
 
 // Тот же view, но со снятыми служебными пометками во всех текстах. Копия, а не
@@ -1469,6 +1507,11 @@ function render() {
   const cardById = (id) => view.cards.find((n) => n.id === id);
   const incById = (id) => view.incomplete.find((n) => n.id === id);
 
+  // Сроки для общего списка ссылок «в Google Календарь» (#calendar-links) —
+  // собираются в том же порядке, в котором карточки идут на странице, и
+  // отрисовываются одним блоком после цикла (см. renderCalendarLinks ниже).
+  const calendarLinkCards = [];
+
   // Ветвь not_appealed: событие разрешено, но жалоба не вводилась —
   // расчёт держится на предположении об отсутствии обжалования.
   const entry = cardById('entry_into_force');
@@ -1502,7 +1545,9 @@ function render() {
         }
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
-        if (redField) termEl.appendChild(renderRedactionField(redField));
+        if (redField && shouldShowRedactionField(redField)) {
+          termEl.appendChild(renderRedactionField(redField));
+        }
         // На карточке замечаний — необязательная дата их подачи: от неё
         // считается срок рассмотрения судьёй (ч. 2 ст. 232).
         if (id === 'protocol_remarks') {
@@ -1553,6 +1598,7 @@ function render() {
         if (card.stubs && card.stubs.length) termEl.appendChild(renderRelatedStubs(card.stubs));
         appendFollowUpFields(termEl, id, card);
         root.appendChild(termEl);
+        if (exportableIds.has(card.id)) calendarLinkCards.push(card);
       }
       continue;
     }
@@ -1564,11 +1610,15 @@ function render() {
     if (inc) {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
-      if (redField) incEl.appendChild(renderRedactionField(redField));
+      if (redField && shouldShowRedactionField(redField)) {
+        incEl.appendChild(renderRedactionField(redField));
+      }
       appendFollowUpFields(incEl, id, inc);
       root.appendChild(reveal(`inc:${id}`, incEl));
     }
   }
+
+  renderCalendarLinks(calendarLinkCards);
 
   // Какие блоки показаны сейчас — то и «уже развёрнуто» для следующей отрисовки.
   revealedKeys.clear();
@@ -1997,6 +2047,13 @@ const REDACTION_FIELD = {
   cassation_vs: 'vs_cassation_filed_date',
   mirovoy_cassation: 'cassation_filed_date',
 };
+
+// vs_cassation_filed_date скрыт флагом SHOW_VS_CASSATION_FILED_UI выше — сам
+// узел кассации в ВС по-прежнему выбирает редакцию по текущей дате. Остальные
+// поля REDACTION_FIELD флагом не затронуты.
+function shouldShowRedactionField(fieldId) {
+  return fieldId !== 'vs_cassation_filed_date' || SHOW_VS_CASSATION_FILED_UI;
+}
 
 // Один и тот же input может относиться к нескольким узлам: cassation_filed_date
 // — и к кассации общего порядка, и к кассации по делам мировых судей; дата
