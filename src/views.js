@@ -644,6 +644,9 @@ function reviewNewCircumstancesCard(term) {
 // срок, не объясняя, откуда взялась точка отсчёта (десять дней на возражения
 // должника, ст. 128, а при вводе даты прибытия на почту — ещё и семидневный
 // срок хранения корреспонденции, п. 32 ПП ВС РФ от 27.12.2016 № 62, перед ним).
+//
+// Сами эти данные приходят с узла возражений: дата вступления в силу — его
+// дедлайн, почтовый шаг посчитан там же. Карточка их только показывает.
 function sudebnyPrikazCassationCard(term) {
   const card = monthTermCard(term);
   card.details.entry_into_force = {
@@ -723,6 +726,21 @@ function courtOrderObjectionCard(term) {
   // Ссылка на смежный узел — структурная, чтобы переход между ситуациями
   // проверялся, а не держался на совпадении формулировок.
   card.details.related_node = 'enforcement_document_presentation';
+  // Как получена точка отсчёта: введена пользователем или выведена по фикции
+  // п. 32 ПП ВС РФ № 62 из даты прибытия отправления на почту. Во втором
+  // случае якорь срока — вычисленная дата, которой в полях ввода нет вовсе, и
+  // без этого блока карточка не объяснила бы, откуда она взялась. Тот же
+  // набор полей, что и у соседней карточки кассации (entry_into_force там) —
+  // и данные те же, посчитанные один раз в computeCourtOrderTerms.
+  card.details.received = {
+    date: term.received_date,
+    computed: term.received_via_postal_storage,
+    via_postal_storage: term.received_via_postal_storage,
+  };
+  if (term.received_via_postal_storage) {
+    card.details.received.postal_arrival_date = term.postal_arrival_date;
+    card.details.received.postal_storage_start = term.postal_storage_start;
+  }
   return card;
 }
 

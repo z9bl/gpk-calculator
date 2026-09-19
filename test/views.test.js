@@ -888,8 +888,9 @@ test('судебный приказ (кассация): карточка пок�
   assert.equal(detail.via_postal_storage, true);
   assert.equal(detail.postal_arrival_date, '2025-08-29');
   assert.equal(detail.postal_storage_start, '2025-09-01');
-  assert.equal(detail.received_date, '2025-09-08');
-  assert.equal(detail.date, '2025-09-22');
+  // Семь дней хранения включительно от первого: 01.09 — первый, 07.09 — седьмой.
+  assert.equal(detail.received_date, '2025-09-07');
+  assert.equal(detail.date, '2025-09-19');
 });
 
 test('практика ВС: карточка показывает обе промежуточные даты и контролирующую', () => {
@@ -1018,6 +1019,48 @@ test('возражения должника: карточка появляетс
   assert.equal(obj.first_working_day, '2026-03-03');
   assert.match(obj.norm, /ст\. 128/);
   assert.deepEqual(obj.duration, { value: 10, unit: 'working_day' });
+});
+
+test('возражения должника: карточка появляется по одной лишь дате прибытия на почту', () => {
+  // ЧТО ИЗМЕНИЛОСЬ. Прежде фикция п. 32 ПП ВС РФ № 62 была подключена только к
+  // кассационному узлу, и при почтовом варианте карточка возражений не
+  // появлялась вовсе — хотя п. 32 определяет начало течения именно
+  // десятидневного срока ст. 128. Теперь появляется, и на ней видно, что
+  // точка отсчёта вычислена, а не введена.
+  const v = buildView(
+    { sudebny_prikaz_postal_arrival_date: '2025-08-29' },
+    { today: '2025-07-01' },
+  );
+  const obj = byId(v.cards, 'court_order_objection');
+  assert.ok(obj, 'карточка возражений появляется по почтовой дате');
+  assert.equal(obj.status, 'computed');
+  assert.equal(obj.unit, 'working_day');
+  assert.equal(obj.deadline, '2025-09-19');
+
+  const detail = obj.details.received;
+  assert.ok(detail, 'промежуточные данные вывода даты получения должны быть в details');
+  assert.equal(detail.computed, true);
+  assert.equal(detail.via_postal_storage, true);
+  assert.equal(detail.postal_arrival_date, '2025-08-29');
+  assert.equal(detail.postal_storage_start, '2025-09-01');
+  // Седьмой день хранения, считая первым 01.09 (а не 01.09 + 7).
+  assert.equal(detail.date, '2025-09-07');
+
+  // Та же дата получения — на соседней карточке кассации: она посчитана один
+  // раз, а не двумя параллельными формулами.
+  const cassation = byId(v.cards, 'sudebny_prikaz_cassation');
+  assert.equal(cassation.details.entry_into_force.received_date, detail.date);
+  assert.equal(cassation.details.entry_into_force.date, obj.deadline);
+});
+
+test('возражения должника: при прямой дате получения почтовых данных на карточке нет', () => {
+  const v = buildView({ court_order_copy_received_date: '2026-03-02' }, { today: '2026-03-01' });
+  const detail = byId(v.cards, 'court_order_objection').details.received;
+  assert.equal(detail.computed, false);
+  assert.equal(detail.via_postal_storage, false);
+  assert.equal(detail.date, '2026-03-02');
+  assert.equal(detail.postal_arrival_date, undefined);
+  assert.equal(detail.postal_storage_start, undefined);
 });
 
 test('возражения должника: заметка ведёт к сроку предъявления (ст. 130)', () => {
