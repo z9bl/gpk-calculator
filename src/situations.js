@@ -44,59 +44,6 @@ export const SITUATIONS = [
     ],
   },
   {
-    id: 'mirovoy',
-    label: 'Решение мирового судьи',
-    // mirovoy_cassation_restoration_circumstance_date — годичный потолок
-    // восстановления (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви
-    // 'general' выше.
-    fields: ['mirovoy_resolution_date', 'mirovoy_cassation_restoration_circumstance_date'],
-    nodes: [
-      'mirovoy_reasoned_request',
-      'mirovoy_reasoned_making',
-      'mirovoy_appeal',
-      'mirovoy_entry_into_force',
-      'mirovoy_cassation',
-    ],
-  },
-  {
-    id: 'simplified',
-    label: 'Упрощённое производство',
-    fields: ['simplified_resolution_date'],
-    nodes: [
-      'simplified_reasoned_request',
-      'simplified_reasoned_making',
-      'simplified_appeal',
-      'simplified_entry_into_force',
-      'simplified_cassation_ksoyu',
-    ],
-  },
-  {
-    id: 'default_judgment',
-    label: 'Заочное решение',
-    fields: ['default_judgment_service_date'],
-    nodes: [
-      'default_judgment_cancellation_request',
-      'default_judgment_appeal',
-      'default_judgment_entry_into_force',
-      'default_judgment_cassation_ksoyu',
-    ],
-  },
-  {
-    id: 'default_judgment_foreign_state',
-    label: 'Заочное решение против иностранного государства',
-    // Глава 45.1 ГПК (ст. 417.10): та же механика главы 22, что и у обычного
-    // заочного решения (default_judgment), но с другими числами (2/1/2 месяца
-    // вместо 7 рабочих дней/1 месяца) и без деления по субъекту — поэтому
-    // отдельная ситуация, а не вариант default_judgment.
-    fields: ['foreign_state_default_judgment_service_date'],
-    nodes: [
-      'foreign_state_default_judgment_cancellation_request',
-      'foreign_state_default_judgment_appeal',
-      'foreign_state_default_judgment_entry_into_force',
-      'foreign_state_default_judgment_cassation_ksoyu',
-    ],
-  },
-  {
     id: 'court_order',
     label: 'Приказное производство',
     // Приказное производство (глава 11 ГПК) — самостоятельный трек, не часть
@@ -114,6 +61,44 @@ export const SITUATIONS = [
     // больше не нужно — вход к нему один.
     fields: ['court_order_copy_received_date'],
     nodes: ['court_order_objection'],
+  },
+  {
+    id: 'mirovoy',
+    label: 'Решение мирового судьи',
+    // mirovoy_cassation_restoration_circumstance_date — годичный потолок
+    // восстановления (ч. 7 ст. 112 ГПК РФ), см. общий комментарий у ветви
+    // 'general' выше.
+    fields: ['mirovoy_resolution_date', 'mirovoy_cassation_restoration_circumstance_date'],
+    nodes: [
+      'mirovoy_reasoned_request',
+      'mirovoy_reasoned_making',
+      'mirovoy_appeal',
+      'mirovoy_entry_into_force',
+      'mirovoy_cassation',
+    ],
+  },
+  {
+    id: 'default_judgment',
+    label: 'Заочное решение',
+    fields: ['default_judgment_service_date'],
+    nodes: [
+      'default_judgment_cancellation_request',
+      'default_judgment_appeal',
+      'default_judgment_entry_into_force',
+      'default_judgment_cassation_ksoyu',
+    ],
+  },
+  {
+    id: 'simplified',
+    label: 'Упрощённое производство',
+    fields: ['simplified_resolution_date'],
+    nodes: [
+      'simplified_reasoned_request',
+      'simplified_reasoned_making',
+      'simplified_appeal',
+      'simplified_entry_into_force',
+      'simplified_cassation_ksoyu',
+    ],
   },
   {
     id: 'enforcement',
@@ -155,35 +140,6 @@ export const SITUATIONS = [
       'periodic_payment_indefinite',
     ],
     nodes: ['enforcement_document_presentation'],
-  },
-  {
-    id: 'child_cases',
-    label: 'Дела о детях (возврат ребёнка, усыновление)',
-    // Две специальные категории дел из 11.4 SPEC.md, у которых свои сроки
-    // обжалования, короче общего порядка, — под одной ситуацией: возвращение
-    // ребёнка и осуществление прав доступа (глава 22.2 ГПК) и усыновление
-    // (удочерение) ребёнка (глава 29 ГПК). Прежде это были две отдельные
-    // ситуации, child_return и adoption.
-    //
-    // Это перегруппировка, а не слияние расчётов: у каждого из трёх узлов
-    // остались своя норма, свой якорь и своё поле, ни один из них не изменился
-    // и не знает про остальные. Общего у категорий ровно одно — обе про детей,
-    // и обе дают неверный результат, если считать их общим узлом.
-    //
-    // Первое поле — dropdown категории (CHILD_CASE_CATEGORIES ниже): от него
-    // зависит, какой блок полей показывается, — по образцу review_ground и
-    // enforcement_document_type. Отличие от них в том, что там выбор
-    // переписывает норму ОДНОГО узла, а здесь выбирает, о какой категории дела
-    // идёт речь: узлы разные и остаются разными, dropdown только делит экран.
-    // Поле ветви — в `fields`, а не `primary_field`: тот зарезервирован за
-    // общей ветвью (см. situations.test.js).
-    fields: [
-      'child_case_category',
-      'child_return_reasoned_decision_date',
-      'child_return_interim_ruling_date',
-      'adoption_reasoned_decision_date',
-    ],
-    nodes: ['child_return_appeal', 'child_return_private_complaint', 'adoption_appeal'],
   },
   {
     id: 'separate',
@@ -237,6 +193,50 @@ export const SITUATIONS = [
       'cassation_return_ruling_appeal',
       'settlement_approval_cassation_appeal',
       'sudebny_prikaz_cassation',
+    ],
+  },
+  {
+    id: 'child_cases',
+    label: 'Дела о детях (возврат ребёнка, усыновление)',
+    // Две специальные категории дел из 11.4 SPEC.md, у которых свои сроки
+    // обжалования, короче общего порядка, — под одной ситуацией: возвращение
+    // ребёнка и осуществление прав доступа (глава 22.2 ГПК) и усыновление
+    // (удочерение) ребёнка (глава 29 ГПК). Прежде это были две отдельные
+    // ситуации, child_return и adoption.
+    //
+    // Это перегруппировка, а не слияние расчётов: у каждого из трёх узлов
+    // остались своя норма, свой якорь и своё поле, ни один из них не изменился
+    // и не знает про остальные. Общего у категорий ровно одно — обе про детей,
+    // и обе дают неверный результат, если считать их общим узлом.
+    //
+    // Первое поле — dropdown категории (CHILD_CASE_CATEGORIES ниже): от него
+    // зависит, какой блок полей показывается, — по образцу review_ground и
+    // enforcement_document_type. Отличие от них в том, что там выбор
+    // переписывает норму ОДНОГО узла, а здесь выбирает, о какой категории дела
+    // идёт речь: узлы разные и остаются разными, dropdown только делит экран.
+    // Поле ветви — в `fields`, а не `primary_field`: тот зарезервирован за
+    // общей ветвью (см. situations.test.js).
+    fields: [
+      'child_case_category',
+      'child_return_reasoned_decision_date',
+      'child_return_interim_ruling_date',
+      'adoption_reasoned_decision_date',
+    ],
+    nodes: ['child_return_appeal', 'child_return_private_complaint', 'adoption_appeal'],
+  },
+  {
+    id: 'default_judgment_foreign_state',
+    label: 'Заочное решение против иностранного государства',
+    // Глава 45.1 ГПК (ст. 417.10): та же механика главы 22, что и у обычного
+    // заочного решения (default_judgment), но с другими числами (2/1/2 месяца
+    // вместо 7 рабочих дней/1 месяца) и без деления по субъекту — поэтому
+    // отдельная ситуация, а не вариант default_judgment.
+    fields: ['foreign_state_default_judgment_service_date'],
+    nodes: [
+      'foreign_state_default_judgment_cancellation_request',
+      'foreign_state_default_judgment_appeal',
+      'foreign_state_default_judgment_entry_into_force',
+      'foreign_state_default_judgment_cassation_ksoyu',
     ],
   },
   {
