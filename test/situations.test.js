@@ -554,18 +554,21 @@ test('неизвестный id ситуации откатывается к о�
 });
 
 test('все двенадцать ситуаций на месте и подписаны', () => {
+  // Порядок — зафиксированный порядок практической частоты (см. заголовок
+  // легенды переключателя «Какая у вас ситуация» в web/app.js): чаще всего
+  // используемые ситуации выше, а не порядок глав кодекса или дат добавления.
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
       'general',
-      'mirovoy',
-      'simplified',
-      'default_judgment',
-      'default_judgment_foreign_state',
       'court_order',
+      'mirovoy',
+      'default_judgment',
+      'simplified',
       'enforcement',
-      'child_cases',
       'separate',
+      'child_cases',
+      'default_judgment_foreign_state',
       'arbitration',
       'foreign_judgment',
       'review_new_circumstances',
