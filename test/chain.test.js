@@ -25,6 +25,9 @@ import {
   TRETEISKY_ISPOLLIST_CASSATION,
   COURT_ARBITRATION_AWARD_SETASIDE,
   REVIEW_GROUNDS,
+  ENFORCEMENT_DOCUMENT_TYPES,
+  ENFORCEMENT_DOCUMENT_PRESENTATION,
+  enforcementDocumentTypeById,
   CASSATION_SUPERVISORY_RESTORATION_NODE_IDS,
   APPEAL_GENERAL,
   CHILD_RETURN_APPEAL,
@@ -3401,4 +3404,144 @@ test('годичный потолок: контроль — апелляцион
   const mirovoyAppeal = computeMirovoy({ mirovoy_resolution_date: '2026-01-15' }, '2026-07-01')
     .appeal;
   assert.equal(mirovoyAppeal.restoration_one_year_cap, undefined);
+});
+
+// --- Исполнительное производство: короткий вход (ст. 21 ФЗ № 229-ФЗ) --------
+//
+// Узел один на три типа исполнительного документа; от типа зависят норма и
+// якорь, всё остальное (три года, перенос по ч. 2 ст. 108, механика ст. 22) —
+// общее. Поэтому проверяем по каждому типу именно эти два свойства, а не
+// повторяем арифметику: она уже покрыта тестами узлов внутри ветвей выше.
+
+const ENFORCEMENT_NODE = 'enforcement_document_presentation';
+
+// Одна и та же дата-якорь у всех трёх типов: 12.04.2023 → 12.04.2026
+// (воскресенье) → перенос на 13.04.2026. Совпадение дат здесь намеренное — оно
+// показывает, что различие между типами только в норме и в том, какое поле
+// читается, а не в арифметике.
+const ENF_ANCHOR = '2023-04-12';
+const ENF_DEADLINE = '2026-04-13';
+
+test('исполнительное производство: вступившее в силу решение — ч. 1 ст. 21, якорь entry_into_force', () => {
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_decision',
+    enforcement_decision_entry_into_force_date: ENF_ANCHOR,
+  })[ENFORCEMENT_NODE];
+  assert.equal(t.anchor, ENF_ANCHOR);
+  assert.equal(t.deadline, ENF_DEADLINE);
+  assert.match(t.norm.primary, /ч\. 1 ст\. 21/);
+  assert.equal(
+    enforcementDocumentTypeById('court_decision').anchor_field,
+    'enforcement_decision_entry_into_force_date',
+  );
+});
+
+test('исполнительное производство: судебный приказ — ч. 3 ст. 21, якорь court_order_issued_date', () => {
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    court_order_issued_date: ENF_ANCHOR,
+  })[ENFORCEMENT_NODE];
+  assert.equal(t.anchor, ENF_ANCHOR);
+  assert.equal(t.deadline, ENF_DEADLINE);
+  assert.match(t.norm.primary, /ч\. 3 ст\. 21/);
+  // Поле переиспользовано, а не заведено заново: тот же id, что и у узла
+  // «Судебный приказ» (ст. 130 ГПК).
+  assert.equal(enforcementDocumentTypeById('court_order').anchor_field, 'court_order_issued_date');
+});
+
+test('исполнительное производство: периодические платежи — ч. 4 ст. 21, якорь periodic_payment_period_end_date', () => {
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'periodic_payments',
+    periodic_payment_period_end_date: ENF_ANCHOR,
+  })[ENFORCEMENT_NODE];
+  assert.equal(t.anchor, ENF_ANCHOR);
+  assert.equal(t.deadline, ENF_DEADLINE);
+  assert.match(t.norm.primary, /ч\. 4 ст\. 21/);
+  assert.equal(
+    enforcementDocumentTypeById('periodic_payments').anchor_field,
+    'periodic_payment_period_end_date',
+  );
+  // Оговорка ч. 4 сохранена: пока сам срок не окончен, предъявить можно в
+  // любой момент — иначе карточка обещала бы дедлайн там, где его нет.
+  assert.match(t.logic, /в любой момент/);
+});
+
+test('исполнительное производство: у трёх типов три разных якорных поля и три разные нормы', () => {
+  assert.deepEqual(
+    ENFORCEMENT_DOCUMENT_TYPES.map((t) => t.id),
+    ['court_decision', 'court_order', 'periodic_payments'],
+  );
+  const anchors = ENFORCEMENT_DOCUMENT_TYPES.map((t) => t.anchor_field);
+  assert.equal(new Set(anchors).size, anchors.length);
+  const norms = ENFORCEMENT_DOCUMENT_TYPES.map((t) => t.norm.primary);
+  assert.equal(new Set(norms).size, norms.length);
+  for (const type of ENFORCEMENT_DOCUMENT_TYPES) {
+    assert.ok(type.label && type.label.length > 3, `${type.id}: нужна подпись`);
+    assert.ok(type.logic, `${type.id}: нужна логика для карточки`);
+    assert.deepEqual(type.norm.calculation, ['ч. 1, 2 ст. 108 ГПК РФ']);
+  }
+});
+
+test('исполнительное производство: узла нет без выбора типа и без даты-якоря', () => {
+  assert.equal(computeIndependentTerms({})[ENFORCEMENT_NODE], null);
+  // Тип выбран, даты нет.
+  assert.equal(
+    computeIndependentTerms({ enforcement_document_type: 'court_decision' })[ENFORCEMENT_NODE],
+    null,
+  );
+  // Дата есть, тип не выбран: якорь неизвестен — у трёх типов он разный.
+  assert.equal(
+    computeIndependentTerms({ enforcement_decision_entry_into_force_date: ENF_ANCHOR })[
+      ENFORCEMENT_NODE
+    ],
+    null,
+  );
+  // Неизвестный тип узла тоже не создаёт.
+  assert.equal(enforcementDocumentTypeById('nope'), null);
+  assert.equal(
+    computeIndependentTerms({
+      enforcement_document_type: 'nope',
+      enforcement_decision_entry_into_force_date: ENF_ANCHOR,
+    })[ENFORCEMENT_NODE],
+    null,
+  );
+});
+
+test('исполнительное производство: узел читает только якорь выбранного типа', () => {
+  // Все три даты заполнены, но выбран приказ — расчёт идёт от его даты и
+  // никакая другая на него не влияет.
+  const t = computeIndependentTerms({
+    enforcement_document_type: 'court_order',
+    enforcement_decision_entry_into_force_date: '2020-01-09',
+    court_order_issued_date: ENF_ANCHOR,
+    periodic_payment_period_end_date: '2021-02-10',
+  })[ENFORCEMENT_NODE];
+  assert.equal(t.anchor, ENF_ANCHOR);
+  assert.equal(t.deadline, ENF_DEADLINE);
+});
+
+test('исполнительное производство: узел не трогает существующие узлы предъявления', () => {
+  // Короткий вход — ещё один вход к тому же расчёту, а не подмена ветвей:
+  // рядом с полями общей цепочки и судебного приказа ни один прежний узел не
+  // меняется.
+  const chain = computeChain(
+    {
+      ...BASE,
+      court_order_issued_date: ENF_ANCHOR,
+      periodic_payment_period_end_date: ENF_ANCHOR,
+      enforcement_document_type: 'court_decision',
+      enforcement_decision_entry_into_force_date: '2020-01-09',
+    },
+    { today: '2026-03-01' },
+  );
+  assert.equal(chain.court_order_presentation.deadline, ENF_DEADLINE);
+  assert.equal(chain.periodic_payments_presentation.deadline, ENF_DEADLINE);
+  assert.equal(chain[ENFORCEMENT_NODE].deadline, '2023-01-09');
+  // Заголовок узла отличается от заголовков узлов внутри ветвей: в сводке,
+  // печати и .ics он должен читаться сам по себе.
+  assert.notEqual(chain[ENFORCEMENT_NODE].title, chain.court_order_presentation.title);
+  assert.notEqual(chain[ENFORCEMENT_NODE].title, chain.enforcement_presentation?.title);
+  assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.duration.value, 3);
+  assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.duration.unit, 'year');
+  assert.equal(ENFORCEMENT_DOCUMENT_PRESENTATION.ics, true);
 });

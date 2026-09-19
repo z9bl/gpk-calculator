@@ -55,6 +55,10 @@ const ALL_BRANCHES_INPUTS = {
   foreign_state_default_judgment_refusal_date: '2025-08-10',
   review_ground: 'newly_discovered_fact',
   review_circumstance_date: '2025-07-02',
+  // исполнительное производство — короткий вход (ст. 21 ФЗ № 229-ФЗ): без
+  // выбора типа документа якорь неизвестен и узла нет вовсе
+  enforcement_document_type: 'court_decision',
+  enforcement_decision_entry_into_force_date: '2023-04-12',
 };
 
 test('каждый узел из buildView попадает ровно в одну ситуацию', () => {
@@ -375,7 +379,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined, SITUATIONS).id, 'general');
 });
 
-test('все одиннадцать ситуаций на месте и подписаны', () => {
+test('все двенадцать ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -386,6 +390,7 @@ test('все одиннадцать ситуаций на месте и подп
       'default_judgment_foreign_state',
       'court_order',
       'periodic_payments',
+      'enforcement',
       'child_return',
       'adoption',
       'separate',

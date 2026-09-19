@@ -22,7 +22,7 @@
   нерабочи независимо от переноса. Формулировка задачи ошибочна, что
   подтверждено пользователем в этой сессии; список аномалий шага 1 принят как
   верный без изменений.
-- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 43 узлов.
+- **Шаг 2.** Метаданные узлов собраны reflection'ом по `TERM_REGISTRY` — 44 узлов.
 - **Шаг 3–4.** Для каждого узла и каждой даты-аномалии — до 4 сценариев
   (старт на аномалии; наивный дедлайн на аномалии; ±1 день допуска).
   Вызов — РЕАЛЬНЫЕ функции ядра (`computeSimpleTerm`/`computeVersionedTerm`/
@@ -31,14 +31,14 @@
   (без многошагового resolve) дополнительно сверено с публичной обёрткой
   `chain.computeIndependentTerms` (differential-проверка «узел тайно не
   использует core»).
-- Итого сценариев: **27872**.
+- Итого сценариев: **28408**.
 
 ## Сводка
 
-- Узлов всего: **43**.
-- Узлов без единой ANOMALY/ERROR: **43**.
+- Узлов всего: **44**.
+- Узлов без единой ANOMALY/ERROR: **44**.
 - Узлов с найденными расхождениями: **0**.
-- Сценариев PASS: **27872**.
+- Сценариев PASS: **28408**.
 - Сценариев ANOMALY: **0**.
 - Сценариев ERROR (исключение при вызове): **0**.
 - Сценариев NOT_GENERATED (наивный подбор старта не сошёлся): **0**.
@@ -64,6 +64,7 @@
 | default_judgment_cancellation_request | working_day | 7 | нет | default_judgment_cancellation_request_date | нет |
 | default_judgment_cassation_ksoyu | month | 3 | да (2) | cassation_filed_date | нет |
 | default_judgment_enforcement_presentation | year | 3 | нет | — | нет |
+| enforcement_document_presentation | year | 3 | нет | — | нет |
 | enforcement_presentation | year | 3 | нет | — | нет |
 | foreign_judgment_enforcement_presentation | year | 3 | нет | — | нет |
 | foreign_judgment_recognition_objection | month | 1 | нет | — | нет |
@@ -106,7 +107,7 @@
 
 ## Пример PASS-сценариев (по одному на узел)
 
-Полная таблица (все 27872 сценариев) не приводится —
+Полная таблица (все 28408 сценариев) не приводится —
 нечитаема в markdown; воспроизводится повторным запуском теста. Ниже — по
 одному представительному PASS на узел, для наглядности формата.
 
@@ -127,6 +128,7 @@
 | default_judgment_cancellation_request | start_at_anomaly | 2020-01-01 | — | 2020-01-17 | PASS |
 | default_judgment_cassation_ksoyu | start_at_anomaly | 2020-01-01 | — | 2020-04-01 | PASS |
 | default_judgment_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
+| enforcement_document_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | foreign_judgment_enforcement_presentation | start_at_anomaly | 2020-01-01 | — | 2023-01-09 | PASS |
 | foreign_judgment_recognition_objection | start_at_anomaly | 2020-01-01 | — | 2020-02-03 | PASS |
@@ -161,9 +163,9 @@
 | файл | строка | фрагмент |
 |---|---|---|
 | src/views.js | 127 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
-| web/app.js | 279 | `const d = new Date();` |
-| web/app.js | 280 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
-| web/app.js | 1312 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
+| web/app.js | 284 | `const d = new Date();` |
+| web/app.js | 285 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
+| web/app.js | 1317 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
 
 Каждое совпадение — кандидат на «забытый частный случай» (STATIC_FLAG), даже
 если динамические сценарии выше его не поймали — см. п. Шаг 5 задачи. Разбор

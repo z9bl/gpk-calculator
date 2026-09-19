@@ -71,6 +71,8 @@ export const INPUT_LABELS = {
   court_order_copy_received_date: 'Когда должник получил копию судебного приказа?',
   court_order_issued_date: 'Когда выдан судебный приказ?',
   periodic_payment_period_end_date: 'Когда заканчивается срок, на который присуждены платежи?',
+  enforcement_document_type: 'Какой исполнительный документ на руках?',
+  enforcement_decision_entry_into_force_date: 'Когда решение суда вступило в законную силу?',
   periodic_payment_indefinite: 'Срок, на который присуждены платежи, не определён (бессрочное взыскание)?',
   child_return_reasoned_decision_date: 'Когда решение суда принято в окончательной форме (глава 22.2 ГПК)?',
   child_return_interim_ruling_date: 'Когда вынесено определение суда первой инстанции (глава 22.2 ГПК)?',

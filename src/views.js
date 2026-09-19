@@ -26,6 +26,8 @@ import {
   DEDUCTION_TYPES,
   REVIEW_GROUNDS,
   REVIEW_NEW_CIRCUMSTANCES_FILING,
+  ENFORCEMENT_DOCUMENT_TYPES,
+  enforcementDocumentTypeById,
 } from './chain.js';
 // Пространственный импорт — только для автосборки ACTION_FACT_INPUT/
 // MISSED_FROM_FILING ниже (см. комментарий там). По тому же образцу, что и
@@ -45,6 +47,13 @@ export { INTERRUPTION_TYPES, INTERRUPTION_SCOPE_WARNING, DEDUCTION_TYPES };
 // норма на карточке зависят от выбранного основания (см. REVIEW_GROUNDS,
 // reviewTermFor в chain.js).
 export { REVIEW_GROUNDS };
+
+// Типы исполнительного документа для короткого входа «Исполнительное
+// производство» (ст. 21 ФЗ № 229-ФЗ) — тот же приём, что и у REVIEW_GROUNDS
+// выше: список для dropdown в UI, а норма и якорь на карточке зависят от
+// выбранного типа. enforcementDocumentTypeById нужен интерфейсу, чтобы по
+// выбору узнать, какое поле даты показывать (anchor_field).
+export { ENFORCEMENT_DOCUMENT_TYPES, enforcementDocumentTypeById };
 
 // Заглушки рядом с узлом предъявления ИЛ (ст. 21–22 ФЗ № 229-ФЗ). Список пуст:
 // судебный приказ и периодические платежи раскрыты отдельными узлами
@@ -923,6 +932,17 @@ function independentNodes(source, today = null) {
   }
   if (terms.periodic_payments_presentation) {
     cards.push(periodicPaymentsCard(terms.periodic_payments_presentation));
+  }
+  // Исполнительное производство — короткий вход (ст. 21 ФЗ № 229-ФЗ): та же
+  // карточка и те же две истории, что и у court_order_presentation выше.
+  // Норма и логика на карточке уже выбраны по типу документа внутри
+  // computeEnforcementDocumentPresentation, поэтому своего рендерера узлу не
+  // нужно — monthTermCard годится и для трёхлетнего срока.
+  if (terms.enforcement_document_presentation) {
+    const enforcementDocumentCard = monthTermCard(terms.enforcement_document_presentation);
+    attachInterruptions(enforcementDocumentCard, terms.enforcement_document_presentation);
+    attachDeductions(enforcementDocumentCard, terms.enforcement_document_presentation);
+    cards.push(enforcementDocumentCard);
   }
   // Глава 45 (признание и исполнение решений иностранных судов): два
   // независимых узла, каждый по своему input — обычный monthTermCard (годится

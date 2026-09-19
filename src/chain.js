@@ -912,6 +912,149 @@ function computePeriodicPayments(inputs) {
   );
 }
 
+// --- Исполнительное производство: короткий вход (ст. 21 ФЗ № 229-ФЗ) --------
+//
+// Самостоятельный узел-ситуация для пользователя, у которого исполнительный
+// документ УЖЕ на руках: цепочка обжалования ему не нужна, нужен только срок
+// предъявления к исполнению. Это ещё один вход к тому же расчёту, а не
+// переделка существующих узлов: ENFORCEMENT_PRESENTATION и его копии,
+// COURT_ORDER_PRESENTATION и PERIODIC_PAYMENTS_PRESENTATION остаются на своих
+// местах внутри своих ветвей и здесь не задействованы.
+//
+// Норма и точка отсчёта зависят от ТИПА документа на руках — по тому же
+// образцу, что и основание пересмотра (REVIEW_GROUNDS ниже): длительность,
+// offset_start, weekend_shift и механика ст. 22 у всех трёх вариантов одни и
+// те же, различаются только якорь, текст нормы и логики. Поэтому вариантов
+// три, а узел один: карточка на экране одна, и выбор типа её переписывает, а
+// не добавляет вторую.
+//
+// anchor_field у двух вариантов из трёх — УЖЕ существующие поля своих ветвей
+// (court_order_issued_date у судебного приказа, ст. 130 ГПК;
+// periodic_payment_period_end_date у периодических платежей). Они
+// переиспользуются, а не дублируются: одна и та же дата не должна вводиться
+// дважды и расходиться между двумя входами к одному расчёту. В `fields` новой
+// ситуации их поэтому нет — они закреплены за своими ситуациями (см.
+// комментарий у ситуации 'enforcement' в situations.js).
+export const ENFORCEMENT_DOCUMENT_TYPES = [
+  {
+    id: 'court_decision',
+    label: 'Решение суда (общий порядок или мировой судья), вступившее в законную силу',
+    anchor_field: 'enforcement_decision_entry_into_force_date',
+    logic:
+      'Три года со дня вступления судебного акта в законную силу ' +
+      '(ч. 1 ст. 21 ФЗ № 229-ФЗ). Порядок рассмотрения дела на сам срок не ' +
+      'влияет — норма одна и для решения в общем порядке, и для решения ' +
+      'мирового судьи.',
+    norm: {
+      primary: 'ч. 1 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+  },
+  {
+    id: 'court_order',
+    label: 'Судебный приказ',
+    anchor_field: 'court_order_issued_date',
+    logic:
+      'Три года со дня выдачи судебного приказа взыскателю (ч. 3 ст. 21 ' +
+      'ФЗ № 229-ФЗ), а не со дня его вынесения мировым судьёй и не со дня ' +
+      'истечения срока на возражения должника.',
+    norm: {
+      primary: 'ч. 3 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+  },
+  {
+    id: 'periodic_payments',
+    label: 'Исполнительный лист по периодическим платежам',
+    anchor_field: 'periodic_payment_period_end_date',
+    // Оговорка «пока сам срок не окончен, предъявить можно в любой момент»
+    // сохранена дословно по смыслу из PERIODIC_PAYMENTS_PRESENTATION.logic:
+    // содержательного дедлайна на время самого периода не существует, и
+    // карточка об этом должна говорить в обоих входах одинаково.
+    logic:
+      'Три года со дня окончания срока, на который присуждены периодические ' +
+      'платежи (ч. 4 ст. 21 ФЗ № 229-ФЗ). Пока этот срок не истёк, документ ' +
+      'можно предъявить в любой момент — содержательного дедлайна на это ' +
+      'время нет.',
+    norm: {
+      primary: 'ч. 4 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
+      calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
+    },
+  },
+];
+
+const ENFORCEMENT_DOCUMENT_TYPE_BY_ID = new Map(
+  ENFORCEMENT_DOCUMENT_TYPES.map((t) => [t.id, t]),
+);
+
+/** Тип исполнительного документа по id; неизвестный id — null. */
+export function enforcementDocumentTypeById(id) {
+  return ENFORCEMENT_DOCUMENT_TYPE_BY_ID.get(id) ?? null;
+}
+
+// Метаданные узла для .ics-реестра (см. TERM_REGISTRY в term-registry.js): он
+// собирается автоматически из экспортов chain.js по id/duration/ics, а полная
+// норма и якорь у этого узла зависят от выбранного типа документа и строятся
+// на лету в enforcementDocumentTermFor — этой константы для расчёта не хватает,
+// только для реестра. Тот же приём, что у REVIEW_NEW_CIRCUMSTANCES_FILING.
+//
+// Заголовок намеренно отличается от заголовков трёх узлов внутри ветвей
+// («исполнительного документа», а не «исполнительного листа»/«судебного
+// приказа»): узел один на все три типа документа, и в сводке, печати и .ics он
+// должен читаться сам по себе, не совпадая с узлом другой ситуации.
+export const ENFORCEMENT_DOCUMENT_PRESENTATION = {
+  id: 'enforcement_document_presentation',
+  title: 'Предъявление исполнительного документа к исполнению',
+  duration: { value: 3, unit: 'year' },
+  ics: true,
+  restoration_norm: 'ст. 112 ГПК РФ',
+};
+
+// Общая часть срока одна на все три типа документа (три года, ч. 1 ст. 108 ГПК);
+// от типа зависят только точка отсчёта, текст нормы и логики
+// (ENFORCEMENT_DOCUMENT_TYPES выше).
+//
+// interruptible выставлен у всех трёх вариантов: ч. 1 ст. 22 ФЗ № 229-ФЗ
+// говорит об исполнительном документе, не выделяя его вид. Расхождение с
+// существующим узлом periodic_payments_presentation, где флага нет, — намеренно
+// не «выровнено» ни в ту, ни в другую сторону: тот узел не трогаем, см.
+// открытый вопрос в сопроводительном отчёте.
+function enforcementDocumentTermFor(docType) {
+  const anchor = { event: docType.anchor_field, offset_start: 1 };
+  return {
+    id: ENFORCEMENT_DOCUMENT_PRESENTATION.id,
+    title: ENFORCEMENT_DOCUMENT_PRESENTATION.title,
+    duration: ENFORCEMENT_DOCUMENT_PRESENTATION.duration,
+    anchor,
+    weekend_shift: true,
+    ics: true,
+    interruptible: true,
+    logic: docType.logic,
+    midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
+    restoration_norm: ENFORCEMENT_DOCUMENT_PRESENTATION.restoration_norm,
+    norm_versions: [{ id: 'current', from: null, to: null, anchor, norm: docType.norm }],
+  };
+}
+
+// Узел короткого входа. Ничего своего не считает: тот же
+// computeInterruptibleTerm, что и у court_order_presentation, — перерыв
+// (ч. 1–3 ст. 22) сдвигает якорь, вычет (ч. 3.1) уменьшает срок, события берутся
+// из того же общего списка enforcement_interruptions.
+//
+// condition — 'enforcement_document_type' + якорное поле выбранного типа: без
+// выбора типа якорь неизвестен (у трёх типов он разный), поэтому узла нет
+// вовсе, как у шести простых оснований пересмотра. null-чек самой даты
+// гарантирует core/engine/interruption.js.
+function computeEnforcementDocumentPresentation(inputs) {
+  const docType = enforcementDocumentTypeById(inputs?.enforcement_document_type);
+  if (docType == null) return null;
+  return computeInterruptibleTerm(
+    enforcementDocumentTermFor(docType),
+    inputs?.[docType.anchor_field],
+    inputs?.enforcement_interruptions,
+  );
+}
+
 // Признание и исполнение решений иностранных судов (глава 45 ГПК).
 //
 // Два независимых узла одной главы, разной механики — как судебный приказ и
@@ -1181,7 +1324,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, allEvents) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, periodic_payments_presentation:object|null, enforcement_document_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -1342,6 +1485,13 @@ export function computeIndependentTerms(inputs) {
       inputs?.enforcement_interruptions,
     ),
     periodic_payments_presentation: computePeriodicPayments(inputs ?? {}),
+    // Исполнительное производство — короткий вход (ст. 21 ФЗ № 229-ФЗ) для
+    // случая, когда исполнительный документ уже на руках. Узел один, норма и
+    // якорь выбираются типом документа; расчёт — тот же
+    // computeInterruptibleTerm, что и у court_order_presentation выше.
+    // condition — 'enforcement_document_type': без выбора типа узла нет вовсе
+    // (у трёх типов разные якорные поля, см. ENFORCEMENT_DOCUMENT_TYPES).
+    enforcement_document_presentation: computeEnforcementDocumentPresentation(inputs ?? {}),
     // Признание и исполнение решений иностранных судов (глава 45 ГПК): два
     // независимых узла одной главы — предъявление к принудительному
     // исполнению (ч. 3 ст. 409) и возражения относительно признания решения,
