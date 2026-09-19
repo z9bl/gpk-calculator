@@ -15,14 +15,12 @@ import {
   enforcementDocumentTypeById,
 } from '../src/views.js';
 import { buildICS, icsTermsFromView, exportableCards } from '../src/ics.js';
-import { reminderOffsets } from '../src/term-registry.js';
 import {
   googleCalendarUrl,
   termsAsText,
   caseSummaryLines,
   caseSummaryItems,
   caseSummaryHeader,
-  reminderRulePhrase,
   calendarEventTitle,
   DEADLINE_CAPTION,
   DEADLINE_CAPTION_COURT,
@@ -263,10 +261,6 @@ const expiredFields = new Set();
 
 // Узлы, которые имеет смысл переносить в календарь: тот же отбор, что у .ics.
 const exportableIds = new Set();
-
-// Действующая длительность узла (из карточки или из реестра) — для фразы про
-// напоминания под ссылкой в Google. На самой карточке duration есть не всегда.
-const exportDurations = new Map();
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
 // Узла предъявления ИЛ в этом списке больше нет: он убран с хвоста цепочки —
@@ -859,8 +853,10 @@ function renderDeductionHistory(card) {
 //
 // Напоминания через ссылку задать нельзя: у формы события Google Календаря нет
 // параметра для них (поддерживаются только text, dates, details, location,
-// гости). Поэтому под ссылкой — честная пометка: Google подставит своё
-// напоминание по умолчанию, наши нужно добавить в событии вручную.
+// гости). Пометка об этом под ссылкой («Google подставит своё напоминание по
+// умолчанию, наши добавьте вручную») больше не выводится — на карточке она
+// объясняла устройство экспорта, а не срок. Правило напоминаний само никуда не
+// делось: его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
 function googleCalendarLink(card) {
   const wrap = el('div', 'to-calendar-block');
   const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
@@ -872,13 +868,6 @@ function googleCalendarLink(card) {
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
   wrap.appendChild(a);
-
-  const rule = reminderRulePhrase(exportDurations.get(card.id), reminderOffsets);
-  const note = rule
-    ? `Ссылка не задаёт напоминания — Google подставит своё по умолчанию. ` +
-      `Наши напоминания для этого срока (${rule}) добавьте в событии вручную.`
-    : 'Ссылка не задаёт напоминания — Google подставит своё по умолчанию.';
-  wrap.appendChild(el('div', 'hint to-calendar-note', note));
   return wrap;
 }
 
@@ -1156,11 +1145,29 @@ function renderIncompleteNode(node) {
   const box = el('div', 'invite');
   box.appendChild(el('h2', null, node.title));
   box.appendChild(el('p', 'reason', node.reason));
-  for (const m of node.missing_inputs) box.appendChild(inviteFieldOrPointer(m.id));
-  if (!node.missing_inputs.length) {
+  // Поля, которые тот же узел перечисляет и в FOLLOW_UP_FIELDS, рисует блок
+  // уточнений ниже (appendFollowUpFields) — здесь их пропускаем. Иначе вопрос
+  // появлялся бы дважды и в порядке, зависящем от заполненности: недостающие
+  // данные идут до блока уточнений, поэтому дата принятия апелляционного
+  // определения вставала над датой подачи жалобы, как только ту вводили.
+  // Пропускаем только то, что блок уточнений действительно покажет: поле с
+  // невыполненным `when` там не появится, и потерять его нельзя.
+  const inFollowUp = followUpFieldIds(node.id);
+  const missing = node.missing_inputs.filter((m) => !inFollowUp.has(m.id));
+  for (const m of missing) box.appendChild(inviteFieldOrPointer(m.id));
+  if (!missing.length && !inFollowUp.size) {
     box.appendChild(el('p', 'hint', 'Данных для расчёта пока недостаточно.'));
   }
   return box;
+}
+
+// Поля, которые узел покажет в блоке уточнений на этой отрисовке (с учётом
+// `when`). FOLLOW_UP_FIELDS объявлены ниже по файлу — обращение к ним внутри
+// функции, а не на верхнем уровне, поэтому порядок объявлений не важен.
+function followUpFieldIds(id) {
+  const spec = FOLLOW_UP_FIELDS[id];
+  if (!spec) return new Set();
+  return new Set(spec.fields.filter((f) => !f.when || f.when()).map((f) => f.id));
 }
 
 // --- Экспорт .ics -----------------------------------------------------------
@@ -1383,6 +1390,38 @@ function reveal(key, node) {
   return wrap;
 }
 
+// Внутренняя пометка о происхождении формулировки нормы — не для пользователя.
+//
+// В обозначении нормы бывает уточнение редакции: «ч. 1 ст. 390.3 ГПК РФ
+// (ред. ФЗ № 135-ФЗ от 12.06.2024; ФЗ № 79-ФЗ от 09.04.2026 —
+// терминологическая правка)». Первая часть — обычная юридическая ссылка на
+// применяемую редакцию, она остаётся; вторая объясняет РАЗРАБОТКЕ, почему
+// поправка 2026 года не заведена отдельной версией нормы (менялась только
+// терминология, расчёт тот же). Юристу на карточке она ничего не даёт.
+//
+// Чистим на показе, а не в src/chain.js: там это часть данных узла, на неё
+// опираются тесты и сам разбор редакций, — UI лишь не выводит служебную часть.
+const INTERNAL_NORM_NOTE = /;\s*[^();]*—\s*терминологическая правка(?=\)|$)/g;
+
+function stripInternalNormNote(text) {
+  return text.replace(INTERNAL_NORM_NOTE, '');
+}
+
+// Тот же view, но со снятыми служебными пометками во всех текстах. Копия, а не
+// правка на месте: buildView возвращает свежую структуру на каждый вызов, но
+// портить чужой результат всё равно незачем. Всё, что не строка/массив/простой
+// объект, переносится как есть.
+function withoutInternalNormNotes(value) {
+  if (typeof value === 'string') return stripInternalNormNote(value);
+  if (Array.isArray(value)) return value.map(withoutInternalNormNotes);
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, withoutInternalNormNotes(v)]),
+    );
+  }
+  return value;
+}
+
 function render() {
   const focus = captureFocus();
   revealSeen = new Set();
@@ -1392,7 +1431,11 @@ function render() {
 
   // Расчёт от выбора ситуации не зависит: buildView по-прежнему считает все
   // ветви, переключатель лишь решает, что показать и что выгрузить.
-  const view = buildView(state.inputs, { today });
+  //
+  // Тексты норм чистим один раз здесь, на входе в отрисовку: дальше из этого
+  // же view собираются и карточки, и сводка для копирования и печати, и .ics —
+  // иначе пометку пришлось бы вычищать в каждом из них отдельно.
+  const view = withoutInternalNormNotes(buildView(state.inputs, { today }));
 
   // Какие поля относятся к истёкшим срокам — от этого зависит формулировка их
   // подписей и приглашений.
@@ -1407,10 +1450,8 @@ function render() {
   currentIcsTerms = icsTermsFromView({ cards: visibleCards });
   currentSummary = summaryEntries(visibleCards);
   exportableIds.clear();
-  exportDurations.clear();
-  for (const { card, meta } of exportableCards({ cards: visibleCards })) {
+  for (const { card } of exportableCards({ cards: visibleCards })) {
     exportableIds.add(card.id);
-    exportDurations.set(card.id, card.duration || meta.duration);
   }
   updateExportButtons();
   renderPrintList(situation);
@@ -1559,6 +1600,17 @@ const FOLLOW_UP_FIELDS = {
     },
     fields: [
       { id: 'appeal_filed_date' },
+      // Дата принятия апелляционного определения перечислена здесь, а не только
+      // в missing_inputs узла: пока её не было, она приходила из недостающих
+      // данных и вставала ВЫШЕ даты подачи (renderIncompleteNode рисует
+      // missing_inputs первым, уточняющие поля — после), из-за чего сразу после
+      // ввода даты подачи два вопроса менялись местами. Порядок здесь — один на
+      // оба состояния: подача, принятие, мотивированное определение.
+      //
+      // Условие то же, что и у соседних полей: узел просит эту дату ровно
+      // тогда, когда жалоба подана (ветвь appealed в src/views.js), — без неё
+      // спрашивать не о чем.
+      { id: 'appeal_ruling_date', when: () => Boolean(state.inputs.appeal_filed_date) },
       // Мотивированное апелляционное определение — тот же документ, что и само
       // определение выше: спрашиваем их рядом, а не в карточке кассации.
       { id: 'appeal_ruling_reasoned_date', when: () => Boolean(state.inputs.appeal_filed_date) },
@@ -2060,14 +2112,13 @@ function renderSituationSwitch(current) {
 }
 
 // Однострочные пояснения-ориентировки: по одному предложению на ситуацию, что
-// здесь считается. Показываются в начале блока ввода — там же, где прежде стоял
-// вводный абзац «Исходных данных» (убран в PR #99), но одной строкой и подписью,
-// а не разбором нормы: подробности живут на карточках сроков.
+// здесь считается.
 //
-// Своей разметки у строки нет намеренно: обычный <p> внутри section.other-terms
-// уже стилизован (.other-terms > p — мелко и серым), у общей ветви — статический
-// абзац .hint в карточке основного поля. Нового CSS-класса ради подписи не
-// заводим.
+// НЕ ВЫВОДЯТСЯ. Над блоком ввода стоит нейтральный заголовок «Исходные данные»
+// и больше ничего: описательная строка повторяла то, что и так написано на
+// карточках сроков. Как и вводный абзац до неё (убран в PR #99), текст снят
+// именно с показа — сами формулировки остаются здесь единым перечнем по
+// ситуациям, чтобы следующая правка шла от них, а не собиралась заново.
 const SITUATION_LEDE = {
   general: 'Сроки обжалования решения районного суда: апелляция, кассация, надзор.',
   court_order:
@@ -2137,15 +2188,13 @@ const FOREIGN_JUDGMENT_NODE_HEADINGS = {
 // к нему привязана один раз при инициализации. Прячем его вне общей ветви,
 // значение при этом сохраняется.
 //
-// Пояснение-ориентировка общей ветви живёт в этой же карточке (у остальных
-// ситуаций — в блоке «Исходные данные», см. renderSituationFields ниже): блок
-// ввода общего порядка — это и есть статическое поле, своих «Исходных данных»
-// у ветви нет.
+// Заголовок «Исходные данные» у этой ветви тоже статический (index.html): блок
+// ввода общего порядка — это и есть само поле, отдельного блока «Исходных
+// данных», который рисует renderSituationFields, у неё нет. Прячется он вместе
+// со всей секцией, поэтому в других ситуациях не появляется дважды.
 function renderPrimaryField(situation) {
   const box = document.querySelector('section.primary');
   box.hidden = !situation.primary_field;
-  const lede = document.getElementById('primary-lede');
-  if (lede) lede.textContent = SITUATION_LEDE[situation.id] ?? '';
 }
 
 // Поля ввода выбранной ситуации.
@@ -2180,12 +2229,6 @@ function renderSituationFields(situation, primaryFilled) {
   root.appendChild(
     el('h2', null, situation.primary_field ? 'Дополнительные даты' : 'Исходные данные'),
   );
-  // Пояснение — только над исходными данными ветви. У общей ветви этот блок —
-  // «Дополнительные даты» внизу страницы, и её строка стоит в карточке
-  // основного поля (renderPrimaryField выше).
-  if (!situation.primary_field && SITUATION_LEDE[situation.id]) {
-    root.appendChild(el('p', null, SITUATION_LEDE[situation.id]));
-  }
   const box = el('div', 'invite');
   if (situation.id === 'court_order') {
     renderCourtOrderFields(box);
