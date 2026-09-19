@@ -1514,8 +1514,8 @@ function render() {
         }
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
-        if (redField && shouldShowRedactionField(redField)) {
-          termEl.appendChild(renderRedactionField(redField));
+        if (redField && shouldShowRedactionField(redField.field)) {
+          termEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
         }
         // На карточке замечаний — необязательная дата их подачи: от неё
         // считается срок рассмотрения судьёй (ч. 2 ст. 232).
@@ -1578,8 +1578,8 @@ function render() {
     if (inc) {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
-      if (redField && shouldShowRedactionField(redField)) {
-        incEl.appendChild(renderRedactionField(redField));
+      if (redField && shouldShowRedactionField(redField.field)) {
+        incEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
       }
       appendFollowUpFields(incEl, id, inc);
       root.appendChild(reveal(`inc:${id}`, incEl));
@@ -1996,14 +1996,20 @@ function renderArbitrationAwardSetasideFields(box) {
   );
 }
 
-// Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
-// маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
+// Какой input выбирает редакцию нормы на кассационных узлах, и меняет ли
+// дата подачи ещё и маршрут (суд/инстанцию), а не только редакцию.
+// affectsCourt: true только у mirovoy_cassation — там дата подачи реально
+// определяет, кому адресована жалоба: президиум областного суда с
+// 10.05.2026 по главе 40.1 (ФЗ № 79-ФЗ) либо КСОЮ по прежним правилам (см.
+// src/chain.js, computeMirovoyCassation). У кассации в КСОЮ общего порядка и
+// её клонов (упрощённое производство, заочное решение) и у кассации в ВС РФ
+// обе редакции ведут в тот же суд — там affectsCourt: false (аудит PR #109).
 const REDACTION_FIELD = {
-  cassation_ksoyu: 'cassation_filed_date',
-  simplified_cassation_ksoyu: 'cassation_filed_date',
-  default_judgment_cassation_ksoyu: 'cassation_filed_date',
-  cassation_vs: 'vs_cassation_filed_date',
-  mirovoy_cassation: 'cassation_filed_date',
+  cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  simplified_cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  default_judgment_cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  cassation_vs: { field: 'vs_cassation_filed_date', affectsCourt: false },
+  mirovoy_cassation: { field: 'cassation_filed_date', affectsCourt: true },
 };
 
 // vs_cassation_filed_date скрыт флагом SHOW_VS_CASSATION_FILED_UI выше — сам
@@ -2040,16 +2046,19 @@ function inviteFieldOrPointer(id, labelOverride) {
   return renderInviteField(id, labelOverride).wrap;
 }
 
-// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
-// Без него редакция берётся по текущей дате.
-function renderRedactionField(inputId) {
+// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК),
+// а у mirovoy_cassation (affectsCourt) — ещё и суд/инстанцию, см. REDACTION_FIELD
+// выше. Без даты подачи редакция берётся по текущей дате.
+function renderRedactionField(inputId, affectsCourt) {
   const box = el('div', 'note');
   box.appendChild(
     el(
       'div',
       null,
-      'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
-        'в который она подаётся.',
+      affectsCourt
+        ? 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
+          'в который она подаётся.'
+        : 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы.',
     ),
   );
   if (fieldAlreadyRendered(inputId)) {
