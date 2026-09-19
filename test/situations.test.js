@@ -384,13 +384,62 @@ test('третейский суд: все четыре узла в своей с
   );
 });
 
+test('признание и исполнение решений иностранных судов: оба узла главы 45 в своей ситуации', () => {
+  // Прежде оба лежали в пуле «Отдельные сроки»; это перегруппировка — нормы,
+  // якоря и поля узлов не менялись, менялось только то, на экране какой
+  // ситуации они показаны. Порядок — порядок самой главы 45: сначала решения,
+  // требующие принудительного исполнения (ст. 409–412), затем признание
+  // решений, которые его не требуют (ст. 413–415).
+  const situation = SITUATIONS.find((s) => s.id === 'foreign_judgment');
+  assert.equal(situation.label, 'Признание и исполнение решений иностранных судов');
+  assert.deepEqual(situation.nodes, [
+    'foreign_judgment_enforcement_presentation',
+    'foreign_judgment_recognition_objection',
+  ]);
+  assert.deepEqual(situation.fields, [
+    'foreign_judgment_entry_into_force_date',
+    'foreign_judgment_recognition_aware_date',
+  ]);
+  // Свой трек, а не модификация общей ветви: primary_field не занимаем.
+  assert.equal(situation.primary_field, undefined);
+
+  // Ни узлов, ни полей не должно остаться ни в «Отдельных сроках», ни где-то
+  // ещё: узел, закреплённый за двумя ситуациями сразу, ломает разбиение.
+  for (const s of SITUATIONS.filter((x) => x.id !== 'foreign_judgment')) {
+    for (const id of situation.nodes) {
+      assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} не отсюда`);
+    }
+    for (const f of situation.fields) {
+      assert.ok(!s.fields.includes(f), `${s.id}: поле ${f} не отсюда`);
+    }
+  }
+
+  // Каждое поле открывает свой узел и только его — узлы независимы и
+  // появляются поодиночке. Это и причина, по которой у ситуации нет
+  // dropdown'а: по делу может понадобиться и то и другое.
+  const enforcementOnly = buildView(
+    { foreign_judgment_entry_into_force_date: '2023-04-12' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    enforcementOnly.cards.map((c) => c.id),
+    ['foreign_judgment_enforcement_presentation'],
+  );
+  const objectionOnly = buildView(
+    { foreign_judgment_recognition_aware_date: '2025-07-08' },
+    { today: '2025-07-01' },
+  );
+  assert.deepEqual(
+    objectionOnly.cards.map((c) => c.id),
+    ['foreign_judgment_recognition_objection'],
+  );
+});
+
 test('отдельные сроки: пул сократился, но не опустел', () => {
-  // Что осталось в пуле после выделения «Третейского суда»: протокол, частная
-  // жалоба, возврат кассационной жалобы, мировое соглашение, кассация на
-  // судебный приказ и два узла главы 45 (иностранные суды). Последние остались
-  // здесь намеренно: ст. 416 распространяет срок ч. 2 ст. 413 и на решения
-  // иностранных третейских судов, но это глава 45 и срок общий для решений
-  // любого иностранного суда.
+  // Что осталось в пуле после выделения «Третейского суда» и «Признания и
+  // исполнения решений иностранных судов»: протокол и его рассмотрение,
+  // частная жалоба, возврат кассационной жалобы, мировое соглашение и
+  // кассация на судебный приказ.
   const separate = SITUATIONS.find((s) => s.id === 'separate');
   assert.deepEqual(separate.nodes, [
     'protocol_remarks',
@@ -399,8 +448,6 @@ test('отдельные сроки: пул сократился, но не оп
     'cassation_return_ruling_appeal',
     'settlement_approval_cassation_appeal',
     'sudebny_prikaz_cassation',
-    'foreign_judgment_enforcement_presentation',
-    'foreign_judgment_recognition_objection',
   ]);
   assert.ok(separate.fields.length > 0, 'ситуация без полей ввода нерисуема');
   // Подпись пула перечисляет именно оставшиеся пункты.
@@ -452,7 +499,7 @@ test('неизвестный id ситуации откатывается к о�
   assert.equal(situationById(undefined, SITUATIONS).id, 'general');
 });
 
-test('все одиннадцать ситуаций на месте и подписаны', () => {
+test('все двенадцать ситуаций на месте и подписаны', () => {
   assert.deepEqual(
     SITUATIONS.map((s) => s.id),
     [
@@ -466,6 +513,7 @@ test('все одиннадцать ситуаций на месте и подп
       'child_cases',
       'separate',
       'arbitration',
+      'foreign_judgment',
       'review_new_circumstances',
     ],
   );
@@ -475,9 +523,9 @@ test('все одиннадцать ситуаций на месте и подп
   }
 });
 
-test('состав переключателя после перегруппировки: дела о детях и третейский суд', () => {
-  // Структурный тест на обе перегруппировки разом — то, что видит пользователь
-  // в списке ситуаций наверху формы.
+test('состав переключателя после перегруппировки: дела о детях, третейский суд, иностранные суды', () => {
+  // Структурный тест на все три перегруппировки разом — то, что видит
+  // пользователь в списке ситуаций наверху формы.
   const labels = SITUATIONS.map((s) => s.label);
 
   // 1. Двух прежних пунктов в списке нет — они слились в один.
@@ -485,16 +533,34 @@ test('состав переключателя после перегруппир�
   assert.ok(!labels.includes('Усыновление (удочерение) ребёнка'));
   assert.ok(labels.includes('Дела о детях (возврат ребёнка, усыновление)'));
 
-  // 2. Третейский суд выделен в свой пункт.
+  // 2. Третейский суд и глава 45 выделены каждый в свой пункт.
   assert.ok(labels.includes('Третейский суд'));
+  assert.ok(labels.includes('Признание и исполнение решений иностранных судов'));
 
-  // 3. «Отдельные сроки» сократились, но не опустели: четыре узла третейского
-  //    разбирательства уехали, восемь остались.
+  // 3. «Отдельные сроки» сократились, но не опустели: из двенадцати узлов
+  //    четыре уехали в «Третейский суд» и два — в главу 45, шесть остались.
   const separate = SITUATIONS.find((s) => s.id === 'separate');
-  assert.equal(separate.nodes.length, 8);
+  assert.equal(separate.nodes.length, 6);
   const arbitration = SITUATIONS.find((s) => s.id === 'arbitration');
   assert.equal(arbitration.nodes.length, 4);
-  for (const id of arbitration.nodes) assert.ok(!separate.nodes.includes(id));
+  const foreign = SITUATIONS.find((s) => s.id === 'foreign_judgment');
+  assert.equal(foreign.nodes.length, 2);
+  for (const id of [...arbitration.nodes, ...foreign.nodes]) {
+    assert.ok(!separate.nodes.includes(id), `${id}: остался в пуле отдельных сроков`);
+  }
+
+  // 4. Три «иностранные» ситуации — разные и непересекающиеся: глава 45
+  //    (решение вынес иностранный суд), глава 45.1 (решение вынес российский
+  //    суд против иностранного государства) и третейское разбирательство.
+  const foreignState = SITUATIONS.find((s) => s.id === 'default_judgment_foreign_state');
+  const triples = [foreign, foreignState, arbitration];
+  for (const a of triples) {
+    for (const b of triples) {
+      if (a === b) continue;
+      for (const id of a.nodes) assert.ok(!b.nodes.includes(id), `${b.id}: узел ${id} не отсюда`);
+      for (const f of a.fields) assert.ok(!b.fields.includes(f), `${b.id}: поле ${f} не отсюда`);
+    }
+  }
 
   // Ни одна ситуация не осталась без узлов или без подписи.
   for (const s of SITUATIONS) {
