@@ -162,7 +162,7 @@
 
 | файл | строка | фрагмент |
 |---|---|---|
-| src/views.js | 127 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
+| src/views.js | 136 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
 | web/app.js | 284 | `const d = new Date();` |
 | web/app.js | 285 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
 | web/app.js | 1317 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
