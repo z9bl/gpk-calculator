@@ -136,15 +136,6 @@ const INPUT_HINTS = {
     '(абз. 2 ч. 1 ст. 376.1)',
   mirovoy_appeal_ruling_date:
     'Со дня принятия решение вступает в силу (ч. 1 ст. 209); от неё считается предъявление ИЛ',
-  // Один якорь на два узла приказного производства: возражения (ст. 128) и,
-  // если они не поданы, кассация на вступивший в силу приказ (ч. 1 ст. 376.1).
-  // Прежде вторая половина подсказки жила на поле-дубле
-  // sudebny_prikaz_received_date, которого больше нет.
-  court_order_copy_received_date:
-    'Возражения должника — 10 рабочих дней со дня получения копии приказа (ст. 128 ГПК). ' +
-    'Отсчёт идёт от получения копии, а не от вынесения приказа и не от его отправки. ' +
-    'Без поданных возражений приказ вступает в силу, и от этого момента считаются ' +
-    '3 месяца на кассационную жалобу (ч. 1 ст. 376.1)',
   court_order_issued_date:
     'Три года со дня выдачи приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), а не со дня его ' +
     'вынесения мировым судьёй',
@@ -165,12 +156,6 @@ const INPUT_HINTS = {
     'Один месяц со дня получения (не вынесения!) постановления третейского ' +
     'суда о наличии компетенции (ч. 2 ст. 422.1). Касается только вопроса о ' +
     'компетенции, не итогового решения по существу спора',
-  sudebny_prikaz_postal_arrival_date:
-    'Срок хранения на почте — 7 календарных дней, считая первым следующий ' +
-    'рабочий день после прибытия (п. 32 ПП ВС РФ от 27.12.2016 № 62); днём ' +
-    'получения копии приказа считается седьмой, последний день хранения. От ' +
-    'него считаются оба срока: 10 рабочих дней на возражения (ст. 128) и, если ' +
-    'они не поданы, 3 месяца на кассационную жалобу (ч. 1 ст. 376.1)',
   treteisky_osparivanie_entry_into_force_date:
     'Три месяца на кассационное обжалование (ч. 1 ст. 376.1) — минуя ' +
     'апелляцию, определение по такому делу ею не обжалуется (ч. 5 ст. 422, ' +
@@ -1100,14 +1085,20 @@ function renderEvent(card, opts = {}) {
   box.appendChild(head);
 
   // Дата события читается иначе, чем дедлайн: это не «успеть до», а момент,
-  // с которого постановление действует.
-  if (card.status === 'resolved') {
+  // с которого постановление действует. У карточки «Решение суда вступило в
+  // силу» (id entry_into_force, ч. 1 ст. 209 ГПК РФ) этот абзац и note ветки
+  // appealed сняты по аудиту — общее правило, известное юристу и без
+  // пояснения, практической пользы не несёт. У остальных карточек события
+  // (упрощённое производство, заочное решение — в т. ч. против иностранного
+  // государства, мировой судья) тот же механизм не трогаем — вопрос не
+  // поднимался.
+  if (card.status === 'resolved' && card.id !== 'entry_into_force') {
     box.appendChild(
       el('div', 'hint', 'С этой даты постановление считается вступившим в законную силу.'),
     );
   }
 
-  if (card.note) box.appendChild(el('div', 'hint', card.note));
+  if (card.note && card.id !== 'entry_into_force') box.appendChild(el('div', 'hint', card.note));
   if (card.calendar_warning) {
     box.appendChild(
       collapsedWarning('Календарь на этот год ещё не окончательный', [
@@ -1523,8 +1514,8 @@ function render() {
         }
         const termEl = renderTermCard(card, opts);
         const redField = REDACTION_FIELD[id];
-        if (redField && shouldShowRedactionField(redField)) {
-          termEl.appendChild(renderRedactionField(redField));
+        if (redField && shouldShowRedactionField(redField.field)) {
+          termEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
         }
         // На карточке замечаний — необязательная дата их подачи: от неё
         // считается срок рассмотрения судьёй (ч. 2 ст. 232).
@@ -1587,8 +1578,8 @@ function render() {
     if (inc) {
       const incEl = renderIncompleteNode(inc);
       const redField = REDACTION_FIELD[id];
-      if (redField && shouldShowRedactionField(redField)) {
-        incEl.appendChild(renderRedactionField(redField));
+      if (redField && shouldShowRedactionField(redField.field)) {
+        incEl.appendChild(renderRedactionField(redField.field, redField.affectsCourt));
       }
       appendFollowUpFields(incEl, id, inc);
       root.appendChild(reveal(`inc:${id}`, incEl));
@@ -1941,14 +1932,6 @@ function renderCourtOrderFields(box) {
   // подписи после возражений экран выглядел бы пустым — непонятно, считается ли
   // кассационный срок вообще и откуда он возьмётся.
   box.appendChild(nodeHeading('Кассационная жалоба на судебный приказ'));
-  box.appendChild(
-    el(
-      'p',
-      'hint',
-      'Считается от результата срока на возражения: приказ вступает в силу по ' +
-        'истечении десяти дней на возражения — отдельная дата не нужна.',
-    ),
-  );
 }
 
 // Заявление об отмене решения третейского суда (глава 46 ГПК, ст. 418): один
@@ -2013,14 +1996,20 @@ function renderArbitrationAwardSetasideFields(box) {
   );
 }
 
-// Какой input выбирает редакцию нормы (а для дел мировых судей — ещё и
-// маршрут: КСОЮ либо президиум областного суда) на кассационных узлах.
+// Какой input выбирает редакцию нормы на кассационных узлах, и меняет ли
+// дата подачи ещё и маршрут (суд/инстанцию), а не только редакцию.
+// affectsCourt: true только у mirovoy_cassation — там дата подачи реально
+// определяет, кому адресована жалоба: президиум областного суда с
+// 10.05.2026 по главе 40.1 (ФЗ № 79-ФЗ) либо КСОЮ по прежним правилам (см.
+// src/chain.js, computeMirovoyCassation). У кассации в КСОЮ общего порядка и
+// её клонов (упрощённое производство, заочное решение) и у кассации в ВС РФ
+// обе редакции ведут в тот же суд — там affectsCourt: false (аудит PR #109).
 const REDACTION_FIELD = {
-  cassation_ksoyu: 'cassation_filed_date',
-  simplified_cassation_ksoyu: 'cassation_filed_date',
-  default_judgment_cassation_ksoyu: 'cassation_filed_date',
-  cassation_vs: 'vs_cassation_filed_date',
-  mirovoy_cassation: 'cassation_filed_date',
+  cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  simplified_cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  default_judgment_cassation_ksoyu: { field: 'cassation_filed_date', affectsCourt: false },
+  cassation_vs: { field: 'vs_cassation_filed_date', affectsCourt: false },
+  mirovoy_cassation: { field: 'cassation_filed_date', affectsCourt: true },
 };
 
 // vs_cassation_filed_date скрыт флагом SHOW_VS_CASSATION_FILED_UI выше — сам
@@ -2057,16 +2046,19 @@ function inviteFieldOrPointer(id, labelOverride) {
   return renderInviteField(id, labelOverride).wrap;
 }
 
-// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК).
-// Без него редакция берётся по текущей дате.
-function renderRedactionField(inputId) {
+// Необязательное поле даты подачи — выбирает редакцию нормы (ч. 3 ст. 1 ГПК),
+// а у mirovoy_cassation (affectsCourt) — ещё и суд/инстанцию, см. REDACTION_FIELD
+// выше. Без даты подачи редакция берётся по текущей дате.
+function renderRedactionField(inputId, affectsCourt) {
   const box = el('div', 'note');
   box.appendChild(
     el(
       'div',
       null,
-      'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
-        'в который она подаётся.',
+      affectsCourt
+        ? 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы и суд, ' +
+          'в который она подаётся.'
+        : 'Если жалоба уже подана, укажите дату — от неё зависит редакция нормы.',
     ),
   );
   if (fieldAlreadyRendered(inputId)) {
