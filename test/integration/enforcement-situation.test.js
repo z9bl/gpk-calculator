@@ -1,21 +1,20 @@
-// Короткий вход «Исполнительное производство» (ст. 21 ФЗ № 229-ФЗ) против
-// существующих цепочек — полный поток от входных данных до карточки:
-// inputs → buildView.
+// Ситуация «Исполнительное производство» (ст. 21 ФЗ № 229-ФЗ) — полный поток
+// от входных данных до карточки: inputs → buildView.
 //
 // Тест намеренно интеграционный (см. CLAUDE.md о границах test/): проверяется
-// не арифметика ядра (она покрыта test/core/interruption через
-// test/core/deduction.test.js и test/chain.test.js на синтетических данных), а
-// то, что новый вход ведёт к ТОМУ ЖЕ расчёту, а не к его копии: одни и те же
-// события ст. 22, введённые через новую ситуацию и через существующую ветвь,
-// должны давать совпадающий результат во всём, кроме идентичности самого узла
-// (id/title) и текста нормы, который у ветвей разный по самой норме.
+// не арифметика ядра (она покрыта test/core/deduction.test.js и
+// test/chain.test.js на синтетических данных), а то, что от поля ввода до
+// карточки доезжают норма выбранного типа документа и обе ветви ст. 22.
 //
-// Если расчёт когда-нибудь задублируется и разойдётся, ломается именно этот
-// тест, а не юнит-тесты каждой из сторон по отдельности.
-//
-// Сравнение возможно для двух типов документа из трёх. У периодических платежей
-// второй стороны больше нет: их отдельный узел поглощён этим (см. блок
-// «Периодические платежи» ниже — там сказано, что проверяется взамен и почему).
+// ЧТО ИЗМЕНИЛОСЬ ВО ВСЁМ ФАЙЛЕ. Он был написан как СРАВНЕНИЕ двух входов к
+// одному расчёту: новая ситуация против узла предъявления в существующей
+// цепочке (общая цепочка и приказное производство). Сравнивать больше не с
+// чем — узлы предъявления убраны со всех цепочек, и этот вход остался
+// единственным; именно так и задумывалось, когда ситуация заводилась. Прежние
+// сравнения переписаны в прямые проверки расчёта на ТЕХ ЖЕ данных и с теми же
+// ожидаемыми датами, плюс охранная проверка, что прежние узлы не вернулись.
+// То же самое раньше произошло с периодическими платежами — см. блок о них
+// ниже, там подход описан подробнее.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,14 +25,14 @@ import { ENFORCEMENT_DOCUMENT_TYPES } from '../../src/chain.js';
 const NEW_NODE = 'enforcement_document_presentation';
 
 // Те же ориентиры, что и у test/integration/enforcement-deduction.test.js:
-// BASE + today 01.05.2025 → вступление в силу 15.04.2025, предъявление ИЛ без
-// событий — 17.04.2028.
+// вступление решения в силу 15.04.2025, предъявление без событий — 17.04.2028.
 const BASE = { resolution_date: '2025-03-11', reasoned_decision_date: '2025-03-12' };
 const TODAY = { today: '2025-05-01' };
 const ENTRY_INTO_FORCE = '2025-04-15';
 
-// Дата выдачи приказа взыскателю (ст. 130 ГПК) — то же поле, что и в ситуации
-// «Судебный приказ»: короткий вход его переиспользует, а не заводит своё.
+// Дата выдачи приказа взыскателю (ст. 130 ГПК) — поле варианта «судебный
+// приказ». Прежде оно принадлежало ситуации «Судебный приказ» и здесь лишь
+// переиспользовалось; вместе с расчётом предъявления оно переехало сюда.
 const ORDER_ISSUED = '2023-04-12';
 
 const INTERRUPTION = { type: 'presentment', date: '2026-06-01' };
@@ -42,51 +41,9 @@ const PERIOD = { type: 'creditor_request', from: '2027-01-01', to: '2027-03-01' 
 
 const cardOf = (inputs, id) => buildView({ ...BASE, ...inputs }, TODAY).cards.find((c) => c.id === id);
 
-// Всё, что описывает РАСЧЁТ, — без того, чем узлы различаются по существу
-// (id/title своего узла и норма своей части ст. 21).
-function calculationOf(card) {
-  assert.ok(card, 'карточка узла не найдена');
-  const {
-    id: _id,
-    title: _title,
-    norm: _norm,
-    details: { logic: _logic, calculation: _calculation, ...details },
-    ...rest
-  } = card;
-  return { ...rest, details };
-}
-
-// То же для карточек, собранных разными рендерерами: только поля, которые
-// несёт сам расчёт ст. 22, без обвязки конкретного рендерера.
-function interruptionStateOf(card) {
-  assert.ok(card, 'карточка узла не найдена');
-  return {
-    status: card.status,
-    deadline: card.deadline,
-    interruptible: card.interruptible,
-    base_anchor: card.base_anchor,
-    restarted_from: card.restarted_from,
-    interruptions: card.interruptions,
-    interruption_warning: card.interruption_warning,
-    deductions: card.deductions,
-    deducted_days: card.deducted_days,
-    deadline_before_deduction: card.deadline_before_deduction,
-    deduction_exhausts_term: card.deduction_exhausts_term,
-    deduction_assumption: card.deduction_assumption,
-    deduction_overlap_warning: card.deduction_overlap_warning,
-    calculation: card.details.calculation,
-    midnight_rule: card.details.midnight_rule,
-    interruption_norm: card.details.interruption_norm,
-    interruption_logic: card.details.interruption_logic,
-    deduction_norm: card.details.deduction_norm,
-    deduction_logic: card.details.deduction_logic,
-  };
-}
-
 // --- Базовые ориентиры (страховка от молчаливого сдвига остальных тестов) ---
 
-test('базовые ориентиры: обе стороны сравнения считаются и дают ожидаемые даты', () => {
-  assert.equal(cardOf({}, 'enforcement_presentation').deadline, '2028-04-17');
+test('базовые ориентиры (страховка от молчаливого сдвига остальных тестов)', () => {
   assert.equal(
     cardOf(
       {
@@ -97,77 +54,76 @@ test('базовые ориентиры: обе стороны сравнени�
     ).deadline,
     '2028-04-17',
   );
-  assert.equal(cardOf({ court_order_issued_date: ORDER_ISSUED }, 'court_order_presentation').deadline, '2026-04-13');
+  assert.equal(
+    cardOf(
+      { enforcement_document_type: 'court_order', court_order_issued_date: ORDER_ISSUED },
+      NEW_NODE,
+    ).deadline,
+    '2026-04-13',
+  );
+  // Прежних узлов предъявления на хвостах цепочек и в приказном производстве
+  // не осталось — те же входные данные их больше не открывают.
+  assert.equal(cardOf({}, 'enforcement_presentation'), undefined);
+  assert.equal(cardOf({ court_order_issued_date: ORDER_ISSUED }, 'court_order_presentation'), undefined);
 });
 
-// --- Судебный приказ: тот же ввод через два входа ---------------------------
+// --- Судебный приказ: обе ветви ст. 22 на карточке --------------------------
+//
+// Прежде каждый из трёх тестов ниже сравнивал результат через эту ситуацию с
+// результатом через узел приказного производства. Второго входа нет — узел
+// приказного производства убран, его поле (дата выдачи приказа взыскателю)
+// переехало сюда. Проверяются те же события на тех же датах и те же
+// ожидаемые результаты, только без второй стороны сравнения.
 
-test('судебный приказ: перерыв через новую ситуацию совпадает с перерывом через существующую ветвь', () => {
-  const events = { enforcement_interruptions: [INTERRUPTION] };
-  const viaChain = cardOf({ court_order_issued_date: ORDER_ISSUED, ...events }, 'court_order_presentation');
-  const viaSituation = cardOf(
-    { enforcement_document_type: 'court_order', court_order_issued_date: ORDER_ISSUED, ...events },
+const ORDER = { enforcement_document_type: 'court_order', court_order_issued_date: ORDER_ISSUED };
+
+test('судебный приказ: перерыв перезапускает срок от даты события (ч. 1–3 ст. 22)', () => {
+  const card = cardOf({ ...ORDER, enforcement_interruptions: [INTERRUPTION] }, NEW_NODE);
+  assert.equal(card.restarted_from, INTERRUPTION.date);
+  assert.equal(card.base_anchor, ORDER_ISSUED);
+  assert.equal(card.deadline, '2029-06-01');
+});
+
+test('судебный приказ: вычет уменьшает срок, не сдвигая точку отсчёта (ч. 3.1 ст. 22)', () => {
+  const card = cardOf({ ...ORDER, enforcement_interruptions: [PERIOD] }, NEW_NODE);
+  assert.equal(card.deducted_days, 59);
+  assert.equal(card.deadline_before_deduction, '2026-04-13');
+  assert.equal(card.restarted_from, undefined);
+});
+
+test('судебный приказ: перерыв и вычет вместе видны на одной карточке', () => {
+  const card = cardOf(
+    { ...ORDER, enforcement_interruptions: [INTERRUPTION, PERIOD, RETURNED] },
     NEW_NODE,
   );
-  assert.deepEqual(calculationOf(viaSituation), calculationOf(viaChain));
-  // И это не совпадение двух «ничего не посчитано»: перерыв действительно
-  // сработал в обоих.
-  assert.equal(viaSituation.restarted_from, INTERRUPTION.date);
-  assert.equal(viaSituation.deadline, '2029-06-01');
+  // Обе ветви ст. 22 видны: перерыв перезапустил срок от последнего события,
+  // вычет уменьшил его.
+  assert.equal(card.restarted_from, RETURNED.date);
+  assert.equal(card.interruptions.length, 2);
+  assert.equal(card.deductions.length, 1);
+  assert.equal(card.deducted_days, 59);
 });
 
-test('судебный приказ: вычет через новую ситуацию совпадает с вычетом через существующую ветвь', () => {
-  const events = { enforcement_interruptions: [PERIOD] };
-  const viaChain = cardOf({ court_order_issued_date: ORDER_ISSUED, ...events }, 'court_order_presentation');
-  const viaSituation = cardOf(
-    { enforcement_document_type: 'court_order', court_order_issued_date: ORDER_ISSUED, ...events },
-    NEW_NODE,
-  );
-  assert.deepEqual(calculationOf(viaSituation), calculationOf(viaChain));
-  assert.equal(viaSituation.deducted_days, 59);
-  assert.ok(viaSituation.deadline_before_deduction);
-});
+// --- Вступившее в силу решение: та же механика от введённой даты ------------
 
-test('судебный приказ: перерыв и вычет вместе — тот же результат через оба входа', () => {
-  const events = { enforcement_interruptions: [INTERRUPTION, PERIOD, RETURNED] };
-  const viaChain = cardOf({ court_order_issued_date: ORDER_ISSUED, ...events }, 'court_order_presentation');
-  const viaSituation = cardOf(
-    { enforcement_document_type: 'court_order', court_order_issued_date: ORDER_ISSUED, ...events },
-    NEW_NODE,
-  );
-  assert.deepEqual(calculationOf(viaSituation), calculationOf(viaChain));
-  // Обе ветви ст. 22 видны на карточке: перерыв перезапустил срок от
-  // последнего события, вычет уменьшил его.
-  assert.equal(viaSituation.restarted_from, RETURNED.date);
-  assert.equal(viaSituation.interruptions.length, 2);
-  assert.equal(viaSituation.deductions.length, 1);
-  assert.equal(viaSituation.deducted_days, 59);
-});
-
-// --- Вступившее в силу решение: тот же ввод через два входа -----------------
-
-test('вступившее в силу решение: перерыв и вычет совпадают с общей цепочкой', () => {
-  // Норма у общего узла и у варианта «решение» одна и та же (ч. 1 ст. 21), и
-  // якорь тот же — дата вступления в силу; в общей цепочке она вычисляется,
-  // здесь вводится, а дальше расчёт обязан быть тем же самым.
-  const events = { enforcement_interruptions: [INTERRUPTION, PERIOD] };
-  const viaChain = cardOf(events, 'enforcement_presentation');
-  const viaSituation = cardOf(
+test('вступившее в силу решение: перерыв и вычет считаются от введённой даты', () => {
+  // Прежде этот тест сравнивал расчёт с узлом на хвосте общей цепочки, где
+  // дата вступления в силу вычислялась, а здесь вводится. Цепочка узла больше
+  // не даёт; проверяем сам расчёт на тех же событиях.
+  const card = cardOf(
     {
       enforcement_document_type: 'court_decision',
       enforcement_decision_entry_into_force_date: ENTRY_INTO_FORCE,
-      ...events,
+      enforcement_interruptions: [INTERRUPTION, PERIOD],
     },
     NEW_NODE,
   );
-  // Здесь сравнение по явному списку полей расчёта, а не «всё, кроме
-  // id/title/нормы», как у судебного приказа выше: карточки собираются разными
-  // рендерерами (enforcementCard у узла общей цепочки, monthTermCard у нового),
-  // и различия в их обвязке — stubs, duration, restoration_norm — к расчёту
-  // не относятся.
-  assert.deepEqual(interruptionStateOf(viaSituation), interruptionStateOf(viaChain));
-  assert.equal(viaSituation.norm, viaChain.norm); // ч. 1 ст. 21 — одна и та же
-  assert.equal(viaSituation.deadline, viaChain.deadline);
+  assert.match(card.norm, /ч\. 1 ст\. 21/);
+  assert.equal(card.base_anchor, ENTRY_INTO_FORCE);
+  assert.equal(card.restarted_from, INTERRUPTION.date);
+  assert.equal(card.deadline_before_deduction, '2029-06-01');
+  assert.equal(card.deducted_days, 59);
+  assert.equal(card.deadline, '2029-04-03');
 });
 
 // --- Периодические платежи: перенесённая логика прежнего отдельного узла ----
@@ -185,9 +141,11 @@ test('вступившее в силу решение: перерыв и выч�
 // его логика действительно работает ВНУТРИ нового: якорь и норма ч. 4,
 // оговорка «пока срок не окончен — в любой момент», чекбокс бессрочности с
 // веткой not_applicable и приоритетом над датой, и неприменимость ст. 22.
-// Доказательство переиспользования движка держится на двух блоках выше
-// (судебный приказ и вступившее в силу решение) — там обе стороны сравнения
-// по-прежнему существуют.
+// Доказательство того, что движок именно переиспользуется, а не скопирован,
+// держится теперь не на сравнении двух входов (второго нет ни у одного типа
+// документа), а на том, что все три типа проходят через один и тот же
+// computeInterruptibleTerm/computeSimpleTerm — см. тесты ст. 22 по типам
+// документа ниже и test/core/ на саму арифметику.
 
 const PERIODIC = { enforcement_document_type: 'periodic_payments' };
 
@@ -264,12 +222,20 @@ test('ст. 22 применяется к двум типам документа 
   }
 });
 
-test('прежнего отдельного узла периодических платежей не осталось ни в одной ситуации', () => {
-  // Обратная сторона переноса: узел не должен вернуться через buildView под
-  // старым id — иначе в модели снова два расчёта одной нормы.
+test('ни одного прежнего узла предъявления не осталось ни в одной ситуации', () => {
+  // Обратная сторона всех переносов: ни один из прежних узлов не должен
+  // вернуться через buildView под старым id — иначе в модели снова окажется
+  // несколько расчётов одной нормы. Входные данные нарочно сразу за все
+  // ветви: общая цепочка, упрощённое, заочное, иностранное государство,
+  // мировой судья, судебный приказ и периодические платежи.
   const all = buildView(
     {
       ...BASE,
+      simplified_resolution_date: '2025-03-11',
+      default_judgment_service_date: '2025-03-11',
+      foreign_state_default_judgment_service_date: '2025-01-10',
+      mirovoy_resolution_date: '2025-03-11',
+      court_order_copy_received_date: '2025-03-11',
       ...PERIODIC,
       periodic_payment_period_end_date: ORDER_ISSUED,
       periodic_payment_indefinite: false,
@@ -277,6 +243,21 @@ test('прежнего отдельного узла периодических 
     TODAY,
   );
   const ids = [...all.cards, ...all.incomplete].map((c) => c.id);
-  assert.ok(!ids.includes('periodic_payments_presentation'));
+  for (const gone of [
+    'enforcement_presentation',
+    'simplified_enforcement_presentation',
+    'default_judgment_enforcement_presentation',
+    'foreign_state_default_judgment_enforcement_presentation',
+    'mirovoy_enforcement_presentation',
+    'court_order_presentation',
+    'periodic_payments_presentation',
+  ]) {
+    assert.ok(!ids.includes(gone), `узел ${gone} вернулся в модель`);
+  }
   assert.ok(ids.includes(NEW_NODE));
+  // Узлы вступления в силу на месте — убран был только хвост предъявления.
+  assert.ok(ids.includes('entry_into_force'));
+  assert.ok(ids.includes('simplified_entry_into_force'));
+  assert.ok(ids.includes('default_judgment_entry_into_force'));
+  assert.ok(ids.includes('mirovoy_entry_into_force'));
 });

@@ -98,15 +98,19 @@ test('в ситуациях нет узлов, которых модель не 
   assert.deepEqual(missing, [], 'узлы разбиения, которых нет в модели');
 });
 
-test('судебный приказ: оба узла ситуации учтены в разбиении', () => {
+test('судебный приказ: в ситуации остался один узел — возражения должника', () => {
+  // ЧТО ИЗМЕНИЛОСЬ. Тест назывался «оба узла ситуации учтены в разбиении»:
+  // приказное производство держало два узла — возражения должника (ст. 128) и
+  // предъявление приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ). Второй убран
+  // вместе с узлами предъявления на хвостах остальных цепочек: тот же расчёт
+  // от той же даты даёт вариант «судебный приказ» ситуации «Исполнительное
+  // производство», и поле court_order_issued_date переехало туда (иначе оно
+  // оказалось бы закреплено за двумя ситуациями сразу).
   const situation = SITUATIONS.find((s) => s.id === 'court_order');
-  assert.deepEqual(situation.nodes, ['court_order_objection', 'court_order_presentation']);
-  assert.deepEqual(situation.fields, [
-    'court_order_copy_received_date',
-    'court_order_issued_date',
-  ]);
+  assert.deepEqual(situation.nodes, ['court_order_objection']);
+  assert.deepEqual(situation.fields, ['court_order_copy_received_date']);
 
-  // Каждое поле открывает свой узел и только его — узлы независимы.
+  // Своё поле открывает свой узел.
   const objectionOnly = buildView(
     { court_order_copy_received_date: '2025-07-02' },
     { today: '2025-07-01' },
@@ -115,14 +119,62 @@ test('судебный приказ: оба узла ситуации учтен
     objectionOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
     ['court_order_objection'],
   );
-  const presentationOnly = buildView(
-    { court_order_issued_date: '2023-04-12' },
+
+  // Дата выдачи приказа теперь принадлежит ситуации «Исполнительное
+  // производство» и там же открывает узел — при выбранном типе документа.
+  const enforcement = SITUATIONS.find((s) => s.id === 'enforcement');
+  assert.ok(enforcement.fields.includes('court_order_issued_date'));
+  assert.ok(!situation.fields.includes('court_order_issued_date'));
+  const presentation = buildView(
+    { enforcement_document_type: 'court_order', court_order_issued_date: '2023-04-12' },
     { today: '2025-07-01' },
   );
   assert.deepEqual(
-    presentationOnly.cards.map((c) => c.id).filter((id) => situation.nodes.includes(id)),
-    ['court_order_presentation'],
+    presentation.cards.map((c) => c.id),
+    ['enforcement_document_presentation'],
   );
+});
+
+test('узлов предъявления не осталось ни в одной цепочке обжалования', () => {
+  // Охранный тест на перегруппировку — тот же принцип, что у «прежних ситуаций
+  // child_return и adoption больше нет» ниже. Узел предъявления был на хвосте
+  // пяти цепочек (общая, мировой судья, упрощённое, заочное, заочное против
+  // иностранного государства) и в приказном производстве; теперь расчёт живёт
+  // ровно в одной ситуации — «Исполнительное производство». Если копия
+  // вернётся в чью-нибудь цепочку, в модели снова окажется несколько расчётов
+  // одной нормы, и ломается этот тест.
+  const gone = [
+    'enforcement_presentation',
+    'mirovoy_enforcement_presentation',
+    'simplified_enforcement_presentation',
+    'default_judgment_enforcement_presentation',
+    'foreign_state_default_judgment_enforcement_presentation',
+    'court_order_presentation',
+    'periodic_payments_presentation',
+  ];
+  for (const s of SITUATIONS) {
+    for (const id of gone) {
+      assert.ok(!s.nodes.includes(id), `${s.id}: узел ${id} должен был быть убран`);
+    }
+  }
+  // Единственный оставшийся — и он в своей ситуации.
+  const enforcement = SITUATIONS.find((s) => s.id === 'enforcement');
+  assert.deepEqual(enforcement.nodes, ['enforcement_document_presentation']);
+
+  // Узлы вступления в силу на месте: убирался хвост предъявления, а не они.
+  const entryNodes = [
+    ['general', 'entry_into_force'],
+    ['mirovoy', 'mirovoy_entry_into_force'],
+    ['simplified', 'simplified_entry_into_force'],
+    ['default_judgment', 'default_judgment_entry_into_force'],
+    ['default_judgment_foreign_state', 'foreign_state_default_judgment_entry_into_force'],
+  ];
+  for (const [situationId, nodeId] of entryNodes) {
+    assert.ok(
+      SITUATIONS.find((s) => s.id === situationId).nodes.includes(nodeId),
+      `${situationId}: узел вступления в силу должен остаться`,
+    );
+  }
 });
 
 test('дела о детях: три узла двух категорий в одной ситуации', () => {
@@ -460,12 +512,14 @@ test('отдельные сроки: пул сократился, но не оп
 test('заочное решение против иностранного государства: своя ситуация, узлы появляются по дате вручения', () => {
   const situation = SITUATIONS.find((s) => s.id === 'default_judgment_foreign_state');
   assert.deepEqual(situation.fields, ['foreign_state_default_judgment_service_date']);
+  // Узла предъявления ИЛ в списке больше нет — он убран с хвоста всех цепочек
+  // (см. тест «узлов предъявления не осталось ни в одной цепочке обжалования»);
+  // вступление в силу по ч. 1 ст. 244 осталось на месте.
   assert.deepEqual(situation.nodes, [
     'foreign_state_default_judgment_cancellation_request',
     'foreign_state_default_judgment_appeal',
     'foreign_state_default_judgment_entry_into_force',
     'foreign_state_default_judgment_cassation_ksoyu',
-    'foreign_state_default_judgment_enforcement_presentation',
   ]);
   // Своя ситуация, а не модификация default_judgment: primary_field не занимаем.
   assert.equal(situation.primary_field, undefined);

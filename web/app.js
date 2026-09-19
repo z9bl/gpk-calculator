@@ -264,12 +264,14 @@ const exportableIds = new Set();
 const exportDurations = new Map();
 
 // Узлы цепочки общего порядка — они требуют даты мотивированного решения.
+// Узла предъявления ИЛ в этом списке больше нет: он убран с хвоста цепочки —
+// срок предъявления считается в ситуации «Исполнительное производство»
+// (см. situations.js).
 const GENERAL_CHAIN_NODES = new Set([
   'appeal_general',
   'entry_into_force',
   'cassation_ksoyu',
   'cassation_vs',
-  'enforcement_presentation',
 ]);
 
 // Порядок узлов внутри экрана задаётся выбранной ситуацией (src/situations.js):
@@ -1504,7 +1506,7 @@ function render() {
           termEl.appendChild(box);
         }
         // Перерыв срока предъявления (ст. 22 ФЗ № 229-ФЗ) — повторяемый
-        // список событий у узлов ИЛ и судебного приказа.
+        // список событий у узла исполнительного производства.
         if (card.interruptible) termEl.appendChild(renderInterruptions(card));
         // Заглушки рядом с узлом (напр. предъявление ИЛ). Список пуст — все
         // смежные случаи раскрыты узлами; заголовок без содержимого не рисуем.
@@ -2113,11 +2115,10 @@ function renderSituationFields(situation, primaryFilled) {
 //
 // Тот же приём, что и у renderReviewGroundFields ниже (выбор переписывает норму
 // на карточке), но поле даты здесь не общее: у трёх типов документа три разных
-// якоря. Один из них — court_order_issued_date — существующее поле ситуации
-// «Судебный приказ», которое тут именно переиспользуется, а не заводится заново
-// (см. ENFORCEMENT_DOCUMENT_TYPES в chain.js и комментарий у ситуации
-// 'enforcement' в situations.js). Поэтому поле берётся по anchor_field
-// выбранного типа, а не по списку situation.fields.
+// якоря, и одновременно показывается ровно один. Поэтому поле берётся по
+// anchor_field выбранного типа, а не перебором situation.fields (см.
+// ENFORCEMENT_DOCUMENT_TYPES в chain.js и комментарий у ситуации 'enforcement'
+// в situations.js).
 //
 // Блок «Добавить событие» (перерыв/вычет ст. 22) здесь не рисуется: он живёт на
 // самой карточке срока по признаку card.interruptible — тот же общий

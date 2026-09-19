@@ -26,9 +26,7 @@ import {
   APPEAL_GENERAL,
   CASSATION_KSOYU,
   CASSATION_VS,
-  ENFORCEMENT_PRESENTATION,
   COURT_ORDER_OBJECTION,
-  COURT_ORDER_PRESENTATION,
   ENFORCEMENT_DOCUMENT_PRESENTATION,
   FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION,
   FOREIGN_JUDGMENT_RECOGNITION_OBJECTION,
@@ -122,15 +120,6 @@ export function icsTermsFromChain(chain) {
       norm: chain.cassation_vs.norm.primary,
       ics: CASSATION_VS.ics,
       duration: CASSATION_VS.duration,
-    });
-  }
-  if (chain && chain.enforcement && chain.enforcement.deadline) {
-    terms.push({
-      title: chain.enforcement.title,
-      deadline: chain.enforcement.deadline,
-      norm: chain.enforcement.norm.primary,
-      ics: ENFORCEMENT_PRESENTATION.ics,
-      duration: ENFORCEMENT_PRESENTATION.duration,
     });
   }
   // Сроки в рабочих днях. Правила напоминаний (раздел 8) заданы только для
@@ -338,8 +327,9 @@ export function icsTermsFromChain(chain) {
   }
   // Возражения должника относительно исполнения судебного приказа (ст. 128
   // ГПК) — независимый узел приказного производства, считается по своему input
-  // (court_order_copy_received_date), отдельно от срока предъявления приказа к
-  // исполнению.
+  // (court_order_copy_received_date). Срок предъявления приказа к исполнению
+  // здесь больше не экспортируется отдельной строкой: он уходит в .ics вместе
+  // с узлом enforcement_document_presentation ниже (вариант «судебный приказ»).
   if (chain && chain.court_order_objection && chain.court_order_objection.deadline) {
     terms.push({
       title: chain.court_order_objection.title,
@@ -349,24 +339,13 @@ export function icsTermsFromChain(chain) {
       duration: COURT_ORDER_OBJECTION.duration,
     });
   }
-  // Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ) —
-  // независимый узел (глава 11 ГПК вне цепочки обжалования), считается по
-  // своему input (court_order_issued_date).
-  if (chain && chain.court_order_presentation && chain.court_order_presentation.deadline) {
-    terms.push({
-      title: chain.court_order_presentation.title,
-      deadline: chain.court_order_presentation.deadline,
-      norm: chain.court_order_presentation.norm.primary,
-      ics: COURT_ORDER_PRESENTATION.ics,
-      duration: COURT_ORDER_PRESENTATION.duration,
-    });
-  }
   // Предъявление исполнительного документа к исполнению (ст. 21 ФЗ № 229-ФЗ) —
   // самостоятельный узел для документа, который уже на руках; один на три типа
   // документа (ч. 1, ч. 3 и ч. 4 ст. 21), считается по своему input
-  // (enforcement_document_type + якорное поле выбранного типа). Пришёл на место
-  // прежнего отдельного узла периодических платежей, который был перенесён в
-  // него вариантом 'periodic_payments'. В ветке not_applicable (бессрочное
+  // (enforcement_document_type + якорное поле выбранного типа). Это
+  // единственная строка экспорта для срока предъявления: прежние узлы на
+  // хвостах цепочек обжалования и в приказном производстве убраны, а узел
+  // периодических платежей перенесён сюда вариантом 'periodic_payments'. В ветке not_applicable (бессрочное
   // взыскание) deadline нет — в экспорт узел не попадает, как и раньше.
   if (
     chain &&

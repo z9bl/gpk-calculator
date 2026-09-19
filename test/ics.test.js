@@ -127,16 +127,16 @@ test('интеграция: computeChain → icsTermsFromChain → buildICS (о�
     { today: '2025-07-01' },
   );
   const terms = icsTermsFromChain(chain);
-  // Обжаловано и вступление в силу разрешено → к апелляции и кассации
-  // добавляется срок предъявления ИЛ (событие разрешено).
+  // Обжаловано и вступление в силу разрешено → апелляция и кассация. Третьей
+  // строкой прежде шёл срок предъявления ИЛ: узла на хвосте цепочки больше
+  // нет, и в экспорт он уходит из своей ситуации (см. тест ниже).
   assert.deepEqual(terms.map((t) => t.title), [
     'Апелляционная жалоба',
     'Кассационная жалоба в КСОЮ',
-    'Предъявление исполнительного листа к исполнению',
   ]);
   const ics = buildICS(terms, { referenceDate: '2025-01-01', now: NOW });
   const events = (ics.match(/BEGIN:VEVENT/g) || []).length;
-  assert.equal(events, 3);
+  assert.equal(events, 2);
   // кассация (3 мес) даёт до 4 напоминаний
   assert.ok((ics.match(/BEGIN:VALARM/g) || []).length >= 4);
 });
@@ -147,48 +147,56 @@ test('pending: кассация не рассчитана — в экспорт 
   assert.deepEqual(terms.map((t) => t.title), ['Апелляционная жалоба']);
 });
 
-test('5. срок предъявления ИЛ уходит в .ics', () => {
-  const chain = computeChain({ reasoned_decision_date: '2025-03-11' }, { today: '2025-05-01' });
+test('5. срок предъявления уходит в .ics', () => {
+  // Прежде срок брался с хвоста общей цепочки (chain.enforcement). Узла там
+  // нет — тот же срок ч. 1 ст. 21 ФЗ № 229-ФЗ экспортируется из ситуации
+  // «Исполнительное производство», по тому же ручному списку icsTermsFromChain.
+  const chain = computeChain(
+    {
+      reasoned_decision_date: '2025-03-11',
+      enforcement_document_type: 'court_decision',
+      enforcement_decision_entry_into_force_date: '2025-04-12',
+    },
+    { today: '2025-05-01' },
+  );
   const terms = icsTermsFromChain(chain);
-  const il = terms.find((t) => t.title.includes('исполнительного листа'));
-  assert.ok(il, 'срок ИЛ в списке экспортируемых');
-  assert.equal(il.deadline, chain.enforcement.deadline);
+  const il = terms.find((t) => t.title.includes('исполнительного документа'));
+  assert.ok(il, 'срок предъявления в списке экспортируемых');
+  assert.equal(il.deadline, chain.enforcement_document_presentation.deadline);
 
   const ics = buildICS(terms, { referenceDate: '2025-05-01', now: NOW });
   // SUMMARY длинная (кириллица) и сворачивается — проверяем префикс до сгиба.
   assert.ok(ics.includes('SUMMARY:Предъявление'));
   // событие на весь день в дату дедлайна
-  const compact = chain.enforcement.deadline.replace(/-/g, '');
+  const compact = il.deadline.replace(/-/g, '');
   assert.ok(ics.includes(`DTSTART;VALUE=DATE:${compact}`));
 });
 
-test('ИЛ упрощённого и заочного уходят в .ics с той же структурой (3 года → 2 напоминания)', () => {
-  // Упрощённое: событие ст. 232.4 разрешено (ч. 5) → ИЛ экспортируется.
-  const sView = buildView({ simplified_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
-  const sTerm = icsTermsFromView(sView).find((t) => t.title.includes('исполнительного листа'));
-  assert.ok(sTerm, 'ИЛ упрощённого в списке экспорта');
-  assert.deepEqual(sTerm.duration, { value: 3, unit: 'year' });
-  const sIcs = buildICS([sTerm], { referenceDate: '2020-01-01', now: NOW });
-  assert.equal((sIcs.match(/BEGIN:VALARM/g) || []).length, 2); // как в общем порядке
-
-  // Заочное: событие ч. 1 ст. 244 разрешено → ИЛ экспортируется.
-  const dView = buildView(
-    { default_judgment_service_date: '2025-12-22', default_judgment_refusal_date: '2026-02-10' },
-    { today: '2026-03-01' },
-  );
-  const dTerm = icsTermsFromView(dView).find((t) => t.title.includes('исполнительного листа'));
-  assert.ok(dTerm, 'ИЛ заочного в списке экспорта');
-  assert.deepEqual(dTerm.duration, { value: 3, unit: 'year' });
-  const dIcs = buildICS([dTerm], { referenceDate: '2020-01-01', now: NOW });
-  assert.equal((dIcs.match(/BEGIN:VALARM/g) || []).length, 2);
-
-  // Мировой судья: событие ч. 1 ст. 209 разрешено (не обжаловано) → ИЛ экспортируется.
-  const mView = buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' });
-  const mTerm = icsTermsFromView(mView).find((t) => t.title.includes('исполнительного листа'));
-  assert.ok(mTerm, 'ИЛ мирового в списке экспорта');
-  assert.deepEqual(mTerm.duration, { value: 3, unit: 'year' });
-  const mIcs = buildICS([mTerm], { referenceDate: '2020-01-01', now: NOW });
-  assert.equal((mIcs.match(/BEGIN:VALARM/g) || []).length, 2);
+test('ветви обжалования свой срок предъявления в .ics больше не отдают', () => {
+  // ЧТО ИЗМЕНИЛОСЬ. Прежде этот тест назывался «ИЛ упрощённого и заочного
+  // уходят в .ics с той же структурой» и проверял, что копия узла предъявления
+  // в каждой из трёх ветвей (упрощённое, заочное, мировой судья) уходит в
+  // экспорт с напоминаниями трёхлетнего срока. Копий нет — срок один и
+  // экспортируется из ситуации «Исполнительное производство» (проверено тестом
+  // выше и тестом полноты экспорта по TERM_REGISTRY). Здесь остаётся охранная
+  // проверка: ни одна ветвь не выгружает своего срока предъявления, а её
+  // собственные сроки в экспорте на месте.
+  const branches = [
+    buildView({ simplified_resolution_date: '2025-12-22' }, { today: '2026-03-01' }),
+    buildView(
+      { default_judgment_service_date: '2025-12-22', default_judgment_refusal_date: '2026-02-10' },
+      { today: '2026-03-01' },
+    ),
+    buildView({ mirovoy_resolution_date: '2025-12-22' }, { today: '2026-03-01' }),
+  ];
+  for (const view of branches) {
+    const titles = icsTermsFromView(view).map((t) => t.title);
+    assert.ok(titles.length > 0, 'свои сроки ветви по-прежнему экспортируются');
+    assert.ok(
+      !titles.some((t) => t.includes('Предъявление')),
+      `в экспорте ветви остался срок предъявления: ${titles.join(', ')}`,
+    );
+  }
 });
 
 // --- Напоминания для сроков в годах (3 года: 3 мес / 1 мес / 7 дней) --------
@@ -310,7 +318,7 @@ test('смещение в рабочих днях даёт больший зап
 
 // Входные данные, активирующие все ветви расчёта сразу.
 const ALL_BRANCHES_INPUTS = {
-  // цепочка общего порядка (вступление в силу разрешено → появляется срок ИЛ)
+  // цепочка общего порядка (вступление в силу разрешено)
   reasoned_decision_date: '2025-03-11',
   appeal_filed_date: '2025-04-05',
   appeal_ruling_date: '2025-06-02',
@@ -336,13 +344,16 @@ const ALL_BRANCHES_INPUTS = {
   mirovoy_resolution_date: '2025-07-06',
   mirovoy_request_date: '2025-07-07',
   mirovoy_reasoned_date: '2025-07-15',
-  // Принятие апелляционного определения — вступление в силу и предъявление ИЛ.
+  // Принятие апелляционного определения — вступление решения в силу.
   mirovoy_appeal_ruling_date: '2025-08-15',
   // Мотивированное апелляционное определение районного суда: открывает узел
   // кассации по делам мировых судей, не требуя, чтобы срок апелляции истёк.
   mirovoy_appeal_ruling_reasoned_date: '2025-08-20',
   // судебный приказ (независимый трек, глава 11 ГПК): возражения должника
-  // (ст. 128) и предъявление приказа к исполнению — два независимых узла
+  // (ст. 128). Срок предъявления приказа к исполнению считается уже не здесь,
+  // а вариантом 'court_order' узла исполнительного производства ниже;
+  // court_order_issued_date оставлен в наборе как его якорное поле —
+  // незадействованное, пока выбран другой тип документа
   court_order_copy_received_date: '2025-07-02',
   court_order_issued_date: '2023-04-12',
   // исполнительное производство (ст. 21 ФЗ № 229-ФЗ): один узел на три типа
@@ -854,9 +865,17 @@ test('практика ВС: тот же срок и та же (не стати�
 });
 
 test('предъявление судебного приказа уходит в .ics (3 года → 2 напоминания)', () => {
-  const view = buildView({ court_order_issued_date: '2023-04-12' }, { today: '2026-03-01' });
+  // Тот же тест на тех же датах, но через оставшийся узел: у приказного
+  // производства своего узла предъявления больше нет, приказ — вариант
+  // документа в ситуации «Исполнительное производство». Заголовок в .ics
+  // поэтому общий («исполнительного документа»), а норма — по-прежнему своя,
+  // ч. 3 ст. 21.
+  const view = buildView(
+    { enforcement_document_type: 'court_order', court_order_issued_date: '2023-04-12' },
+    { today: '2026-03-01' },
+  );
   const terms = icsTermsFromView(view);
-  const co = terms.find((t) => t.title.includes('судебного приказа'));
+  const co = terms.find((t) => t.title.includes('исполнительного документа'));
   assert.ok(co, 'срок предъявления судебного приказа в списке экспорта');
   assert.deepEqual(co.duration, { value: 3, unit: 'year' });
   assert.equal(co.deadline, '2026-04-13');

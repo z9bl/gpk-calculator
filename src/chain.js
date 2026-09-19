@@ -15,7 +15,6 @@ import { toISO, computeSimpleTerm } from '../core/engine/term.js';
 import {
   interruptionEvents as genericInterruptionEvents,
   applyInterruptions as genericApplyInterruptions,
-  withInterruptions as genericWithInterruptions,
   computeInterruptibleTerm as genericComputeInterruptibleTerm,
 } from '../core/engine/interruption.js';
 import {
@@ -280,59 +279,28 @@ export function vsCassationVersionFor(dateISO) {
   return dateISO == null ? versions[versions.length - 1] : pickVersion(versions, dateISO);
 }
 
-// Предъявление исполнительного листа к исполнению (ст. 21 ФЗ № 229-ФЗ).
-// Единица — год (ч. 1 ст. 108 ГПК). Редакций не заводим — норма в этой части не
-// менялась (одна версия). Точка отсчёта — дата вступления решения в силу.
-export const ENFORCEMENT_PRESENTATION = {
-  id: 'enforcement_presentation',
-  title: 'Предъявление исполнительного листа к исполнению',
-  duration: { value: 3, unit: 'year' },
-  anchor: { event: 'entry_into_force', offset_start: 1 },
-  weekend_shift: true,
-  ics: true,
-  // Срок изменяется событиями ст. 22: перерыв (ч. 1–3) сдвигает якорь на
-  // последнее из них, окончание ИП по вине взыскателя (ч. 3.1) вычитает из
-  // срока измеренный отрезок. Флаг несёт и UI — он же решает, где показывать
-  // список событий (и перерывы, и вычеты вводятся одним списком).
-  interruptible: true,
-  logic:
-    'Три года со дня вступления судебного акта в законную силу. Срок прерывается ' +
-    'предъявлением исполнительного листа к исполнению и частичным исполнением; ' +
-    'после перерыва течение возобновляется, истёкшее время в новый срок не ' +
-    'засчитывается (ст. 22 ФЗ № 229-ФЗ, ст. 432 ГПК).',
-  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
-  restoration_norm: 'ст. 112 ГПК РФ',
-  norm_versions: [
-    {
-      id: 'current',
-      from: null,
-      to: null,
-      anchor: { event: 'entry_into_force', offset_start: 1 },
-      norm: {
-        primary: 'ч. 1 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
-        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
-      },
-    },
-  ],
-};
-
-// Копии узла предъявления ИЛ для веток помимо общей цепочки: та же норма и та же
-// механика (три года со дня вступления в силу, ч. 1 ст. 21 ФЗ № 229-ФЗ —
-// безотносительно порядка рассмотрения дела), но свой id: один id не может
-// принадлежать двум ситуациям (см. situations.js), и .ics-реестр (TERM_REGISTRY)
-// собирается по экспортированным константам, поэтому их две.
-export const SIMPLIFIED_ENFORCEMENT_PRESENTATION = {
-  ...ENFORCEMENT_PRESENTATION,
-  id: 'simplified_enforcement_presentation',
-};
-export const DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION = {
-  ...ENFORCEMENT_PRESENTATION,
-  id: 'default_judgment_enforcement_presentation',
-};
-export const MIROVOY_ENFORCEMENT_PRESENTATION = {
-  ...ENFORCEMENT_PRESENTATION,
-  id: 'mirovoy_enforcement_presentation',
-};
+// Узла предъявления ИЛ на хвосте цепочек обжалования больше нет.
+//
+// Прежде каждая цепочка (общий порядок, мировой судья, упрощённое
+// производство, заочное решение, заочное решение против иностранного
+// государства) заканчивалась своей копией одного и того же узла: три года со
+// дня вступления решения в силу, ч. 1 ст. 21 ФЗ № 229-ФЗ — норма не различает
+// порядок рассмотрения дела, поэтому пять копий отличались только id и точкой,
+// от которой брали дату вступления в силу.
+//
+// Теперь этот срок считается ровно в одном месте — в ситуации
+// «Исполнительное производство» (ENFORCEMENT_DOCUMENT_PRESENTATION ниже,
+// вариант 'court_decision'), куда пользователь приходит с уже выданным
+// исполнительным документом. Дублировать тот же расчёт в конце каждой цепочки
+// незачем: якорем ему служит дата вступления в силу, которую цепочка и так
+// показывает своим узлом entry_into_force.
+//
+// Убран именно ПОКАЗ предъявления на хвосте цепочек, а не расчёт: нормы,
+// перерыв (ч. 1–3 ст. 22) и вычет (ч. 3.1 ст. 22) ниже не тронуты — они
+// работают под узлом «Исполнительное производство». Узел вступления в силу
+// в каждой цепочке тоже остался на месте: дата вступления решения в силу
+// полезна сама по себе и служит входом в это самое исполнительное
+// производство.
 
 // --- Перерыв срока предъявления (ч. 1–3 ст. 22 ФЗ № 229-ФЗ) ------------------
 //
@@ -346,8 +314,8 @@ export const MIROVOY_ENFORCEMENT_PRESENTATION = {
 //
 // У всех трёх оснований одна арифметика: новый трёхлетний срок считается от
 // даты события тем же конвоем, что и от базового якоря. Поэтому перерыв — не
-// самостоятельный узел, а сдвиг точки отсчёта у enforcement_presentation и
-// court_order_presentation.
+// самостоятельный узел, а сдвиг точки отсчёта у узла предъявления
+// (enforcement_document_presentation).
 //
 // ч. 3.1 ст. 22 (окончание ИП по заявлению самого взыскателя либо из-за его
 // противодействия исполнению) в этот список НЕ входит и входить не должна:
@@ -443,12 +411,6 @@ export function interruptionEvents(baseAnchorDate, interruptions) {
  */
 export function applyInterruptions(baseAnchorDate, interruptions) {
   return genericApplyInterruptions(baseAnchorDate, interruptions, INTERRUPTION_TYPE_IDS);
-}
-
-// Исходный якорь на посчитанном сроке: в calc.anchor лежит уже сдвинутая дата,
-// а история перерывов без точки, от которой срок шёл изначально, не читается.
-function withInterruptions(result, baseAnchorISO, events) {
-  return genericWithInterruptions(result, baseAnchorISO, events, INTERRUPTION_CONFIG);
 }
 
 // --- Вычет периода из срока предъявления (ч. 3.1 ст. 22 ФЗ № 229-ФЗ) --------
@@ -624,42 +586,13 @@ function withDeductions(result, term, deductions) {
 
 // Полный модификатор ст. 22 над посчитанным сроком предъявления: сначала
 // перерыв (уже применён вызывающим кодом через сдвиг якоря), затем вычет.
-// Вынесено отдельной функцией, потому что точек подключения шесть: общая
-// цепочка, три ветви со своими копиями узла, иностранное государство и
-// судебный приказ.
+// Отдельной функцией осталось после того, как узлы предъявления на хвостах
+// цепочек обжалования и в приказном производстве были убраны: точка
+// подключения теперь одна — computeInterruptibleTerm, через который считается
+// узел ситуации «Исполнительное производство».
 function applyEnforcementDeductions(result, term, events) {
   const { deductions } = partitionEnforcementEvents(events);
   return withDeductions(result, term, deductions);
-}
-
-// Срок предъявления ИЛ — condition: узел появляется только когда вступление в
-// силу разрешено (resolved); в ветви pending его нет. term — узел ветки (общий
-// ENFORCEMENT_PRESENTATION либо его копия с иным id).
-//
-// events — общий список событий ст. 22. Он разбирается на две ветви
-// (partitionEnforcementEvents): перерыв (ч. 1–3) сдвигает якорь на последнее по
-// хронологии событие, базовый остаётся в base_anchor для истории на карточке;
-// вычет (ч. 3.1) уменьшает длину уже посчитанного срока.
-function computeEnforcement(entry, term = ENFORCEMENT_PRESENTATION, allEvents = null) {
-  if (!entry.resolved || entry.date == null) return null;
-  const base = toISO(entry.date);
-  const { interruptions } = partitionEnforcementEvents(allEvents);
-  const events = interruptionEvents(base, interruptions);
-  const calc = computeDeadline(term, applyInterruptions(base, interruptions));
-  const result = {
-    id: term.id,
-    title: term.title,
-    anchor: calc.anchor,
-    offset_start: calc.offset_start,
-    raw_deadline: calc.raw_deadline,
-    deadline: calc.deadline,
-    shifted: calc.shifted,
-    logic: term.logic,
-    midnight_rule: term.midnight_rule,
-    norm: term.norm_versions[0].norm,
-  };
-  if (term.interruptible) result.interruptible = true;
-  return applyEnforcementDeductions(withInterruptions(result, base, events), term, allEvents);
 }
 
 // --- Сроки в рабочих днях (абз. 2 ч. 3 ст. 107 ГПК) -------------------------
@@ -750,9 +683,13 @@ export const PRIVATE_COMPLAINT = {
 
 // Возражения должника относительно исполнения судебного приказа (ст. 128 ГПК).
 //
-// Более ранний момент приказного производства, чем COURT_ORDER_PRESENTATION:
-// приказ ещё не вступил в силу, и у должника есть десять дней на возражения.
-// Узел независимый — считается по своему input, как PRIVATE_COMPLAINT.
+// Более ранний момент приказного производства, чем предъявление приказа к
+// исполнению: приказ ещё не вступил в силу, и у должника есть десять дней на
+// возражения. Срок предъявления считается уже не здесь, а в ситуации
+// «Исполнительное производство» (вариант 'court_order' узла
+// ENFORCEMENT_DOCUMENT_PRESENTATION ниже) — в приказном производстве остался
+// только этот узел. Он независимый: считается по своему input, как
+// PRIVATE_COMPLAINT.
 //
 // Точка отсчёта — дата ПОЛУЧЕНИЯ должником копии приказа. Первое предложение
 // ст. 128 даёт судье пятидневный срок со дня вынесения приказа на высылку
@@ -795,47 +732,14 @@ export const COURT_ORDER_OBJECTION = {
   ],
 };
 
-// Предъявление судебного приказа к исполнению (ч. 3 ст. 21 ФЗ № 229-ФЗ).
+// Узла предъявления судебного приказа к исполнению здесь больше нет.
 //
-// Приказное производство (глава 11 ГПК) — самостоятельный трек, а не часть
-// цепочки обжалования решения суда: у судебного приказа нет ни апелляции, ни
-// вступления в силу по ч. 1 ст. 209, поэтому узел не встроен в computeChain,
-// а считается независимо, по образцу SUPERVISION/PRIVATE_COMPLAINT.
-//
-// Точка отсчёта — дата ВЫДАЧИ приказа взыскателю (второй экземпляр с отметкой
-// о вступлении в силу, ч. 2 ст. 130 ГПК), а не дата вынесения приказа мировым
-// судьёй и не дата истечения десятидневного срока на возражения должника
-// (ст. 128–129 ГПК). Редакций не заводим — часть 3 ст. 21 в этой части не
-// менялась.
-export const COURT_ORDER_PRESENTATION = {
-  id: 'court_order_presentation',
-  title: 'Предъявление судебного приказа к исполнению',
-  duration: { value: 3, unit: 'year' },
-  anchor: { event: 'court_order_issued_date', offset_start: 1 },
-  weekend_shift: true,
-  ics: true,
-  // Перерыв по ст. 22 общий для всех исполнительных документов — судебный
-  // приказ ею тоже охвачен (ч. 1 ст. 22 говорит об исполнительном документе).
-  interruptible: true,
-  logic:
-    'Три года со дня выдачи судебного приказа взыскателю (ч. 3 ст. 21 ФЗ № 229-ФЗ), ' +
-    'а не со дня его вынесения мировым судьёй и не со дня истечения срока на ' +
-    'возражения должника.',
-  midnight_rule: 'ч. 3 ст. 108 ГПК РФ',
-  restoration_norm: 'ст. 112 ГПК РФ',
-  norm_versions: [
-    {
-      id: 'current',
-      from: null,
-      to: null,
-      anchor: { event: 'court_order_issued_date', offset_start: 1 },
-      norm: {
-        primary: 'ч. 3 ст. 21 ФЗ от 02.10.2007 № 229-ФЗ',
-        calculation: ['ч. 1, 2 ст. 108 ГПК РФ'],
-      },
-    },
-  ],
-};
+// Он был хвостом приказного производства (глава 11 ГПК) — три года со дня
+// выдачи приказа взыскателю, ч. 3 ст. 21 ФЗ № 229-ФЗ — и ровно тот же расчёт
+// от того же поля (court_order_issued_date) даёт вариант 'court_order' узла
+// «Исполнительное производство» ниже. Ситуация «Судебный приказ» осталась: в
+// ней продолжает считаться срок должника на возражения (ст. 128,
+// COURT_ORDER_OBJECTION выше) — это другой узел, а не дубликат.
 
 // --- Исполнительное производство: предъявление документа (ст. 21 ФЗ № 229-ФЗ) -
 //
@@ -851,22 +755,21 @@ export const COURT_ORDER_PRESENTATION = {
 // узел один: карточка на экране одна, и выбор типа её переписывает, а не
 // добавляет вторую.
 //
-// Этот узел — единственное место расчёта предъявления по ч. 3 и ч. 4 ст. 21.
+// Этот узел — ЕДИНСТВЕННОЕ место, где калькулятор считает срок предъявления
+// исполнительного документа к исполнению: и по ч. 1, и по ч. 3, и по ч. 4
+// ст. 21. Прежде тот же расчёт дублировался на хвосте каждой цепочки
+// обжалования (пять копий ENFORCEMENT_PRESENTATION) и в приказном
+// производстве (COURT_ORDER_PRESENTATION) — все они убраны, остался этот вход.
 // Отдельного узла периодических платежей (прежний periodic_payments_presentation
-// со своей ситуацией) больше нет: он был тонкой обёрткой над той же
+// со своей ситуацией) тоже нет: он был тонкой обёрткой над той же
 // арифметикой, и вся его логика — якорь, оговорка ч. 4, чекбокс бессрочности,
 // ветка not_applicable и неприменимость ст. 22 — перенесена сюда вариантом
-// 'periodic_payments'. Узлы предъявления ВНУТРИ цепочек обжалования
-// (ENFORCEMENT_PRESENTATION с копиями и COURT_ORDER_PRESENTATION) остаются на
-// своих местах: там предъявление — часть более длинной процедуры, а не
-// самостоятельный вход.
+// 'periodic_payments'.
 //
-// anchor_field у варианта 'court_order' — УЖЕ существующее поле ситуации
-// «Судебный приказ» (court_order_issued_date, ст. 130 ГПК). Оно
-// переиспользуется, а не дублируется: одна и та же дата не должна вводиться
-// дважды и расходиться между двумя входами к одному расчёту. В `fields`
-// ситуации 'enforcement' его поэтому нет — оно закреплено за своей ситуацией
-// (см. комментарий в situations.js).
+// anchor_field у варианта 'court_order' — court_order_issued_date (дата выдачи
+// приказа взыскателю, ст. 130 ГПК). Это поле пришло сюда из ситуации
+// «Судебный приказ» вместе с расчётом: там остался только срок возражений
+// должника (ст. 128) со своим полем court_order_copy_received_date.
 export const ENFORCEMENT_DOCUMENT_TYPES = [
   {
     id: 'court_decision',
@@ -1070,7 +973,7 @@ export const FOREIGN_JUDGMENT_ENFORCEMENT_PRESENTATION = {
   weekend_shift: true,
   ics: true,
   // Перерыв по ст. 22 ФЗ № 229-ФЗ здесь НЕ подключён (в отличие от
-  // court_order_presentation): решение иностранного суда само по себе не
+  // enforcement_document_presentation): решение иностранного суда само по себе не
   // входит в перечень исполнительных документов ст. 12 ФЗ № 229-ФЗ — им
   // становится исполнительный лист, выдаваемый российским судом уже ПОСЛЕ
   // разрешения на принудительное исполнение (ст. 411), а этот трёхлетний срок —
@@ -1278,8 +1181,8 @@ export const ADOPTION_APPEAL = {
 // Срок, изменяемый событиями ст. 22 ФЗ № 229-ФЗ — тонкая обёртка над
 // core/engine/interruption.js и core/engine/deduction.js с ГПК-данными
 // (основания перерыва и вычета, нормы).
-// allEvents — общий список событий ст. 22 (обе ветви); разбирается так же, как
-// в computeEnforcement: перерыв сдвигает якорь, вычет уменьшает длину срока.
+// allEvents — общий список событий ст. 22 (обе ветви): перерыв сдвигает якорь,
+// вычет уменьшает длину срока.
 function computeInterruptibleTerm(term, baseAnchorDate, allEvents) {
   const { interruptions } = partitionEnforcementEvents(allEvents);
   const result = genericComputeInterruptibleTerm(
@@ -1297,7 +1200,7 @@ function computeInterruptibleTerm(term, baseAnchorDate, allEvents) {
  * считается по своему input (замечания на протокол, частная жалоба). Поэтому
  * доступны и без даты мотивированного решения.
  * @param {object} inputs
- * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, court_order_presentation:object|null, enforcement_document_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
+ * @returns {{protocol_remarks:object|null, protocol_remarks_review:object|null, private_complaint:object|null, supervision:object|null, cassation_return_ruling_appeal:object|null, court_order_objection:object|null, enforcement_document_presentation:object|null, child_return_appeal:object|null, child_return_private_complaint:object|null, adoption_appeal:object|null, arbitration_competence_appeal:object|null, settlement_approval_cassation_appeal:object|null, sudebny_prikaz_cassation:object|null, treteisky_osparivanie_cassation:object|null, treteisky_ispollist_cassation:object|null, review_new_circumstances_filing:object|null, review_new_circumstances_missing:string[]|null, review_new_circumstances_restoration:object|null}}
  */
 export function computeIndependentTerms(inputs) {
   const { remarks, review } = computeProtocolRemarks(inputs ?? {});
@@ -1439,23 +1342,17 @@ export function computeIndependentTerms(inputs) {
     // двух дат (получения решения стороной либо того, когда узнало лицо, не
     // являющееся стороной).
     arbitration_award_setaside: arbitrationAwardSetaside,
-    // Приказное производство: два независимых узла одной ситуации. Возражения
-    // должника (ст. 128) считаются от даты получения копии приказа,
-    // предъявление к исполнению — от даты его выдачи взыскателю; ни один из
-    // них не является входом для другого.
+    // Приказное производство: один узел — возражения должника (ст. 128) от даты
+    // получения копии приказа. Срок предъявления приказа к исполнению (ч. 3
+    // ст. 21 ФЗ № 229-ФЗ) считается не здесь, а вариантом 'court_order' узла
+    // enforcement_document_presentation ниже — от той же даты выдачи приказа
+    // взыскателю (court_order_issued_date), одним расчётом на все типы
+    // исполнительных документов.
     // condition (бывшее поле COURT_ORDER_OBJECTION) — 'court_order_copy_received_date':
     // узел появляется только после ввода даты получения копии приказа.
     court_order_objection: computeSimpleTerm(
       COURT_ORDER_OBJECTION,
       inputs?.court_order_copy_received_date,
-    ),
-    // condition (бывшее поле COURT_ORDER_PRESENTATION) — 'court_order_issued_date':
-    // узел появляется только после ввода даты выдачи приказа взыскателю —
-    // гарантирует null-чек в core/engine/interruption.js (computeInterruptibleTerm).
-    court_order_presentation: computeInterruptibleTerm(
-      COURT_ORDER_PRESENTATION,
-      inputs?.court_order_issued_date,
-      inputs?.enforcement_interruptions,
     ),
     // Исполнительное производство (ст. 21 ФЗ № 229-ФЗ) — предъявление
     // документа, который уже на руках. Узел один, норма и якорь выбираются
@@ -2675,15 +2572,6 @@ export function computeSimplified(inputs, referenceDate = null) {
   const appealRuling = toISO(inputs.simplified_appeal_ruling_date);
   const entry = resolveSimplifiedEntry(appealFiled, reasoned, appeal.deadline, appealRuling);
 
-  // Предъявление ИЛ — три года со дня вступления решения в силу (ч. 1 ст. 21
-  // ФЗ № 229-ФЗ). Норма не различает порядок рассмотрения, поэтому узел тот же,
-  // что в общей цепочке, привязанный к событию ст. 232.4 (все три ветви).
-  const enforcement = computeEnforcement(
-    entry,
-    SIMPLIFIED_ENFORCEMENT_PRESENTATION,
-    inputs.enforcement_interruptions,
-  );
-
   // Кассация в КСОЮ (ст. 376.1). Исчерпание способов обжалования (3.7)
   // применяется как в общей цепочке — упрощённое решение обжалуется в апелляцию
   // по ч. 8 ст. 232.4.
@@ -2701,7 +2589,6 @@ export function computeSimplified(inputs, referenceDate = null) {
     reasoned_making: making,
     appeal,
     entry_into_force: { norm: SIMPLIFIED_ENTRY_NORM, ...entry },
-    enforcement,
     cassation,
   };
 }
@@ -2990,16 +2877,6 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
     appealDeadline: appeal ? appeal.deadline : null,
   });
 
-  // Предъявление ИЛ — три года со дня вступления заочного решения в силу
-  // (ч. 1 ст. 21 ФЗ № 229-ФЗ). Привязано к событию ч. 1 ст. 244; в состоянии
-  // cancellation_granted вступления в силу не наступает (entry.resolved === false),
-  // и computeEnforcement возвращает null — узла нет.
-  const enforcement = computeEnforcement(
-    entry,
-    DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION,
-    inputs.enforcement_interruptions,
-  );
-
   // Кассация в КСОЮ (ст. 376.1). Условие исчерпания у заочного зависит от
   // субъекта: у ответчика нужно ещё и рассмотренное заявление об отмене
   // (ст. 237, позиция ВС РФ), у иных лиц — как в общем порядке (3.7).
@@ -3019,7 +2896,6 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
     appeal_blocked: appealBlocked,
     appeal_not_applicable: appealNotApplicable,
     entry_into_force: { norm: DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
-    enforcement,
     cassation,
   };
 }
@@ -3056,8 +2932,8 @@ export function computeDefaultJudgment(inputs, referenceDate = null) {
 // foreign_state_default_judgment_* в missing_inputs — не параметризация общей
 // функции (риск регресса в уже протестированной ветке default_judgment).
 //
-// computeEnforcement и computeCassationTerm уже субъект-агностичны — переиспользованы
-// без изменений, с новым branch-ключом и константами-копиями узлов.
+// computeCassationTerm уже субъект-агностична — переиспользована без изменений,
+// с новым branch-ключом и константой-копией узла.
 
 export const FOREIGN_STATE_DEFAULT_JUDGMENT_CANCELLATION_REQUEST = {
   id: 'foreign_state_default_judgment_cancellation_request',
@@ -3165,18 +3041,13 @@ function computeForeignStateAppealTerm(mode, anchorDate) {
   };
 }
 
-// Копии узлов кассации/исполнения — норма (ст. 376.1 / ч. 1 ст. 21 ФЗ № 229-ФЗ)
-// не меняется, меняется только точка отсчёта (эта ветка) и id/название.
+// Копия узла кассации — норма (ст. 376.1) не меняется, меняется только точка
+// отсчёта (эта ветка) и id/название. Копии узла предъявления ИЛ у ветки больше
+// нет: срок ч. 1 ст. 21 ФЗ № 229-ФЗ считается один раз, в ситуации
+// «Исполнительное производство» (см. комментарий выше по файлу).
 export const FOREIGN_STATE_DEFAULT_JUDGMENT_CASSATION_KSOYU = {
   ...CASSATION_KSOYU,
   id: 'foreign_state_default_judgment_cassation_ksoyu',
-};
-export const FOREIGN_STATE_DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION = {
-  ...ENFORCEMENT_PRESENTATION,
-  id: 'foreign_state_default_judgment_enforcement_presentation',
-  title:
-    'Предъявление исполнительного листа к исполнению ' +
-    '(заочное решение против иностранного государства)',
 };
 
 export const FOREIGN_STATE_DEFAULT_JUDGMENT_ENTRY_NORM = 'ч. 1 ст. 244 ГПК РФ';
@@ -3322,12 +3193,6 @@ export function computeDefaultJudgmentForeignState(inputs, referenceDate = null)
     appealDeadline: appeal ? appeal.deadline : null,
   });
 
-  const enforcement = computeEnforcement(
-    entry,
-    FOREIGN_STATE_DEFAULT_JUDGMENT_ENFORCEMENT_PRESENTATION,
-    inputs.enforcement_interruptions,
-  );
-
   // Условие исчерпания — ОБЩЕЕ (generalExhaustion), а не defaultJudgmentExhaustion:
   // правило «ответчик обязан сперва подать заявление об отмене» обосновано для
   // ст. 237 практикой ВС РФ, сверенной по цитирующей публикации (3.7 SPEC.md,
@@ -3349,7 +3214,6 @@ export function computeDefaultJudgmentForeignState(inputs, referenceDate = null)
     appeal_blocked: appealBlocked,
     appeal_not_applicable: appealNotApplicable,
     entry_into_force: { norm: FOREIGN_STATE_DEFAULT_JUDGMENT_ENTRY_NORM, ...entry },
-    enforcement,
     cassation,
   };
 }
@@ -3586,13 +3450,8 @@ export function computeMirovoy(inputs, referenceDate = null) {
     anchor_kind: appealAnchorKind,
   });
 
-  // Вступление в силу по ч. 1 ст. 209 (общее правило) и предъявление ИЛ от него.
+  // Вступление в силу по ч. 1 ст. 209 (общее правило).
   const entry = resolveMirovoyEntry(inputs, appeal.deadline, toISO(referenceDate));
-  const enforcement = computeEnforcement(
-    entry,
-    MIROVOY_ENFORCEMENT_PRESENTATION,
-    inputs.enforcement_interruptions,
-  );
 
   // mirovoy_cassation — узел категории (a): годичный потолок восстановления
   // (ч. 7 ст. 112). Дата вступления в силу — entry.date (resolveMirovoyEntry),
@@ -3617,7 +3476,6 @@ export function computeMirovoy(inputs, referenceDate = null) {
     appeal,
     cassation: mirovoyCassation,
     entry_into_force: { norm: MIROVOY_ENTRY_NORM, ...entry },
-    enforcement,
   };
 }
 
@@ -4026,14 +3884,11 @@ export function computeChain(inputs, options = {}) {
     );
     if (cap) cassationVs.restoration_one_year_cap = cap;
   }
-  const enforcement = computeEnforcement(entry, ENFORCEMENT_PRESENTATION, inputs.enforcement_interruptions);
-
   return {
     appeal,
     entry_into_force: { norm: ENTRY_INTO_FORCE_NORM, ...entry },
     cassation,
     cassation_vs: cassationVs,
-    enforcement,
     // Сроки в рабочих днях — независимые узлы, каждый по своему input.
     ...computeIndependentTerms(inputs),
     // Упрощённое производство — своя ветка со своим вступлением в силу.
