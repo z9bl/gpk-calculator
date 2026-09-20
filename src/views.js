@@ -549,21 +549,19 @@ function foreignStateDefaultJudgmentCards(dj) {
 
 // Карточки ветки мирового судьи (ч. 3–5 ст. 199).
 //
-// first_working_day снят с обеих карточек этой ветки, а бейдж «справочно» —
-// со второй: для мирового судьи они признаны лишними. Тот же механизм (общий,
-// не только этой ветки) у остальных узлов ГПК не трогаем — снято точечно,
-// через удаление поля/флаг на уже построенной карточке, а не в общем коде.
+// Бейдж «справочно» снят со второй карточки — для мирового судьи он признан
+// лишним. Механизм (общий, не только этой ветки) у остальных узлов ГПК не
+// трогаем — снято точечно, через флаг на уже построенной карточке, а не в
+// общем коде.
 function mirovoyCards(m) {
   const cards = [];
   const request = workingDayCard(m.reasoned_request);
-  delete request.first_working_day;
   cards.push(request);
   if (m.reasoned_making) {
     const making = workingDayCard(m.reasoned_making, {
       informational: true,
       hide_info_badge: true,
     });
-    delete making.first_working_day;
     cards.push(making);
   }
   const appeal = {
@@ -601,6 +599,7 @@ function mirovoyCards(m) {
     branch: entry.branch,
     details: { collapsed: true, logic: entry.logic },
   };
+  if (entry.not_earlier_than) entryCard.not_earlier_than = entry.not_earlier_than;
   if (entry.message) entryCard.message = entry.message;
   if (entry.note) entryCard.note = entry.note;
   attachCalendarWarning(entryCard, entry.date);
