@@ -292,6 +292,9 @@ function attachDeductions(card, term) {
   }
   card.details.deduction_norm = term.deduction_norm;
   card.details.deduction_logic = term.deduction_logic;
+  // Полный текст допущений — под «Подробнее»; короткий флажок (card.deduction_assumption.short)
+  // остаётся снаружи, на самой карточке.
+  card.details.deduction_assumption = term.deduction_assumption;
 }
 
 // workingDayCard — перенесена в core/view/cards.js (см. импорт выше).
@@ -305,10 +308,6 @@ function simplifiedCards(simplified) {
 
   if (simplified.reasoned_making) {
     const making = workingDayCard(simplified.reasoned_making, { informational: true });
-    making.note =
-      simplified.reasoned_making.trigger === 'appeal_filed'
-        ? 'Отсчёт от даты подачи апелляционной жалобы (ч. 4 ст. 232.4).'
-        : 'Отсчёт от даты поступления заявления о составлении мотивированного решения.';
     cards.push(making);
   }
 
@@ -548,11 +547,6 @@ function foreignStateDefaultJudgmentCards(dj) {
 }
 
 // Карточки ветки мирового судьи (ч. 3–5 ст. 199).
-//
-// Бейдж «справочно» снят со второй карточки — для мирового судьи он признан
-// лишним. Механизм (общий, не только этой ветки) у остальных узлов ГПК не
-// трогаем — снято точечно, через флаг на уже построенной карточке, а не в
-// общем коде.
 function mirovoyCards(m) {
   const cards = [];
   const request = workingDayCard(m.reasoned_request);
@@ -560,7 +554,6 @@ function mirovoyCards(m) {
   if (m.reasoned_making) {
     const making = workingDayCard(m.reasoned_making, {
       informational: true,
-      hide_info_badge: true,
     });
     cards.push(making);
   }
