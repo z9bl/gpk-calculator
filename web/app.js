@@ -440,13 +440,6 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(el('div', 'norm', card.norm));
   }
 
-  // Для сроков в рабочих днях показываем первый день течения — иначе непонятно,
-  // почему дата уехала так далеко (например, за январские каникулы).
-  if (card.first_working_day) {
-    c.appendChild(
-      el('div', 'hint', `Отсчёт рабочих дней с ${isoToRu(card.first_working_day)}`),
-    );
-  }
   if (card.note) c.appendChild(el('div', 'note', card.note));
 
   if (opts.conditionNote) {
@@ -1038,9 +1031,6 @@ function renderInfoTermCard(card) {
     const n = card.expired.days;
     c.appendChild(el('div', 'hint', `Истёк срок: ${n} ${pluralDays(n)} назад.`));
   }
-  if (card.first_working_day) {
-    c.appendChild(el('div', 'hint', `Отсчёт рабочих дней с ${isoToRu(card.first_working_day)}`));
-  }
   if (card.note) c.appendChild(el('div', 'hint', card.note));
   if (card.calendar_warning) {
     c.appendChild(
@@ -1120,7 +1110,13 @@ function renderInviteField(id, labelOverride) {
   input.autocomplete = 'off';
   input.value = dateFieldValue(id);
   wrap.appendChild(input);
-  const hint = (expiredFields.has(id) && INPUT_HINTS_EXPIRED[id]) || INPUT_HINTS[id];
+  // Подсказка про «для иных лиц» (абз. 2 ч. 2 ст. 237) релевантна только когда
+  // выбранный субъект обжалования — иные лица: у ответчика этот абзац не
+  // применяется, и подсказка была бы шумом.
+  const hintApplicable =
+    id !== 'default_judgment_cancellation_request_date' ||
+    (state.inputs.default_judgment_subject || 'defendant') === 'other_persons';
+  const hint = hintApplicable && ((expiredFields.has(id) && INPUT_HINTS_EXPIRED[id]) || INPUT_HINTS[id]);
   if (hint) wrap.appendChild(el('p', 'hint', hint));
   const err = el('p', 'field-error');
   // Поле пересоздаётся при каждой перерисовке, поэтому состояние ошибки
