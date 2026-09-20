@@ -1334,14 +1334,59 @@ const ICS_FILENAME = 'gpk-sroki.ics';
 const ICS_TYPE_DOWNLOAD = 'text/calendar;charset=utf-8';
 const ICS_TYPE_FILE = 'text/calendar';
 
+// iPhone/iPod и iPad — очевидный случай по UA. Но iPadOS начиная с 13-й
+// версии по умолчанию выдаёт себя за десктопный Safari: navigator.userAgent
+// содержит «Macintosh», а не «iPad», и /iPad|iPhone|iPod/ его не ловит.
+// Отличить такой iPad от настоящего Mac можно только по сенсорному вводу:
+// у Mac maxTouchPoints равен 0 (или отсутствует), у iPadOS — больше 1
+// (сообщается число точек мультитача). Оба условия нужны как ИЛИ: одно
+// покрывает iPhone/iPod и «честный» UA iPad, другое — замаскированный
+// iPadOS 13+.
+function isIOS() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 async function downloadICS() {
   if (currentIcsTerms.length === 0) return;
   const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });
 
-  // iOS Safari не выполняет атрибут download у blob:-ссылки: она открывает
-  // содержимое предпросмотром, и добавить события в календарь оттуда нельзя —
-  // тип файла при этом ни при чём. Системный лист «Поделиться» такую
-  // возможность даёт: Календарь в нём есть.
+  if (isIOS()) {
+    // На iOS ни Share Sheet, ни a.download до Календаря не доводят.
+    //
+    // navigator.share({ files }) на iOS (проверено и в Safari, и в
+    // Яндекс.Браузере — это системный лист, поведение общее для всех
+    // браузеров на движке WebKit) открывает .ics только в режиме
+    // предпросмотра Quick Look, без кнопки «Добавить»: судя по всему,
+    // iOS показывает кнопку импорта в календарь только когда сама
+    // получает файл, а не когда его передают как вложение через Share.
+    //
+    // a.download на blob:-ссылке (см. вариант ниже, для остальных платформ)
+    // в iOS Safari тоже не работает как «скачивание» — файл открывается
+    // текстовым/HTML-предпросмотром, а не сохраняется.
+    //
+    // Единственный способ, который на практике показывает кнопку «Добавить
+    // в календарь»: прямая навигация браузера по URL с
+    // Content-Type: text/calendar — то есть БЕЗ атрибута download (иначе
+    // это уже явное скачивание, см. выше) и БЕЗ передачи через Share
+    // (иначе это уже вложение, а не переход по адресу). Поэтому здесь —
+    // просто переход по blob-URL, без создания <a download>.
+    const blob = new Blob([ics], { type: ICS_TYPE_DOWNLOAD });
+    const url = URL.createObjectURL(blob);
+    window.location.href = url;
+    // Отзывать URL сразу нельзя: навигация по нему асинхронна, Safari может
+    // не успеть её начать до отзыва.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    return;
+  }
+
+  // Остальные платформы (Android, десктоп): здесь известная выше проблема
+  // iOS не воспроизводится, поэтому логика прежняя — сначала предлагаем
+  // системный лист «Поделиться» (там тоже может быть пункт «Календарь» или
+  // просто удобнее пользователю), а откажется/будет недоступен — скачиваем
+  // файл через a.download, который на этих платформах работает штатно.
   const file = new File([ics], ICS_FILENAME, { type: ICS_TYPE_FILE });
   if (navigator.canShare?.({ files: [file] })) {
     try {
