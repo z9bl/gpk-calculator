@@ -295,7 +295,10 @@
       .interruption.ignored .deduction-days { text-decoration: line-through; }
       .deduction-history { margin-top: 8px; }
       .deduction-history .warn { margin-top: 8px; font-size: 13px; }
-      .deduction-assumption { font-size: 13px; }
+      /* Короткий флажок-предупреждение об интерпретационных допущениях
+         (ч. 3.1 ст. 22): виден всегда, без жёлтого фона на весь блок —
+         полный список допущений уходит под «Подробнее». */
+      .assumption-flag { color: var(--warn-ink); font-size: 13px; font-weight: 600; margin-top: 8px; }
       /* Ошибка ввода: пересекающиеся периоды — рядом с полями, а не в истории. */
       .deduction-overlap { font-size: 13px; margin-top: 10px; }
 

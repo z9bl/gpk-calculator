@@ -211,8 +211,21 @@ if ((await ilCard.count()) !== 1) {
   if ((await ilCard.locator('.deduction-history').count()) === 0) {
     problems.push('история вычетов на карточке не показана');
   }
-  if ((await ilCard.locator('.deduction-assumption').count()) === 0) {
-    problems.push('допущения по ч. 3.1 не показаны рядом с расчётом');
+  // Короткий флажок виден на карточке всегда; полный список трёх допущений —
+  // только под «Подробнее» (жёлтый блок на весь текст убран, см. PR).
+  if ((await ilCard.locator('.assumption-flag').count()) === 0) {
+    problems.push('короткий флажок о допущениях по ч. 3.1 не показан рядом с расчётом');
+  }
+  const assumptionText = ilCard.getByText('складываются все без исключения').first();
+  if ((await assumptionText.count()) === 0) {
+    problems.push('полный текст допущений по ч. 3.1 не найден в разметке карточки');
+  } else if (await assumptionText.isVisible()) {
+    problems.push('полный текст допущений по ч. 3.1 виден без раскрытия «Подробнее»');
+  }
+  await ilCard.locator('details.more > summary').first().click();
+  await page.waitForTimeout(100);
+  if (!(await assumptionText.isVisible())) {
+    problems.push('полный текст допущений по ч. 3.1 не найден под «Подробнее»');
   }
   if ((await ilCard.locator('.deduction-overlap').count()) !== 0) {
     problems.push('предупреждение о пересечении показано на одном периоде');

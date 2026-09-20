@@ -376,6 +376,13 @@ function renderDetails(details) {
     dl.appendChild(el('dt', null, 'Отсечка 24:00 / почта'));
     dl.appendChild(el('dd', null, details.midnight_rule));
   }
+  if (details.deduction_assumption) {
+    dl.appendChild(el('dt', null, 'Допущения расчёта'));
+    const dd = el('dd');
+    dd.appendChild(el('div', null, details.deduction_assumption.text));
+    dd.appendChild(el('div', 'hint', details.deduction_assumption.norm));
+    dl.appendChild(dd);
+  }
   wrap.appendChild(dl);
   return wrap;
 }
@@ -394,9 +401,6 @@ function renderTermCard(card, opts = {}) {
   }
   if (card.unit === 'working_day') {
     h.appendChild(el('span', 'badge wd', 'рабочие дни'));
-  }
-  if (card.informational) {
-    h.appendChild(el('span', 'badge info', 'справочно'));
   }
   c.appendChild(h);
 
@@ -823,13 +827,12 @@ function renderDeductionHistory(card) {
     );
   }
 
-  // Допущения показываем рядом с расчётом, а не в раскрывающихся деталях: они
-  // не подтверждены по первоисточнику и влияют на саму дату.
+  // Сам факт предупреждения виден на карточке всегда, даже без раскрытия
+  // «Подробнее» — не все станут туда заглядывать, а расчёт по ч. 3.1 не
+  // должен выглядеть железобетонным. Полный список допущений — в деталях
+  // (см. details.deduction_assumption в renderDetails).
   if (card.deduction_assumption) {
-    const warn = el('div', 'warn deduction-assumption');
-    warn.appendChild(el('div', null, card.deduction_assumption.text));
-    warn.appendChild(el('div', 'hint', card.deduction_assumption.norm));
-    box.appendChild(warn);
+    box.appendChild(el('div', 'assumption-flag', card.deduction_assumption.short));
   }
   return box;
 }
@@ -1010,7 +1013,6 @@ function renderInfoTermCard(card) {
   const head = el('div', 'info-head');
   const title = el('span', 'info-title', card.title);
   head.appendChild(title);
-  if (!card.hide_info_badge) head.appendChild(el('span', 'badge info', 'справочно'));
   c.appendChild(head);
 
   // Статус 'в порядке' — молчаливый по умолчанию; добавление текста —
