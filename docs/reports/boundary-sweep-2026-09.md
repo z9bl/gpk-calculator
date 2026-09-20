@@ -149,9 +149,9 @@
 | файл | строка | фрагмент |
 |---|---|---|
 | src/views.js | 129 | `return toISODate(new Date(Date.UTC(y, m - 1, d)));` |
-| web/app.js | 285 | `const d = new Date();` |
-| web/app.js | 286 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
-| web/app.js | 1349 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
+| web/app.js | 283 | `const d = new Date();` |
+| web/app.js | 284 | `return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;` |
+| web/app.js | 1341 | `const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });` |
 
 Каждое совпадение — кандидат на «забытый частный случай» (STATIC_FLAG), даже
 если динамические сценарии выше его не поймали — см. п. Шаг 5 задачи. Разбор
