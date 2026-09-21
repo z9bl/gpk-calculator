@@ -50,6 +50,12 @@ export function buildTermRegistry(moduleExports, options = {}) {
  * с ics: true. Длительность берётся из самой карточки, если она её несёт (она
  * может отличаться от константы — например, когда длительность срока зависит от
  * обстоятельств дела), иначе из реестра.
+ *
+ * Для спорных сроков (card.alternative — норма и разъяснение Пленума
+ * расходятся в дате) в календарь уходит рекомендованная, более ранняя дата
+ * вместе с её нормой, а не card.deadline/card.norm «по закону» — чтобы норма в
+ * описании события не разошлась с датой рядом с ней. Сводка для копирования и
+ * печати (caseSummaryItems/Lines) — отдельный канал, показывает обе даты.
  * @param {{cards: object[]}} view — результат buildView.
  * @param {Record<string, object>} registry — реестр сроков по id узла.
  * @returns {Array<object>} сроки для buildICS.
@@ -57,8 +63,8 @@ export function buildTermRegistry(moduleExports, options = {}) {
 export function icsTermsFromView(view, registry) {
   return exportableCards(view, registry).map(({ card, meta }) => ({
     title: card.title,
-    deadline: card.deadline,
-    norm: card.norm,
+    deadline: card.alternative ? card.alternative.deadline : card.deadline,
+    norm: card.alternative ? card.alternative.norm : card.norm,
     ics: true,
     duration: card.duration || meta.duration,
   }));
