@@ -2247,6 +2247,17 @@ function renderSituationSwitch(current) {
       // трогает: скрытая ветвь при возврате показывает те же значения.
       state.situation = input.value;
       render();
+      // На мобильном блок с полями появившейся ситуации рендерится сразу под
+      // переключателем, но может оказаться ниже видимой области экрана —
+      // докручиваем к нему. Смотрим, какой из двух контейнеров сейчас виден,
+      // а не дублируем branching по situation.primary_field из
+      // renderSituationFields, чтобы не рассинхронизироваться с ней.
+      const top = document.getElementById('situation-inputs');
+      const bottom = document.getElementById('other-terms');
+      const visible = [top, bottom].find((box) => box && !box.hidden);
+      if (visible) {
+        visible.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
     label.appendChild(input);
     label.appendChild(el('span', null, s.label));
