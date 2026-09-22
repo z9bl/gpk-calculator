@@ -55,6 +55,14 @@ const SHOW_RESTORATION_CAP_UI = false;
 // не меняются.
 const SHOW_VS_CASSATION_FILED_UI = false;
 
+// Расхождение п. 12 ПП ВС РФ № 17 с нормой закона после 135-ФЗ: разъяснение
+// Пленума устарело, консультация подтвердила использовать норму закона, а не
+// разъяснение. Расчёт card.alternative (alternative_calculation в
+// src/chain.js) не меняется и по-прежнему покрыт тестами — скрывается только
+// вывод. Тот же приём, что и у SHOW_RESTORATION_CAP_UI и
+// SHOW_VS_CASSATION_FILED_UI выше.
+const SHOW_ALTERNATIVE_UI = false;
+
 // *_restoration_circumstance_date — соглашение об именовании всех восьми
 // полей годичного потолка (см. fields в src/situations.js); суффикс уникален
 // для них и не пересекается с другими полями (review_circumstance_date под
@@ -497,7 +505,7 @@ function renderTermCard(card, opts = {}) {
     c.appendChild(renderRestorationOneYearCap(card.restoration_one_year_cap));
   }
 
-  if (card.alternative) c.appendChild(renderAlternative(card));
+  if (SHOW_ALTERNATIVE_UI && card.alternative) c.appendChild(renderAlternative(card));
 
   // Практика ВС (vs_practice_change, п. 5 ч. 4 ст. 392): обе промежуточные
   // даты и явное указание, какая контролирует, — иначе на карточке был бы
@@ -1218,7 +1226,7 @@ function summaryEntries(cards) {
       };
       // Спорный срок (раздел 6): в сводку идут обе даты и рекомендация — иначе
       // на распечатке пропадёт более ранняя, безопасная дата.
-      if (card.alternative) {
+      if (SHOW_ALTERNATIVE_UI && card.alternative) {
         entry.alternative = {
           deadline: card.alternative.deadline,
           norm: card.alternative.norm,
