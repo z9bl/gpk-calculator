@@ -1368,6 +1368,17 @@ function isIOS() {
   );
 }
 
+// Эвристика (UA подделывается): настоящий Safari несёт токен Version/,
+// сторонние iOS-браузеры на WebKit подставляют вместо него свой — YaBrowser,
+// CriOS, FxiOS, EdgiOS, OPiOS и т.п.
+function looksLikeNonSafariIOSBrowser() {
+  const ua = navigator.userAgent;
+  return (
+    !/\bVersion\/\d/.test(ua) &&
+    /YaBrowser|CriOS|FxiOS|EdgiOS|OPiOS|OPR\/|SamsungBrowser|UCBrowser|MQQBrowser|GSA\//.test(ua)
+  );
+}
+
 async function downloadICS() {
   if (currentIcsTerms.length === 0) return;
   const ics = buildICS(currentIcsTerms, { referenceDate: today, now: new Date() });
@@ -2631,6 +2642,10 @@ if (typeof document !== 'undefined') {
 
   const downloadBtn = document.getElementById('download-ics');
   if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
+  const nonSafariIosHint = document.getElementById('ios-non-safari-hint');
+  if (nonSafariIosHint && isIOS() && looksLikeNonSafariIOSBrowser()) {
+    nonSafariIosHint.hidden = false;
+  }
   const copyBtn = document.getElementById('copy-terms');
   if (copyBtn) copyBtn.addEventListener('click', copyTerms);
   const printBtn = document.getElementById('print-terms');
