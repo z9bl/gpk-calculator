@@ -846,14 +846,25 @@ function renderDeductionHistory(card) {
 // умолчанию, наши добавьте вручную») больше не выводится — на карточке она
 // объясняла устройство экспорта, а не срок. Правило напоминаний само никуда не
 // делось: его по-прежнему проставляет .ics (reminderOffsets в src/ics.js).
+// Поля для googleCalendarUrl из карточки. Для спорных сроков (card.alternative)
+// в календарь уходит рекомендованная, более ранняя дата вместе с её нормой —
+// иначе норма в описании события не соответствовала бы дате рядом с ней. Обе
+// даты по-прежнему видны в самой карточке и в сводке для копирования/печати.
+// Та же развилка независимо стоит в core/export/ics.js (icsTermsFromView) —
+// для .ics. Вынесена в отдельную функцию (а не только инлайн в
+// googleCalendarLink), чтобы её можно было проверить без DOM.
+export function googleCalendarTermFromCard(card) {
+  return {
+    title: calendarEventTitle(card.title),
+    deadline: card.alternative ? card.alternative.deadline : card.deadline,
+    norm: card.alternative ? card.alternative.norm : card.norm,
+  };
+}
+
 function googleCalendarLink(card) {
   const wrap = el('div', 'to-calendar-block');
   const a = el('a', 'to-calendar', 'Добавить в Google Календарь');
-  a.href = googleCalendarUrl({
-    title: calendarEventTitle(card.title),
-    deadline: card.deadline,
-    norm: card.norm,
-  });
+  a.href = googleCalendarUrl(googleCalendarTermFromCard(card));
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
   wrap.appendChild(a);
@@ -2586,18 +2597,23 @@ function renderStubs() {
 
 // --- Инициализация ----------------------------------------------------------
 
-const reasoned = document.getElementById('reasoned');
-const reasonedError = document.getElementById('reasoned-error');
-attachDateMask(reasoned, (input, parsed) =>
-  commitDateInput('reasoned_decision_date', input, reasonedError, parsed),
-);
+// Гвардия: модуль импортируется и в node --test (test/integration/export-links.test.js)
+// ради чистых функций выше (googleCalendarTermFromCard) — без браузера document
+// не существует, и сама инициализация страницы там не нужна и не должна запускаться.
+if (typeof document !== 'undefined') {
+  const reasoned = document.getElementById('reasoned');
+  const reasonedError = document.getElementById('reasoned-error');
+  attachDateMask(reasoned, (input, parsed) =>
+    commitDateInput('reasoned_decision_date', input, reasonedError, parsed),
+  );
 
-const downloadBtn = document.getElementById('download-ics');
-if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
-const copyBtn = document.getElementById('copy-terms');
-if (copyBtn) copyBtn.addEventListener('click', copyTerms);
-const printBtn = document.getElementById('print-terms');
-if (printBtn) printBtn.addEventListener('click', printTerms);
+  const downloadBtn = document.getElementById('download-ics');
+  if (downloadBtn) downloadBtn.addEventListener('click', downloadICS);
+  const copyBtn = document.getElementById('copy-terms');
+  if (copyBtn) copyBtn.addEventListener('click', copyTerms);
+  const printBtn = document.getElementById('print-terms');
+  if (printBtn) printBtn.addEventListener('click', printTerms);
 
-renderStubs();
-render();
+  renderStubs();
+  render();
+}

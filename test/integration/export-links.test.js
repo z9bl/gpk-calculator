@@ -12,9 +12,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { termsAsText, reminderRulePhrase, ruDate } from '../../core/export/links.js';
+import { termsAsText, reminderRulePhrase, ruDate, googleCalendarUrl } from '../../core/export/links.js';
 import { buildView } from '../../src/views.js';
 import { icsTermsFromView } from '../../src/ics.js';
+// web/app.js импортируется и здесь: у него нет DOM-инициализации при
+// импорте вне браузера (гвардия typeof document в конце файла), а
+// googleCalendarTermFromCard — чистая функция, которую можно проверить
+// напрямую, без DOM.
+import { googleCalendarTermFromCard } from '../../web/app.js';
 // Таблица смещений предметная (ГПК), сама фраза — общая: проверяем их вместе,
 // потому что смысл проверки именно в том, что источник у них теперь один.
 import { reminderOffsets } from '../../src/term-registry.js';
@@ -73,4 +78,47 @@ test('текстовый список строится из тех же срок
   // Строк ровно столько, сколько сроков (заголовок + пустая строка сверху,
   // пустая строка + дисклеймер снизу).
   assert.equal(text.split('\n').length, terms.length + 4);
+});
+
+// --- Спорные сроки (card.alternative): ссылка в Google Календарь ведёт на ---
+// рекомендованную дату, а не «по закону» -------------------------------------
+
+test('спорный срок: ссылка в Google Календарь ведёт на рекомендованную (более раннюю) дату и её норму', () => {
+  // Тот же спорный узел (cassation_ksoyu), что и в тесте .ics
+  // (test/ics.test.js): норма и разъяснение Пленума расходятся в дате.
+  // card.deadline/card.norm дают более позднюю дату «по закону» (10.09.2024),
+  // card.alternative — рекомендованную более раннюю (02.09.2024).
+  const view = buildView(
+    {
+      reasoned_decision_date: '2024-05-01',
+      appeal_filed_date: '2024-05-15',
+      appeal_ruling_date: '2024-06-02',
+      appeal_ruling_reasoned_date: '2024-06-10',
+      cassation_filed_date: '2024-09-05',
+    },
+    { today: '2024-09-05' },
+  );
+  const card = view.cards.find((c) => c.id === 'cassation_ksoyu');
+  assert.ok(card.alternative, 'фикстура должна давать спорный срок');
+  assert.notEqual(card.alternative.deadline, card.deadline, 'фикстура должна давать расхождение дат');
+
+  const term = googleCalendarTermFromCard(card);
+  assert.equal(term.deadline, card.alternative.deadline, 'дата ссылки — рекомендованная, не card.deadline');
+  assert.equal(term.norm, card.alternative.norm, 'норма ссылки — norm alternative, а не card.norm');
+
+  const url = new URL(googleCalendarUrl(term));
+  const compact = card.alternative.deadline.replace(/-/g, '');
+  assert.equal(url.searchParams.get('dates').split('/')[0], compact);
+  assert.equal(url.searchParams.get('details'), `Норма: ${card.alternative.norm}`);
+});
+
+test('обычный срок без alternative: ссылка в Google Календарь по-прежнему card.deadline/card.norm', () => {
+  const card = { title: 'Апелляционная жалоба', deadline: '2026-08-03', norm: 'ч. 1 ст. 321 ГПК РФ' };
+  const term = googleCalendarTermFromCard(card);
+  assert.equal(term.deadline, card.deadline);
+  assert.equal(term.norm, card.norm);
+
+  const url = new URL(googleCalendarUrl(term));
+  assert.equal(url.searchParams.get('dates'), '20260803/20260804');
+  assert.equal(url.searchParams.get('details'), 'Норма: ч. 1 ст. 321 ГПК РФ');
 });

@@ -443,10 +443,13 @@ test('каждый узел с ics: true попадает в скачиваем�
       exportedTitles.includes(card.title),
       `узел ${term.id} не попал в список экспорта`,
     );
-    // И сам дедлайн присутствует в файле как событие на весь день.
+    // И сам дедлайн присутствует в файле как событие на весь день. Для
+    // спорных сроков (card.alternative) в файл уходит рекомендованная дата
+    // (см. тест ниже про card.alternative), а не card.deadline «по закону».
+    const expectedDeadline = card.alternative ? card.alternative.deadline : card.deadline;
     assert.ok(
-      ics.includes(`DTSTART;VALUE=DATE:${card.deadline.replace(/-/g, '')}`),
-      `узел ${term.id}: дедлайн ${card.deadline} отсутствует в .ics`,
+      ics.includes(`DTSTART;VALUE=DATE:${expectedDeadline.replace(/-/g, '')}`),
+      `узел ${term.id}: дедлайн ${expectedDeadline} отсутствует в .ics`,
     );
   }
   assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, expected.length);
@@ -1146,6 +1149,63 @@ test('UID различаются у двух выгрузок с одинако�
     buildICS([APPEAL, { ...APPEAL, title: 'Другой срок' }], { referenceDate: '2025-05-01', now: NOW }),
   );
   assert.equal(new Set(many).size, many.length);
+});
+
+// --- Спорные сроки (card.alternative): в календарь уходит рекомендованная ---
+// дата, а не «по закону» -----------------------------------------------------
+
+test('спорный срок (card.alternative): в .ics уходит рекомендованная дата и её норма, а не «по закону»', () => {
+  // cassation_ksoyu: норма (абз. 2 ч. 1 ст. 376.1, ред. ФЗ № 135-ФЗ) и
+  // разъяснение Пленума расходятся в дате — card.deadline/card.norm дают
+  // более позднюю дату «по закону» (10.09.2024 от мотивированного
+  // определения), card.alternative — рекомендованную более раннюю (02.09.2024,
+  // п. 12 ПП ВС РФ от 22.06.2021 № 17, от даты принятия).
+  const view = buildView(
+    {
+      reasoned_decision_date: '2024-05-01',
+      appeal_filed_date: '2024-05-15',
+      appeal_ruling_date: '2024-06-02',
+      appeal_ruling_reasoned_date: '2024-06-10',
+      cassation_filed_date: '2024-09-05',
+    },
+    { today: '2024-09-05' },
+  );
+  const card = byId(view.cards, 'cassation_ksoyu');
+  assert.ok(card.alternative, 'фикстура должна давать спорный срок');
+  assert.notEqual(card.deadline, card.alternative.deadline, 'фикстура должна давать расхождение дат');
+
+  const term = icsTermsFromView(view).find((t) => t.title === card.title);
+  assert.ok(term, 'срок должен попасть в экспорт');
+  assert.equal(
+    term.deadline,
+    card.alternative.deadline,
+    'в .ics должна уйти рекомендованная (более ранняя) дата, а не card.deadline',
+  );
+  assert.equal(
+    term.norm,
+    card.alternative.norm,
+    'норма в .ics должна соответствовать дате рядом с ней (норме alternative)',
+  );
+
+  const ics = buildICS([term], { referenceDate: '2024-01-01', now: NOW });
+  assert.ok(ics.includes(`DTSTART;VALUE=DATE:${term.deadline.replace(/-/g, '')}`));
+  assert.ok(
+    !ics.includes(`DTSTART;VALUE=DATE:${card.deadline.replace(/-/g, '')}`),
+    'более поздняя дата «по закону» не должна попасть в файл',
+  );
+});
+
+test('обычный срок без alternative: в .ics по-прежнему card.deadline/card.norm', () => {
+  const view = buildView(
+    { reasoned_decision_date: '2024-05-01' }, // без апелляции: обычная апелляция, alternative нет
+    { today: '2024-05-02' },
+  );
+  const card = byId(view.cards, 'appeal_general');
+  assert.equal(card.alternative, undefined);
+
+  const term = icsTermsFromView(view).find((t) => t.title === card.title);
+  assert.equal(term.deadline, card.deadline);
+  assert.equal(term.norm, card.norm);
 });
 
 test('в названии события указано, что дата — последний день подачи', () => {
