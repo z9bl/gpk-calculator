@@ -2249,12 +2249,15 @@ function renderSituationSwitch(current) {
       render();
       // На мобильном блок с полями появившейся ситуации рендерится сразу под
       // переключателем, но может оказаться ниже видимой области экрана —
-      // докручиваем к нему. Смотрим, какой из двух контейнеров сейчас виден,
-      // а не дублируем branching по situation.primary_field из
-      // renderSituationFields, чтобы не рассинхронизироваться с ней.
+      // докручиваем к нему. У общей ветви (general) поле — не в одном из
+      // двух контейнеров ниже, а в статическом section.primary
+      // (renderPrimaryField). Смотрим, какой из всех трёх сейчас виден, а
+      // не дублируем branching по situation.primary_field из
+      // renderSituationFields/renderPrimaryField, чтобы не рассинхронизироваться с ними.
+      const primary = document.querySelector('section.primary');
       const top = document.getElementById('situation-inputs');
       const bottom = document.getElementById('other-terms');
-      const visible = [top, bottom].find((box) => box && !box.hidden);
+      const visible = [primary, top, bottom].find((box) => box && !box.hidden);
       if (visible) {
         visible.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
