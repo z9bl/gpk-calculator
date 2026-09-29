@@ -1,8 +1,8 @@
 // Сборка карточек для отображения (раздел 8, задача 4а SPEC.md).
 //
 // Берёт входные данные, считает цепочку и возвращает готовую структуру данных
-// для UI: карточки видимых узлов, список неполных узлов («что ещё уточнить») и
-// статические заглушки. Никакой вёрстки — только данные.
+// для UI: карточки видимых узлов и список неполных узлов («что ещё уточнить»).
+// Никакой вёрстки — только данные.
 //
 // Прогрессивное раскрытие (вариант А): полностью показываются только узлы, для
 // которых достаточно введённых данных; остальные попадают в `incomplete` с
@@ -115,10 +115,6 @@ export const DEDUCTION_IGNORED_TEXT = {
     'Окончание производства раньше предъявления документа — период измерить ' +
     'нельзя, событие в расчёт не принято.',
 };
-
-// Заглушки (п. 4.4 SPEC.md) — статические карточки. Все раскрыты (см. 3.1–3.4),
-// список пуст: неподдерживаемых ветвей в модели больше нет.
-const STUBS = [];
 
 // --- Вспомогательные --------------------------------------------------------
 
@@ -1102,18 +1098,12 @@ function markExpired(cards, inputs, today) {
  * Собирает структуру для отображения из входных данных.
  * @param {object} inputs — данные из п. 4.1 SPEC.md.
  * @param {{today?: Date|string}} [options] — текущая дата (передаётся явно).
- * @returns {{cards: object[], incomplete: object[], stubs: object[]}}
+ * @returns {{cards: object[], incomplete: object[]}}
  *   cards — видимые (рассчитанные) узлы; incomplete — узлы, которым не хватает
- *   данных, с причиной и списком недостающих input; stubs — заглушки (п. 4.4).
+ *   данных, с причиной и списком недостающих input.
  */
 export function buildView(inputs, options = {}) {
   const today = options.today != null ? toISO(options.today) : null;
-  const stubs = STUBS.map((s) => ({
-    id: s.id,
-    title: s.title,
-    explanation: s.explanation,
-    norm: s.norm,
-  }));
 
   if (inputs?.reasoned_decision_date == null) {
     // Цепочку обжалования без даты решения не построить, но независимые сроки в
@@ -1131,7 +1121,6 @@ export function buildView(inputs, options = {}) {
         ),
         ...independent.incomplete,
       ],
-      stubs,
     };
   }
 
@@ -1140,5 +1129,5 @@ export function buildView(inputs, options = {}) {
   const { cards: downCards, incomplete } = buildDownstream(inputs, today);
   cards.push(...downCards);
 
-  return { cards: markExpired(cards, inputs, today), incomplete, stubs };
+  return { cards: markExpired(cards, inputs, today), incomplete };
 }

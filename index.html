@@ -302,23 +302,12 @@
       /* Ошибка ввода: пересекающиеся периоды — рядом с полями, а не в истории. */
       .deduction-overlap { font-size: 13px; margin-top: 10px; }
 
-      .related-stubs { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
-      .related-stubs-title { font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 0 0 4px; }
-      .related-stubs .stub { border-top: none; padding: 8px 0 4px; }
-
       .other-terms { margin-top: 26px; }
       .other-terms h2,
       .primary h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 4px; }
       .primary h2 { margin-top: 0; }
       .other-terms > p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
       .other-terms .invite { border-style: solid; border-color: var(--line); }
-
-      .stubs { margin-top: 30px; }
-      .stubs h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
-      .stub { border-top: 1px solid var(--line); padding: 12px 0; }
-      .stub h3 { font-size: 15px; margin: 0 0 4px; }
-      .stub p { margin: 0; font-size: 14px; color: var(--muted); }
-      .stub .norm { margin-top: 4px; }
 
       .fatal { background: var(--miss-bg); color: var(--miss-ink); border: 1px solid var(--miss-line);
                padding: 14px; border-radius: 10px; font-size: 14px; }
@@ -342,8 +331,7 @@
         #situation-inputs,
         #other-terms,
         #results,
-        .disclaimer,
-        #stubs { display: none !important; }
+        .disclaimer { display: none !important; }
 
         .print-only { display: block; }
         /* Сокращённая пометка в конце печати — мелко и серым. */
@@ -429,7 +417,6 @@
 
       <section class="other-terms" id="other-terms"></section>
 
-      <section class="stubs" id="stubs"></section>
 
       <footer class="disclaimer">
         Калькулятор даёт справочный расчёт на основе текста ГПК РФ и разъяснений

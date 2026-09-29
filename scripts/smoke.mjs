@@ -106,8 +106,7 @@ page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
 
 await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'networkidle' });
 
-// Приложение должно инициализироваться: без .fatal, поле ввода на месте,
-// заглушки отрисованы (значит render() отработал).
+// Приложение должно инициализироваться: без .fatal, поле ввода на месте.
 if ((await page.locator('.fatal').count()) > 0) {
   problems.push('.fatal показан — приложение не инициализировалось');
 }
