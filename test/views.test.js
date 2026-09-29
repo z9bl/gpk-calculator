@@ -13,13 +13,6 @@ const BASE = { reasoned_decision_date: '2025-03-11' }; // апелляция →
 const ids = (nodes) => nodes.map((n) => n.id);
 const byId = (nodes, id) => nodes.find((n) => n.id === id);
 
-test('заглушек в модели больше нет — все ветви раскрыты', () => {
-  // Раскрыты: частная жалоба (3.1), упрощённое производство (3.2), заочное
-  // решение (3.3), мировой судья без мотивировки (3.4).
-  const v = buildView(BASE, { today: '2025-05-01' });
-  assert.deepEqual(v.stubs, []);
-});
-
 test('нет даты мотивированного решения → нет карточек цепочки, узел в incomplete', () => {
   const v = buildView({}, { today: '2025-05-01' });
   assert.deepEqual(ids(v.cards), []);

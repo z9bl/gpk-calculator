@@ -1693,7 +1693,6 @@ function render() {
         if (card.interruptible) termEl.appendChild(renderInterruptions(card));
         // Заглушки рядом с узлом (напр. предъявление ИЛ). Список пуст — все
         // смежные случаи раскрыты узлами; заголовок без содержимого не рисуем.
-        if (card.stubs && card.stubs.length) termEl.appendChild(renderRelatedStubs(card.stubs));
         appendFollowUpFields(termEl, id, card);
         root.appendChild(termEl);
       }
@@ -2205,24 +2204,6 @@ function renderRedactionField(inputId) {
   return box;
 }
 
-// Ввод даты определения КСОЮ открывает узел кассации в ВС РФ (ст. 390.3).
-// Дату мотивированного определения запрашивает уже сам узел ВС (новая редакция).
-function stubCard(s) {
-  const box = el('div', 'stub');
-  box.appendChild(el('h3', null, s.title));
-  box.appendChild(el('p', null, s.explanation));
-  box.appendChild(el('p', 'norm', s.norm));
-  return box;
-}
-
-// Заглушки рядом с узлом — отдельными карточками (напр. смежные случаи ИЛ).
-function renderRelatedStubs(stubs) {
-  const box = el('div', 'related-stubs');
-  box.appendChild(el('h3', 'related-stubs-title', 'Смежные случаи'));
-  for (const s of stubs) box.appendChild(stubCard(s));
-  return box;
-}
-
 // --- Другие сроки: независимые узлы на своих input ---------------------------
 //
 // Замечания на протокол и частная жалоба не зависят от цепочки обжалования —
@@ -2615,19 +2596,6 @@ function renderVsPracticeChangeFields(box) {
   );
 }
 
-// --- Заглушки (раздел 4.4) — статичны, рисуем один раз -----------------------
-
-function renderStubs() {
-  const view = buildView({}, { today });
-  const root = document.getElementById('stubs');
-  root.textContent = '';
-  // Все ветви раскрыты — блока «неподдерживаемые» больше нет; заголовок без
-  // содержимого не рисуем.
-  if (!view.stubs.length) return;
-  root.appendChild(el('h2', null, 'Неподдерживаемые ветки'));
-  for (const s of view.stubs) root.appendChild(stubCard(s));
-}
-
 // --- Инициализация ----------------------------------------------------------
 
 // Гвардия: модуль импортируется и в node --test (test/integration/export-links.test.js)
@@ -2651,6 +2619,5 @@ if (typeof document !== 'undefined') {
   const printBtn = document.getElementById('print-terms');
   if (printBtn) printBtn.addEventListener('click', printTerms);
 
-  renderStubs();
   render();
 }
