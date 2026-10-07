@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="copyright" content="© 2026 [ФИО ПРАВООБЛАДАТЕЛЯ]">
     <title>Калькулятор процессуальных сроков по ГПК РФ</title>
     <style>
       :root {
@@ -105,6 +106,9 @@
         margin: 36px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
         color: var(--muted); font-size: 12px; line-height: 1.5;
       }
+      /* Строка авторского права под дисклеймером, в той же колонке и рамке. */
+      .disclaimer .copyright { margin: 10px 0 0; }
+      .disclaimer .copyright a { color: inherit; white-space: nowrap; }
 
       /* Плавное появление блоков: разворот по высоте через grid-template-rows.
          Анимируется одноразовым keyframes только на впервые показанном блоке —
@@ -423,6 +427,10 @@
         Пленума Верховного Суда. Он не заменяет консультацию юриста и не является
         юридической консультацией. Перед подачей документов проверяйте сроки по
         первоисточникам — расчёт может не учитывать особенности конкретного дела.
+        <p class="copyright">
+          © 2026 [ФИО ПРАВООБЛАДАТЕЛЯ]. Все права защищены.
+          <a href="license.html">Лицензионное соглашение</a>
+        </p>
       </footer>
 
       <!-- В печати — сокращённая пометка в конце (полный текст скрыт). -->
